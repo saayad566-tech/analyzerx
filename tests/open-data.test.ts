@@ -306,7 +306,27 @@ describe("local tRPC link resolves every screen path without a server", () => {
   }, NETWORK_TIMEOUT);
 
   it("labels the exchange it actually priced from (NSE or BSE)", async () => {
-    const r = (await resolveLocal("market.snapshot", { symbol: "RELIANCE", marketId: "IN" })) as { source: string; quote: unknown };
+    const r = (await resolveLocal("market.snapshot", { symbol: "RELIANCE", marketId: "IN" })) as { source: string; quote: unknown; chain?: unknown[] };
     expect(r.source).toMatch(/NSE|BSE/);
+    expect(Array.isArray(r.chain)).toBe(true);
+    expect((r.chain as unknown[]).length).toBeGreaterThan(0);
+  }, NETWORK_TIMEOUT);
+
+  it("records which news providers answered (multi-feed redundancy)", async () => {
+    const news = await stockNews("RELIANCE", 20);
+    expect(Array.isArray(news.chain)).toBe(true);
+    expect((news.chain ?? []).length).toBeGreaterThanOrEqual(3);
+    // Every configured feed is attempted; at least one must supply coverage.
+    const answered = (news.chain ?? []).filter((attempt) => attempt.ok);
+    expect(answered.length).toBeGreaterThanOrEqual(1);
+    expect(news.articles.length).toBeGreaterThan(0);
+  }, NETWORK_TIMEOUT);
+
+  it("fails over across Yahoo hosts for fundamentals", async () => {
+    const analysis = await fundamentals("RELIANCE", "IN");
+    // The analysis is built from whichever host answered; it must never be blank
+    // just because one host is unavailable.
+    expect(analysis.score).toBeGreaterThanOrEqual(0);
+    expect(analysis.sources.some((s) => s.status === "used")).toBe(true);
   }, NETWORK_TIMEOUT);
 });

@@ -22,7 +22,8 @@ import {
   toYahooSymbol,
   type MarketId,
 } from "./core";
-import { quoteFromSeries, yahooChart, yahooFundamentals, yoyGrowth, type AnnualMetric } from "./sources";
+import { quoteFromSeries, yahooChart, yahooFundamentals, yoyGrowth, type AnnualMetric, type YahooHost } from "./sources";
+import { runChain } from "./chain";
 
 type Basis = "reported" | "derived" | "estimated" | "unavailable";
 type Metric = { value: number; basis: Exclude<Basis, "unavailable">; source: string; period?: string };
@@ -131,30 +132,33 @@ export async function buildFundamentalAnalysis(symbol: string, marketId: MarketI
   const currency = currencyForMarket(marketId);
   const warnings: string[] = [];
 
-  const [fundResult, quoteResult, historyResult] = await Promise.allSettled([
-    cached(`fund:${yahooSymbol}`, 6 * 60 * 60_000, () => yahooFundamentals(yahooSymbol)),
-    cached(`quote:${yahooSymbol}`, 60_000, () => yahooChart(yahooSymbol, "5d", "1d")),
-    cached(`history:${yahooSymbol}:1y:1d`, 30 * 60_000, () => yahooChart(yahooSymbol, "1y", "1d")),
+  // Each input runs through its own failover chain across both Yahoo hosts, so a
+  // single-host outage cannot blank the analysis.
+  const hosts: YahooHost[] = ["query1", "query2"];
+  const [fundOutcome, quoteOutcome, historyOutcome] = await Promise.all([
+    runChain(hosts.map((host) => ({ key: `yahoo-fund-${host}`, name: `Yahoo fundamentals (${host})`, run: () => cached(`fund:${yahooSymbol}:${host}`, 6 * 60 * 60_000, () => yahooFundamentals(yahooSymbol, host)) }))),
+    runChain(hosts.map((host) => ({ key: `yahoo-quote-${host}`, name: `Yahoo quote (${host})`, run: () => cached(`quote:${yahooSymbol}:${host}`, 60_000, () => yahooChart(yahooSymbol, "5d", "1d", host)) }))),
+    runChain(hosts.map((host) => ({ key: `yahoo-history-${host}`, name: `Yahoo history (${host})`, run: () => cached(`history:${yahooSymbol}:1y:1d:${host}`, 30 * 60_000, () => yahooChart(yahooSymbol, "1y", "1d", host)) }))),
   ]);
 
-  const rawMetrics: Record<string, AnnualMetric[]> = fundResult.status === "fulfilled" ? fundResult.value.value.data.metrics : {};
-  if (fundResult.status === "rejected") warnings.push(`Reported financial statements unavailable: ${String(fundResult.reason).slice(0, 140)}`);
+  const rawMetrics: Record<string, AnnualMetric[]> = fundOutcome.value ? fundOutcome.value.value.data.metrics : {};
+  if (!fundOutcome.value) warnings.push(`Reported financial statements unavailable from all ${fundOutcome.attempts.length} providers.`);
 
   let companyName = symbol.toUpperCase();
   let exchange = market.exchanges[0] ?? "";
   let price: number | null = null;
   let quoteAsOf: string | null = null;
-  if (quoteResult.status === "fulfilled") {
-    const quote = quoteFromSeries(quoteResult.value.value.series);
+  if (quoteOutcome.value) {
+    const quote = quoteFromSeries(quoteOutcome.value.value.series);
     companyName = quote.name || companyName;
     exchange = quote.exchange || exchange;
     price = quote.current;
     quoteAsOf = quote.asOf;
   } else {
-    warnings.push(`Live quote unavailable: ${String(quoteResult.reason).slice(0, 140)}`);
+    warnings.push(`Live quote unavailable from all ${quoteOutcome.attempts.length} providers.`);
   }
 
-  const closes = historyResult.status === "fulfilled" ? historyResult.value.value.series.closes.filter((c): c is number => typeof c === "number") : [];
+  const closes = historyOutcome.value ? historyOutcome.value.value.series.closes.filter((c): c is number => typeof c === "number") : [];
   const technical = technicalsFrom(closes, price);
 
   const revenue = latestOf(rawMetrics, "annualTotalRevenue");
@@ -425,8 +429,8 @@ export async function buildFundamentalAnalysis(symbol: string, marketId: MarketI
     fairValue,
     history,
     sources: [
-      { tier: "primary", name: "Yahoo Finance reported annual statements", status: fundResult.status === "fulfilled" ? "used" : "failed", note: "Annual income statement, balance sheet and cash-flow values." },
-      { tier: "primary", name: "Yahoo Finance quote", status: quoteResult.status === "fulfilled" ? "used" : "failed", note: "Latest market price observation." },
+      { tier: "primary", name: "Yahoo Finance reported annual statements", status: fundOutcome.value ? "used" : "failed", note: `Annual income statement, balance sheet and cash-flow values. Provider: ${fundOutcome.provider ?? "none"}.` },
+      { tier: "primary", name: "Yahoo Finance quote", status: quoteOutcome.value ? "used" : "failed", note: `Latest market price observation. Provider: ${quoteOutcome.provider ?? "none"}.` },
       { tier: "derived", name: "On-device ratio and technical computation", status: "used", note: "Ratios, moving averages and RSI computed locally from the values above." },
       { tier: "secondary", name: "NSE/BSE filings", status: "not-configured", note: "No validated filing adapter is connected." },
     ],
