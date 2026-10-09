@@ -188,6 +188,8 @@ const FUNDAMENTAL_TYPES = [
   "annualGrossProfit",
   "annualEBITDA",
   "annualTotalAssets",
+  "annualCapitalExpenditure",
+  "annualOrdinarySharesNumber",
 ] as const;
 
 export async function yahooFundamentals(

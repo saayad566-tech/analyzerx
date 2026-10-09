@@ -83,7 +83,7 @@ describe("open-data parsers (deterministic)", () => {
   it("maps symbols to Yahoo tickers per market", () => {
     expect(toYahooSymbol("reliance", "IN")).toBe("RELIANCE.NS");
     expect(toYahooSymbol("AAPL", "US")).toBe("AAPL");
-    expect(toYahooSymbol("VOD", "UK")).toBe("VOD.L");
+    expect(toYahooSymbol("VOD", "GB")).toBe("VOD.L");
     expect(toYahooSymbol("^NSEI", "IN")).toBe("^NSEI");
     expect(toDisplaySymbol("RELIANCE.NS")).toBe("RELIANCE");
   });
@@ -153,7 +153,11 @@ describe("open-data live sources (contract + availability)", () => {
     expect(Array.isArray(analysis.coverage.sections)).toBe(true);
     expect(analysis.market.currency).toBe("INR");
     expect(analysis).toHaveProperty("stockAnalysis");
-    if (analysis.metrics.eps.value !== null) expect(analysis.metrics.eps.basis).toBe("reported");
+    if (analysis.metrics.earningsPerShare) expect(analysis.metrics.earningsPerShare.basis).toBe("reported");
+    expect(analysis.marketCap).toBeDefined();
+    expect(analysis.institutionalReport.scenarios.length).toBe(3);
+    expect(analysis.stockAnalysis.technical).toBeDefined();
+    expect(analysis.multibaggerThesis.scoreBreakdown.length).toBeGreaterThan(0);
   }, NETWORK_TIMEOUT);
 
   it("returns sector constituents and multi-asset signals", async () => {
@@ -228,10 +232,12 @@ describe("local tRPC link resolves every screen path without a server", () => {
 
   it("resolves sector constituents and multi-asset timing", async () => {
     const [sector, timing] = await Promise.all([
-      resolveLocal("market.sectorConstituents", { sector: "NIFTYBANK" }) as Promise<{ constituents: unknown[] }>,
+      resolveLocal("market.sectorConstituents", { sector: "NIFTYBANK" }) as Promise<{ rows: unknown[]; flow: unknown; coverageLabel: string }>,
       resolveLocal("market.multiAssetTiming", undefined) as Promise<{ signals: unknown[] }>,
     ]);
-    expect(Array.isArray(sector.constituents)).toBe(true);
+    expect(Array.isArray(sector.rows)).toBe(true);
+    expect(sector.flow).toBeDefined();
+    expect(typeof sector.coverageLabel).toBe("string");
     expect(Array.isArray(timing.signals)).toBe(true);
   }, NETWORK_TIMEOUT);
 

@@ -113,6 +113,7 @@ function metricRow(label: string, value: string, basis: string, note: string): s
 
 function buildHtml(report: FundamentalAnalysis, newsHeadlines: string[], history: Array<{ t: string; c: number | null }>, marketLabel: string): string {
   const currency = report.fairValue.currency;
+  const metric = (key: string) => report.metrics[key] ?? null;
   const scoreColor = report.score >= 70 ? BRAND.good : report.score >= 45 ? "#B7791F" : BRAND.bad;
   return `<!DOCTYPE html>
 <html lang="en">
@@ -175,13 +176,13 @@ function buildHtml(report: FundamentalAnalysis, newsHeadlines: string[], history
   <h2>3 · Reported financial metrics</h2>
   <table>
     <tr><th>Metric</th><th>Value</th><th>Basis</th><th>Note</th></tr>
-    ${metricRow("Revenue growth (YoY)", pct(report.metrics.revenueGrowth.value), report.metrics.revenueGrowth.basis, report.metrics.revenueGrowth.note ?? "Latest two annual periods")}
-    ${metricRow("Diluted EPS", report.metrics.eps.value === null ? "Unavailable" : report.metrics.eps.value.toFixed(2), report.metrics.eps.basis, `As of ${report.metrics.eps.asOf ?? "unavailable"}`)}
-    ${metricRow("Operating cash flow", compact(report.metrics.operatingCashFlow.value, currency), report.metrics.operatingCashFlow.basis, `As of ${report.metrics.operatingCashFlow.asOf ?? "unavailable"}`)}
-    ${metricRow("Free cash flow", compact(report.metrics.freeCashFlow.value, currency), report.metrics.freeCashFlow.basis, `As of ${report.metrics.freeCashFlow.asOf ?? "unavailable"}`)}
-    ${metricRow("P/E", report.metrics.pe.value === null ? "Unavailable" : `${report.metrics.pe.value.toFixed(2)}×`, report.metrics.pe.basis, report.metrics.pe.note ?? "")}
-    ${metricRow("Net margin", pct(report.metrics.netMargin.value), report.metrics.netMargin.basis, report.metrics.netMargin.note ?? "")}
-    ${metricRow("Debt / equity", report.metrics.debtToEquity.value === null ? "Unavailable" : `${report.metrics.debtToEquity.value.toFixed(2)}×`, report.metrics.debtToEquity.basis, report.metrics.debtToEquity.note ?? "")}
+    ${metricRow("Revenue growth (YoY)", pct(metric("revenueGrowth")?.value ?? null), metric("revenueGrowth")?.basis ?? "unavailable", metric("revenueGrowth")?.source ?? "Unavailable")}
+    ${metricRow("Diluted EPS", metric("earningsPerShare")?.value?.toFixed(2) ?? "Unavailable", metric("earningsPerShare")?.basis ?? "unavailable", metric("earningsPerShare")?.period ?? "Unavailable")}
+    ${metricRow("Operating cash flow", compact(metric("operatingCashFlow")?.value ?? null, currency), metric("operatingCashFlow")?.basis ?? "unavailable", metric("operatingCashFlow")?.period ?? "Unavailable")}
+    ${metricRow("Free cash flow", compact(metric("freeCashFlow")?.value ?? null, currency), metric("freeCashFlow")?.basis ?? "unavailable", metric("freeCashFlow")?.period ?? "Unavailable")}
+    ${metricRow("P/E", metric("pe") ? `${metric("pe")!.value.toFixed(2)}×` : "Unavailable", metric("pe")?.basis ?? "unavailable", metric("pe")?.source ?? "Unavailable")}
+    ${metricRow("Net margin", pct(metric("profitMargin")?.value ?? null), metric("profitMargin")?.basis ?? "unavailable", metric("profitMargin")?.source ?? "Unavailable")}
+    ${metricRow("Debt / equity", metric("debtToEquity") ? `${metric("debtToEquity")!.value.toFixed(2)}×` : "Unavailable", metric("debtToEquity")?.basis ?? "unavailable", metric("debtToEquity")?.source ?? "Unavailable")}
   </table>
 
   <h2>4 · Price history</h2>

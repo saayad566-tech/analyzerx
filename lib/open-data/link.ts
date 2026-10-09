@@ -50,7 +50,8 @@ function str(input: Input, key: string, fallback = ""): string {
 
 function market(input: Input): MarketId {
   const value = str(input, "marketId", "IN").toUpperCase();
-  return (["IN", "US", "UK", "JP", "EU", "GLOBAL"].includes(value) ? value : "IN") as MarketId;
+  const valid = ["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"];
+  return (valid.includes(value) ? value : "IN") as MarketId;
 }
 
 /* ------------------------------------------------------------------ *
@@ -180,7 +181,28 @@ type Handler = (input: Input) => unknown;
 const HANDLERS: Record<string, Handler> = {
   /* ---- market ---- */
   "market.search": (input) => search(str(input, "query"), market(input)),
-  "market.snapshot": (input) => snapshot(str(input, "symbol"), market(input)),
+  "market.snapshot": async (input) => {
+    const symbol = str(input, "symbol");
+    const marketId = market(input);
+    const snap = await snapshot(symbol, marketId);
+    const analysis = await fundamentals(symbol, marketId).catch(() => null);
+    const news = await stockNews(symbol, 6).catch(() => null);
+    return {
+      ...snap,
+      asOf: snap.asOf,
+      source: snap.source,
+      quote: snap.quote,
+      errors: snap.quote ? null : (snap.note ?? "Live quote unavailable."),
+      fundamentals: {
+        pe: analysis?.metrics.pe?.value ?? null,
+        earningsPerShare: analysis?.metrics.earningsPerShare?.value ?? null,
+        sector: analysis?.stockAnalysis.profile.sector ?? "",
+        score: analysis?.score ?? null,
+        verdict: analysis?.verdict ?? null,
+      },
+      news: (news?.articles ?? []).map((a) => ({ headline: a.headline, source: a.source, url: a.url, publishedAt: a.publishedAt, sentiment: a.sentiment })),
+    };
+  },
   "market.universe": () => nseUniverse(),
   "market.fundamentals": (input) => fundamentals(str(input, "symbol"), market(input)),
   "market.profile": async (input) => {
@@ -205,32 +227,77 @@ const HANDLERS: Record<string, Handler> = {
     };
   },
   "market.institutionalFlows": (input) => institutionalFlows(str(input, "range", "TODAY")),
-  "market.sectorConstituents": (input) => sectorConstituents(str(input, "sector"), Number(input?.limit ?? 100) || 100),
-  "market.peerComparison": (input) => peerComparison(str(input, "symbol")),
+  "market.sectorConstituents": async (input) => {
+    const sector = str(input, "sector");
+    const base = await sectorConstituents(sector, Number(input?.limit ?? 100) || 100);
+    const flows = await institutionalFlows(str(input, "range", "TODAY")).catch(() => null);
+    const fii = flows?.rows.find((r) => /FII/i.test(r.category));
+    const dii = flows?.rows.find((r) => /DII/i.test(r.category));
+    const scored = await Promise.all(
+      base.constituents.slice(0, 25).map(async (row) => {
+        try {
+          const analysis = await fundamentals(row.symbol, "IN");
+          return { ...row, score: analysis.score, marketCap: analysis.marketCap.value, pe: analysis.metrics.pe?.value ?? null, changePercent: null };
+        } catch {
+          return { ...row, score: null, marketCap: null, pe: null, changePercent: null };
+        }
+      }),
+    );
+    return {
+      sector,
+      asOf: base.asOf,
+      rows: scored,
+      flow: { fiiNet: fii?.netValue ?? null, diiNet: dii?.netValue ?? null, freshnessLabel: flows?.freshnessLabel ?? "Unavailable" },
+      securityWiseFlow: { reportDate: null, topFii: [], topDii: [] },
+      coverageLabel: base.error ? "Unavailable" : `${base.constituents.length} constituents from the NSE index list`,
+      limitations: base.error ? [base.error] : ["Sector scores are rule-based over reported fundamentals; security-wise flow needs an exchange feed."],
+    };
+  },
+  "market.peerComparison": async (input) => {
+    const result = await peerComparison(str(input, "symbol"));
+    return { ...result, note: result.peers.length ? result.comparisonBasis : "No peer set was found for this symbol from the NSE index lists." };
+  },
   "market.multiAssetTiming": () => multiAssetTiming(),
   "market.sectorNames": () => Object.keys(NSE_INDEX_FILES).map((key) => key.replace(/^NIFTY/, "").replace(/([A-Z]+)/g, (m) => m[0] + m.slice(1).toLowerCase())),
-  "market.officialFilingLinks": (input) => officialFilingLinks(str(input, "symbol")),
+  "market.officialFilingLinks": (input) => ({ links: officialFilingLinks(str(input, "symbol")), note: "Official regulator and exchange filing entry points; no scraping is performed." }),
   "market.filings": async (input) => ({ symbol: str(input, "symbol"), records: [], entryLinks: officialFilingLinks(str(input, "symbol")) }),
   "market.history": (input) => priceHistory(str(input, "symbol"), str(input, "range", "6mo"), str(input, "interval", "1d"), market(input)),
   "market.indianSnapshot": async (input) => {
-    const snap = await snapshot(str(input, "symbol"), "IN");
+    const symbol = str(input, "symbol");
+    const [snap, analysis, news] = await Promise.all([
+      snapshot(symbol, "IN"),
+      fundamentals(symbol, "IN").catch(() => null),
+      stockNews(symbol, 8).catch(() => null),
+    ]);
     return {
       available: Boolean(snap.quote),
       asOf: nowIso(),
-      errors: snap.quote ? null : snap.note ?? "unavailable",
+      errors: snap.quote ? null : (snap.note ?? "unavailable"),
       data: snap.quote
         ? {
             symbol: snap.symbol,
             name: snap.quote.name,
-            price: snap.quote.current,
-            change: snap.quote.change,
-            changePercent: snap.quote.changePercent,
-            dayHigh: snap.quote.dayHigh,
-            dayLow: snap.quote.dayLow,
-            volume: snap.quote.volume,
-            currency: snap.quote.currency,
-            exchange: snap.quote.exchange,
             source: snap.source,
+            quote: {
+              current: snap.quote.current,
+              change: snap.quote.change,
+              changePercent: snap.quote.changePercent,
+              dayHigh: snap.quote.dayHigh,
+              dayLow: snap.quote.dayLow,
+              volume: snap.quote.volume,
+              currency: snap.quote.currency,
+              exchange: snap.quote.exchange,
+              asOf: snap.quote.asOf,
+            },
+            fundamentals: {
+              pe: analysis?.metrics.pe?.value ?? null,
+              debtToEquity: analysis?.metrics.debtToEquity?.value ?? null,
+              returnOnEquity: analysis?.metrics.roe?.value ?? null,
+              profitMargin: analysis?.metrics.profitMargin?.value ?? null,
+              marketCap: analysis?.marketCap.value ?? null,
+              mutualFundHolding: null,
+            },
+            news: (news?.articles ?? []).map((a) => ({ headline: a.headline, source: a.source, url: a.url, publishedAt: a.publishedAt, sentiment: a.sentiment, impactScore: a.impactScore })),
           }
         : null,
     };
@@ -278,27 +345,49 @@ const HANDLERS: Record<string, Handler> = {
       report,
       news: { fetchedAt: news.fetchedAt, freshArticleCount: news.freshArticleCount, stale: news.stale, providerFailures: news.providerFailures },
     };
-  },
-  "market.multibaggerSignals": async (input) => {
+  },  "market.multibaggerSignals": async (input) => { // eslint-disable-line
     const strategyId = str(input, "strategyId", "buffett-munger");
+    const strategyNames: Record<string, string> = {
+      "buffett-munger": "Buffett / Munger quality",
+      "peter-lynch": "Peter Lynch growth at a reasonable price",
+      canslim: "CANSLIM",
+      greenblatt: "Greenblatt quality / value",
+      fisher: "Fisher scuttlebutt",
+      "small-cap-compounder": "Small-cap compounder",
+    };
     const universe = await nseUniverse();
-    const sample = universe.securities.slice(0, 12);
-    const scored = await Promise.all(
-      sample.map(async (security) => {
-        try {
-          const analysis = await fundamentals(security.symbol, "IN");
-          return { symbol: security.symbol, name: security.name, score: analysis.score, verdict: analysis.verdict, coverage: analysis.coverage.label, strategyId };
-        } catch {
-          return { symbol: security.symbol, name: security.name, score: 0, verdict: "Unavailable", coverage: "low", strategyId };
-        }
-      }),
-    );
+    const sample = universe.securities.slice(0, 15);
+    const signals = (
+      await Promise.all(
+        sample.map(async (security) => {
+          try {
+            const analysis = await fundamentals(security.symbol, "IN");
+            return {
+              symbol: security.symbol,
+              name: security.name,
+              sector: analysis.stockAnalysis.profile.sector || "Unclassified",
+              score: analysis.score,
+              label: analysis.multibaggerThesis.label,
+              verdict: analysis.verdict,
+              coverage: analysis.coverage.label,
+              criteria: analysis.institutionalReport.scoreWeights.map((w) => ({ key: w.key, label: w.label, score: w.score, max: w.max })),
+            };
+          } catch {
+            return { symbol: security.symbol, name: security.name, sector: "Unclassified", score: 0, label: "Insufficient evidence", verdict: "Unavailable", coverage: "Limited", criteria: [] };
+          }
+        }),
+      )
+    ).sort((a, b) => b.score - a.score);
+    const sectors = [...new Set(signals.map((s) => s.sector))];
     return {
       strategyId,
+      strategyName: strategyNames[strategyId] ?? strategyId,
       asOf: nowIso(),
       universeSize: universe.securities.length,
-      evaluated: scored.length,
-      candidates: scored.sort((a, b) => b.score - a.score),
+      screenedCount: signals.length,
+      sectors,
+      signals,
+      candidates: signals,
       note: "Rule-based screen over reported annual fundamentals for a sample of the NSE universe; not a prediction of returns.",
     };
   },
@@ -306,9 +395,17 @@ const HANDLERS: Record<string, Handler> = {
     symbol: str(input, "symbol"),
     status: "unavailable",
     authState: "not-required",
-    reason: "Option chains require a licensed exchange or broker feed; no free source is used here.",
-    asOf: nowIso(),
+    expiry: null,
+    underlyingPrice: null,
+    pcr: null,
+    maxPain: null,
+    atmIv: null,
+    contracts: [],
+    freshness: null,
     source: null,
+    nextStep: "Connect a licensed exchange or broker option-chain feed to enable this screen.",
+    error: "Option chains require a licensed exchange or broker feed; no free source is used here.",
+    asOf: nowIso(),
   }),
   "market.positioning": async (input) => ({ symbol: str(input, "symbol"), status: "unavailable", reason: "Participant-wise positioning is not available from open sources.", rows: [] }),
   "market.observations": async (input) => ({ symbol: str(input, "symbol"), market: [], fundamentals: [] }),
@@ -319,11 +416,44 @@ const HANDLERS: Record<string, Handler> = {
   "market.derivativesSources": () => [],
 
   /* ---- news ---- */
-  "news.stock": (input) => stockNews(str(input, "symbol"), Number(input?.limit ?? 40) || 40),
-  "news.archive": () => marketNews(120),
+  "news.stock": async (input) => {
+    const symbol = str(input, "symbol");
+    const marketId = market(input);
+    const payload = await stockNews(symbol, Number(input?.limit ?? 40) || 40);
+    return { available: payload.articles.length > 0, symbol: payload.symbol, marketId, providerFailures: payload.providerFailures, freshArticleCount: payload.freshArticleCount, stale: payload.stale, fetchedAt: payload.fetchedAt, articles: payload.articles, sources: payload.sources, error: null };
+  },
+  "news.archive": async (input) => {
+    const days = Number(input?.days ?? 30) || 30;
+    const payload = await marketNews(200);
+    const symbol = str(input, "symbol");
+    const articles = symbol ? payload.articles.filter((a) => a.symbol === symbol || a.headline.toUpperCase().includes(symbol)) : payload.articles;
+    const sourceCoverage = [...new Set(articles.map((a) => a.source))].map((source) => ({ source, count: articles.filter((a) => a.source === source).length }));
+    return {
+      coverage: articles.length ? "available" : "empty",
+      missingCoverage: [],
+      days,
+      startDate: new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10),
+      endDate: new Date().toISOString().slice(0, 10),
+      sourceCoverage,
+      articles,
+    };
+  },
   "news.status": async () => {
-    const payload = await marketNews(10);
-    return { lastRefreshAt: payload.fetchedAt, articleCount: payload.articles.length, providerFailures: payload.providerFailures, stale: payload.stale, sources: payload.sources };
+    const payload = await marketNews(200);
+    const universe = await nseUniverse().catch(() => ({ securities: [] as Array<{ symbol: string }> }));
+    const covered = new Set(payload.articles.map((a) => a.symbol).filter(Boolean));
+    return {
+      running: true,
+      coverageMode: "on-device open sources",
+      articlesStored: payload.articles.length,
+      universeCount: universe.securities.length,
+      coveredSymbols: [...covered].length,
+      lastSuccessAt: payload.fetchedAt,
+      lastError: payload.providerFailures ? `${payload.providerFailures} provider(s) failed on the last refresh.` : null,
+      providerFailures: payload.providerFailures,
+      stale: payload.stale,
+      sources: payload.sources,
+    };
   },
   "news.refresh": async (input) => stockNews(str(input, "symbol"), 40),
   "news.flagIrrelevant": async (input) => localSet("news.flagged", input ?? {}),
@@ -355,7 +485,11 @@ const HANDLERS: Record<string, Handler> = {
   /* ---- research desk ---- */
   "researchDesk.run": (input) => researchRun(input),
   "researchDesk.runOwned": (input) => researchRun(input),
-  "researchDesk.status": async () => ({ status: "completed", runtime: "deterministic", note: "Runs on-device over open sources." }),
+  "researchDesk.status": async (input) => {
+    const runId = str(input, "runId");
+    const last = await localGet<{ runId?: string } | null>("research.last", null);
+    return { run: last && (!runId || last.runId === runId) ? last : null, status: last ? "completed" : "idle", runtime: "deterministic", note: "Runs on-device over open sources." };
+  },
   "researchDesk.listOwned": async () => await localGet("research.runs", []),
   "researchDesk.exportOwned": (input) => researchRun(input),
   "researchDesk.retry": (input) => researchRun(input),
@@ -380,14 +514,22 @@ const HANDLERS: Record<string, Handler> = {
   "providers.health": () => providerRegistry().map((p) => ({ key: p.key, name: p.name, status: p.status, latencyMs: p.latencyMs, lastSuccessAt: p.lastSuccessAt, lastError: p.lastError })),
   "providers.history": () => [],
   "providers.runNow": async (input) => ({ provider: str(input, "key", str(input, "provider")), triggered: true, at: nowIso() }),
-  "providers.gdeltBudget": async () => ({ used: 0, limit: 0, note: "GDELT is called on-device without a shared budget." }),
+  "providers.gdeltBudget": async () => ({ requestsInWindow: 0, maxRequestsPerWindow: 0, remaining: null, nextAllowedAt: null, consecutiveFailures: 0, note: "GDELT is called on-device with no shared server-side budget." }),
   "providers.webResearch": async () => ({ results: [], note: "Web research requires a search provider credential." }),
   "sources.list": () => providerRegistry().map((p) => ({ key: p.key, name: p.name, capability: p.capability, endpoint: p.endpoint, markets: p.markets, credentialState: p.credentialState, licensing: p.licensing, status: p.status })),
   "sources.health": () => providerRegistry().map((p) => ({ key: p.key, status: p.status, latencyMs: p.latencyMs, lastSuccessAt: p.lastSuccessAt, lastError: p.lastError })),
   "sources.latest": async () => [],
   "sources.nseCollectors": async () => [{ key: "nse-equity-master", status: "live", cadence: "daily" }, { key: "nse-index-constituents", status: "live", cadence: "daily" }, { key: "nse-fii-dii", status: "live", cadence: "intraday" }],
   "sources.regionalCollectors": async () => [],
-  "sources.publicMacro": async () => (await multiAssetTiming()).signals,
+  "sources.publicMacro": async () => {
+    const timing = await multiAssetTiming();
+    const macro = timing.signals.filter((s) => s.type === "macro");
+    return {
+      checkedAt: timing.generatedAt,
+      ecb: macro.filter((s) => /gold|crude|usd/i.test(s.name)).map((s) => ({ indicator: s.name, period: s.freshness ?? "unavailable", value: s.changePct, unit: "% change" })),
+      oecd: [],
+    };
+  },
   "sources.runNseCollector": async (input) => ({ collector: str(input, "collector", str(input, "key")), triggered: true, at: nowIso() }),
 
   /* ---- account (device-local) ---- */
@@ -409,9 +551,12 @@ const HANDLERS: Record<string, Handler> = {
   "account.alertRuleUpsert": async (input) => localSet("alertRules", [...(await localGet<unknown[]>("alertRules", [])), input ?? {}]),
   "account.alertRuleRevoke": async () => localSet("alertRules", []),
   "account.alertResults": async () => localGet("alertResults", []),
-  "account.alertResultsPage": async () => ({ items: await localGet("alertResults", []), total: 0 }),
+  "account.alertResultsPage": async () => ({ items: await localGet("alertResults", []), total: 0, nextCursor: null, hasMore: false }),
   "account.alertResultDetail": async (input) => ({ id: str(input, "id"), detail: null }),
-  "account.notifications": async () => localGet("notifications", []),
+  "account.notifications": async () => {
+    const items = await localGet<Array<{ readAt?: string | null }>>("notifications", []);
+    return { items, nextCursor: null, unreadCount: items.filter((i) => !i.readAt).length };
+  },
   "account.notificationsReadAll": async () => localSet("notifications", []),
   "account.notificationRead": async () => localSet("notifications", []),
   "account.pushTokenUpsert": async (input) => localSet("pushToken", input ?? {}),

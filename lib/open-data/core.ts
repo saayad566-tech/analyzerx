@@ -7,6 +7,9 @@
  * number — an unavailable field stays unavailable).
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getMarketProfile, type MarketId } from "../market-regions";
+
+export type { MarketId };
 
 export type SourceStatus =
   | "live"
@@ -372,8 +375,6 @@ export function parseRss(xml: string): RssItem[] {
  * Symbol helpers
  * ------------------------------------------------------------------ */
 
-export type MarketId = "IN" | "US" | "UK" | "JP" | "EU" | "GLOBAL";
-
 export function isIndexSymbol(symbol: string) {
   return /^\^/.test(symbol);
 }
@@ -383,39 +384,37 @@ export function toYahooSymbol(symbol: string, marketId: MarketId = "IN"): string
   const clean = symbol.trim().toUpperCase();
   if (!clean) return clean;
   if (isIndexSymbol(clean)) return clean;
-  if (/\.(NS|BO|L|T|DE|PA|AS|MI|HK|SI|AX)$/.test(clean)) return clean;
+  if (/\.(NS|BO|L|T|DE|PA|AS|MI|HK|SI|AX|TO|V|F)$/.test(clean)) return clean;
   if (/-(USD|INR|EUR|GBP)$/.test(clean)) return clean;
   switch (marketId) {
     case "IN":
       return `${clean}.NS`;
-    case "UK":
+    case "GB":
       return `${clean}.L`;
     case "JP":
       return `${clean}.T`;
-    case "EU":
+    case "DE":
+    case "FR":
       return `${clean}.DE`;
+    case "CA":
+      return `${clean}.TO`;
+    case "AU":
+      return `${clean}.AX`;
+    case "HK":
+      return `${clean}.HK`;
+    case "SG":
+      return `${clean}.SI`;
     default:
       return clean;
   }
 }
 
 export function toDisplaySymbol(yahooSymbol: string): string {
-  return yahooSymbol.replace(/\.(NS|BO|L|T|DE|PA|AS|MI|HK|SI|AX)$/, "");
+  return yahooSymbol.replace(/\.(NS|BO|L|T|DE|PA|AS|MI|HK|SI|AX|TO|V|F)$/, "");
 }
 
 export function currencyForMarket(marketId: MarketId): string {
-  switch (marketId) {
-    case "IN":
-      return "INR";
-    case "UK":
-      return "GBP";
-    case "JP":
-      return "JPY";
-    case "EU":
-      return "EUR";
-    default:
-      return "USD";
-  }
+  return getMarketProfile(marketId).currency;
 }
 
 export function round(value: number, digits = 2): number {

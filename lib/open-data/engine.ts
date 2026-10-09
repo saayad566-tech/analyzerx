@@ -6,6 +6,7 @@
  * honest, explicitly-labelled empty/derived state when it does not. Nothing is
  * ever fabricated.
  */
+import { getMarketProfile } from "../market-regions";
 import {
   cached,
   clamp,
@@ -82,17 +83,17 @@ export type ProviderRecord = {
 };
 
 const PROVIDER_DEFS: Omit<ProviderRecord, "status" | "lastSuccessAt" | "lastError" | "latencyMs">[] = [
-  { key: "yahoo-finance", name: "Yahoo Finance", capability: "quotes", markets: ["IN", "US", "UK", "JP", "EU", "GLOBAL"], endpoint: "https://query1.finance.yahoo.com/v8/finance/chart", credentialState: "none-required", licensing: "Public endpoint, no key. Redistribution of raw data is restricted; shown for personal research use.", freshnessTargetSeconds: 60 },
-  { key: "yahoo-search", name: "Yahoo Finance Search", capability: "search", markets: ["IN", "US", "UK", "JP", "EU", "GLOBAL"], endpoint: "https://query2.finance.yahoo.com/v1/finance/search", credentialState: "none-required", licensing: "Public endpoint, no key.", freshnessTargetSeconds: 3600 },
-  { key: "yahoo-fundamentals", name: "Yahoo Finance Fundamentals", capability: "fundamentals", markets: ["IN", "US", "UK", "JP", "EU", "GLOBAL"], endpoint: "https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries", credentialState: "none-required", licensing: "Public endpoint, no key.", freshnessTargetSeconds: 86_400 },
+  { key: "yahoo-finance", name: "Yahoo Finance", capability: "quotes", markets: ["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"], endpoint: "https://query1.finance.yahoo.com/v8/finance/chart", credentialState: "none-required", licensing: "Public endpoint, no key. Redistribution of raw data is restricted; shown for personal research use.", freshnessTargetSeconds: 60 },
+  { key: "yahoo-search", name: "Yahoo Finance Search", capability: "search", markets: ["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"], endpoint: "https://query2.finance.yahoo.com/v1/finance/search", credentialState: "none-required", licensing: "Public endpoint, no key.", freshnessTargetSeconds: 3600 },
+  { key: "yahoo-fundamentals", name: "Yahoo Finance Fundamentals", capability: "fundamentals", markets: ["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"], endpoint: "https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries", credentialState: "none-required", licensing: "Public endpoint, no key.", freshnessTargetSeconds: 86_400 },
   { key: "nse-equity-master", name: "NSE Equity Master", capability: "universe", markets: ["IN"], endpoint: "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv", credentialState: "none-required", licensing: "NSE public archive.", freshnessTargetSeconds: 86_400 },
   { key: "nse-index-constituents", name: "NSE Index Constituents", capability: "sectors", markets: ["IN"], endpoint: "https://nsearchives.nseindia.com/content/indices", credentialState: "none-required", licensing: "NSE public archive.", freshnessTargetSeconds: 86_400 },
   { key: "nse-fii-dii", name: "NSE FII/DII", capability: "flows", markets: ["IN"], endpoint: "https://www.nseindia.com/api/fiidiiTradeReact", credentialState: "none-required", licensing: "NSE public endpoint.", freshnessTargetSeconds: 3600 },
-  { key: "google-news-rss", name: "Google News RSS", capability: "news", markets: ["IN", "US", "UK", "JP", "EU", "GLOBAL"], endpoint: "https://news.google.com/rss/search", credentialState: "none-required", licensing: "RSS feed; links to original publishers.", freshnessTargetSeconds: 600 },
-  { key: "gdelt", name: "GDELT DOC 2.0", capability: "news", markets: ["GLOBAL"], endpoint: "https://api.gdeltproject.org/api/v2/doc/doc", credentialState: "none-required", licensing: "Open API.", freshnessTargetSeconds: 900 },
+  { key: "google-news-rss", name: "Google News RSS", capability: "news", markets: ["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"], endpoint: "https://news.google.com/rss/search", credentialState: "none-required", licensing: "RSS feed; links to original publishers.", freshnessTargetSeconds: 600 },
+  { key: "gdelt", name: "GDELT DOC 2.0", capability: "news", markets: ["US", "GB", "DE", "FR", "JP", "IN"], endpoint: "https://api.gdeltproject.org/api/v2/doc/doc", credentialState: "none-required", licensing: "Open API.", freshnessTargetSeconds: 900 },
   { key: "sec-edgar", name: "SEC EDGAR", capability: "filings", markets: ["US"], endpoint: "https://data.sec.gov", credentialState: "none-required", licensing: "Public domain, descriptive User-Agent required.", freshnessTargetSeconds: 3600 },
-  { key: "ecb-sdmx", name: "ECB SDMX", capability: "macro", markets: ["EU", "GLOBAL"], endpoint: "https://data-api.ecb.europa.eu/service/data", credentialState: "none-required", licensing: "Open data.", freshnessTargetSeconds: 86_400 },
-  { key: "coingecko", name: "CoinGecko", capability: "crypto", markets: ["GLOBAL"], endpoint: "https://api.coingecko.com/api/v3", credentialState: "none-required", licensing: "Free tier, attribution required.", freshnessTargetSeconds: 300 },
+  { key: "ecb-sdmx", name: "ECB SDMX", capability: "macro", markets: ["DE", "FR"], endpoint: "https://data-api.ecb.europa.eu/service/data", credentialState: "none-required", licensing: "Open data.", freshnessTargetSeconds: 86_400 },
+  { key: "coingecko", name: "CoinGecko", capability: "crypto", markets: ["US", "GB", "DE", "FR", "JP", "IN"], endpoint: "https://api.coingecko.com/api/v3", credentialState: "none-required", licensing: "Free tier, attribution required.", freshnessTargetSeconds: 300 },
 ];
 
 const health = new Map<string, { status: SourceStatus; lastSuccessAt: string | null; lastError: string | null; latencyMs: number | null }>();
@@ -212,7 +213,7 @@ export type SearchPayload = {
   errors: { yahooSearch: string | null; nseUniverse: string | null };
 };
 
-const MARKET_LABELS: Record<string, string> = { IN: "India", US: "United States", UK: "United Kingdom", JP: "Japan", EU: "Europe", GLOBAL: "Global" };
+const marketLabelOf = (marketId: MarketId) => getMarketProfile(marketId).country;
 
 export async function search(query: string, marketId: MarketId = "IN"): Promise<SearchPayload> {
   const q = query.trim();
@@ -258,7 +259,7 @@ export async function search(query: string, marketId: MarketId = "IN"): Promise<
   return {
     query: q,
     marketId,
-    marketLabel: MARKET_LABELS[marketId] ?? marketId,
+    marketLabel: marketLabelOf(marketId),
     results: scoped.slice(0, 25),
     eventProjections: [],
     sources: { yahooSearch: !yahooError, nseUniverse: !nseError },
@@ -314,191 +315,8 @@ export async function nseUniverse(): Promise<UniverseSnapshot> {
  * Fundamentals
  * ------------------------------------------------------------------ */
 
-export type MetricValue = { value: number | null; basis: "reported" | "derived" | "estimated" | "unavailable"; asOf: string | null; note?: string };
-
-export type FundamentalAnalysis = {
-  requestedSymbol: string;
-  resolvedSymbol: string;
-  companyName: string;
-  asOf: string;
-  market: { exchange: string; country: string; currency: string };
-  score: number;
-  verdict: string;
-  stockAnalysis: { conclusion: string };
-  metrics: {
-    revenueGrowth: MetricValue;
-    eps: MetricValue;
-    operatingCashFlow: MetricValue;
-    freeCashFlow: MetricValue;
-    pe: MetricValue;
-    netMargin: MetricValue;
-    debtToEquity: MetricValue;
-  };
-  quantitativeMetrics: Record<string, MetricValue>;
-  institutionalReport: {
-    rating: string;
-    confidenceScore: number;
-    freshness: string;
-    scoreWeights: Array<{ label: string; score: number; max: number; calculation: string }>;
-  };
-  fairValue: {
-    currency: string;
-    currentPrice: number | null;
-    lowValue: number | null;
-    baseValue: number | null;
-    highValue: number | null;
-    basis: "reported" | "derived" | "estimated" | "unavailable";
-    dcf: { valuePerShare: number | null; basis: "derived" | "unavailable"; note: string };
-  };
-  multibaggerThesis: { score: number; confidence: string; beginnerSummary: string };
-  coverage: { label: string; sections: Array<{ label: string; score: number; max: number; status: string; note: string }> };
-  risks: string[];
-  warnings: string[];
-  sources: Array<{ name: string; note: string; status: string }>;
-};
-
-const UNKNOWN_METRIC: MetricValue = { value: null, basis: "unavailable", asOf: null };
-
-export async function fundamentals(symbol: string, marketId: MarketId = "IN"): Promise<FundamentalAnalysis> {
-  const yahooSymbol = toYahooSymbol(symbol, marketId);
-  const currency = currencyForMarket(marketId);
-  let metrics: Record<string, AnnualMetric[]> = {};
-  let companyName = symbol.toUpperCase();
-  let exchange = "";
-  let currentPrice: number | null = null;
-  let priceAsOf: string | null = null;
-  const warnings: string[] = [];
-
-  const [fundResult, quoteResult] = await Promise.allSettled([
-    cached(`fund:${yahooSymbol}`, TTL.fundamentals, () => tracked("yahoo-fundamentals", () => yahooFundamentals(yahooSymbol))),
-    cached(`quote:${yahooSymbol}`, TTL.quote, () => tracked("yahoo-finance", () => yahooChart(yahooSymbol, "5d", "1d"))),
-  ]);
-
-  if (fundResult.status === "fulfilled") {
-    metrics = fundResult.value.value.data.metrics;
-  } else {
-    warnings.push(`Fundamental timeseries unavailable: ${String(fundResult.reason).slice(0, 140)}`);
-  }
-  if (quoteResult.status === "fulfilled") {
-    const quote = quoteFromSeries(quoteResult.value.value.series);
-    companyName = quote.name || companyName;
-    exchange = quote.exchange;
-    currentPrice = quote.current;
-    priceAsOf = quote.asOf;
-  } else {
-    warnings.push(`Quote unavailable: ${String(quoteResult.reason).slice(0, 140)}`);
-  }
-
-  const latest = (key: string): AnnualMetric | null => {
-    const points = metrics[key];
-    if (!points?.length) return null;
-    return [...points].sort((a, b) => a.asOfDate.localeCompare(b.asOfDate)).slice(-1)[0];
-  };
-  const metricOf = (key: string): MetricValue => {
-    const point = latest(key);
-    return point ? { value: point.raw, basis: "reported", asOf: point.asOfDate } : UNKNOWN_METRIC;
-  };
-
-  const revenue = latest("annualTotalRevenue");
-  const netIncome = latest("annualNetIncome");
-  const equity = latest("annualStockholdersEquity");
-  const debt = latest("annualTotalDebt");
-  const revenueGrowth = yoyGrowth(metrics.annualTotalRevenue);
-  const netMargin = revenue && netIncome && revenue.raw ? round((netIncome.raw / revenue.raw) * 100, 2) : null;
-  const debtToEquity = equity && debt && equity.raw ? round(debt.raw / equity.raw, 2) : null;
-  const pe = currentPrice && latest("annualDilutedEPS")?.raw ? round(currentPrice / (latest("annualDilutedEPS")?.raw ?? 1), 2) : null;
-
-  const finMetrics: FundamentalAnalysis["metrics"] = {
-    revenueGrowth: revenueGrowth === null ? UNKNOWN_METRIC : { value: revenueGrowth, basis: "derived", asOf: revenue?.asOfDate ?? null, note: "Year-over-year, latest two annual periods." },
-    eps: metricOf("annualDilutedEPS"),
-    operatingCashFlow: metricOf("annualOperatingCashFlow"),
-    freeCashFlow: metricOf("annualFreeCashFlow"),
-    pe: pe === null ? UNKNOWN_METRIC : { value: pe, basis: "derived", asOf: priceAsOf, note: "Latest reported price ÷ latest annual diluted EPS." },
-    netMargin: netMargin === null ? UNKNOWN_METRIC : { value: netMargin, basis: "derived", asOf: netIncome?.asOfDate ?? null, note: "Net income ÷ total revenue." },
-    debtToEquity: debtToEquity === null ? UNKNOWN_METRIC : { value: debtToEquity, basis: "derived", asOf: equity?.asOfDate ?? null, note: "Total debt ÷ stockholders' equity." },
-  };
-
-  // Transparent, rule-based score over reported fundamentals only.
-  const pillars: Array<{ label: string; score: number; max: number; calculation: string }> = [];
-  const scoreOf = (value: number | null, good: number, bad: number) =>
-    value === null ? 0 : clamp(round(((value - bad) / (good - bad)) * 100), 0, 100);
-  pillars.push({ label: "Revenue growth", score: round((scoreOf(finMetrics.revenueGrowth.value, 20, -10) / 100) * 25), max: 25, calculation: "Latest annual revenue YoY growth, scaled between -10% and +20%." });
-  pillars.push({ label: "Profitability", score: round((scoreOf(finMetrics.netMargin.value, 20, 0) / 100) * 25), max: 25, calculation: "Net margin, scaled between 0% and 20%." });
-  pillars.push({ label: "Cash conversion", score: round((scoreOf(finMetrics.freeCashFlow.value && revenue?.raw ? (finMetrics.freeCashFlow.value / revenue.raw) * 100 : null, 15, 0) / 100) * 25), max: 25, calculation: "Free cash flow ÷ revenue, scaled between 0% and 15%." });
-  pillars.push({ label: "Balance sheet", score: round((scoreOf(finMetrics.debtToEquity.value === null ? null : -finMetrics.debtToEquity.value, -0.2, -1.5) / 100) * 25), max: 25, calculation: "Debt-to-equity, lower is better (scaled between 0.2x and 1.5x)." });
-  const score = pillars.reduce((sum, p) => sum + p.score, 0);
-  const coverageSections = [
-    { label: "Market quote", score: currentPrice !== null ? 20 : 0, max: 20, status: currentPrice !== null ? "available" : "unavailable", note: "Live price from Yahoo Finance." },
-    { label: "Financial statements", score: revenue ? 25 : 0, max: 25, status: revenue ? "available" : "unavailable", note: "Annual reported values." },
-    { label: "Valuation inputs", score: pe !== null ? 15 : 0, max: 15, status: pe !== null ? "derived" : "unavailable", note: "Derived from price and reported EPS." },
-    { label: "News coverage", score: 0, max: 20, status: "see news screen", note: "Company news is available on the news screens." },
-    { label: "Filings", score: 0, max: 20, status: "unavailable", note: "No validated filing adapter for this market." },
-  ];
-  const coverageScore = coverageSections.reduce((sum, s) => sum + s.score, 0);
-  const coverageLabel = coverageScore >= 70 ? "high" : coverageScore >= 40 ? "partial" : "low";
-  const confidence = clamp(40 + coverageScore / 2);
-
-  const fcf = finMetrics.freeCashFlow.value;
-  const intrinsic = fcf && latest("annualDilutedEPS")?.raw && currentPrice ? round(currentPrice * 1.0, 2) : null;
-
-  const risks: string[] = [];
-  if (finMetrics.debtToEquity.value !== null && finMetrics.debtToEquity.value > 1) risks.push(`Leverage is elevated: debt-to-equity ${finMetrics.debtToEquity.value}x.`);
-  if (finMetrics.netMargin.value !== null && finMetrics.netMargin.value < 5) risks.push(`Thin net margin: ${finMetrics.netMargin.value}%.`);
-  if (finMetrics.revenueGrowth.value !== null && finMetrics.revenueGrowth.value < 0) risks.push(`Revenue declined ${finMetrics.revenueGrowth.value}% year over year.`);
-
-  return {
-    requestedSymbol: symbol.toUpperCase(),
-    resolvedSymbol: toDisplaySymbol(yahooSymbol),
-    companyName,
-    asOf: nowIso(),
-    market: { exchange: exchange || (marketId === "IN" ? "NSE" : ""), country: MARKET_LABELS[marketId] ?? marketId, currency },
-    score,
-    verdict: score >= 70 ? "Constructive on reported fundamentals" : score >= 45 ? "Mixed on reported fundamentals" : "Weak on reported fundamentals",
-    stockAnalysis: {
-      conclusion:
-        `${companyName} scores ${score}/100 on reported fundamentals alone. ` +
-        (finMetrics.revenueGrowth.value !== null ? `Revenue grew ${finMetrics.revenueGrowth.value}% year over year. ` : "Revenue growth is unavailable. ") +
-        (finMetrics.netMargin.value !== null ? `Net margin is ${finMetrics.netMargin.value}%. ` : "") +
-        "Scores are rule-based and evidence-gated; they are not investment advice.",
-    },
-    metrics: finMetrics,
-    quantitativeMetrics: {
-      revenue: metricOf("annualTotalRevenue"),
-      netIncome: metricOf("annualNetIncome"),
-      totalDebt: metricOf("annualTotalDebt"),
-      stockholdersEquity: metricOf("annualStockholdersEquity"),
-      ebitda: metricOf("annualEBITDA"),
-      grossProfit: metricOf("annualGrossProfit"),
-    },
-    institutionalReport: {
-      rating: score >= 70 ? "Constructive" : score >= 45 ? "Neutral" : "Cautious",
-      confidenceScore: confidence,
-      freshness: `Built from reported annual statements, latest period ${revenue?.asOfDate ?? "unavailable"}.`,
-      scoreWeights: pillars,
-    },
-    fairValue: {
-      currency,
-      currentPrice,
-      lowValue: currentPrice !== null ? round(currentPrice * 0.85, 2) : null,
-      baseValue: intrinsic,
-      highValue: currentPrice !== null ? round(currentPrice * 1.15, 2) : null,
-      basis: currentPrice !== null ? "derived" : "unavailable",
-      dcf: { valuePerShare: null, basis: "unavailable", note: "A discounted-cash-flow value is not computed because a full cash-flow forecast is not available from open sources." },
-    },
-    multibaggerThesis: {
-      score: clamp(round(score * 0.9)),
-      confidence: coverageLabel === "high" ? "medium" : "low",
-      beginnerSummary: `A quick quality read: ${score}/100 from growth, profitability, cash conversion and leverage. Coverage is ${coverageLabel}, so treat it as a starting point, not a conclusion.`,
-    },
-    coverage: { label: coverageLabel, sections: coverageSections },
-    risks,
-    warnings,
-    sources: [
-      { name: "Yahoo Finance fundamentals timeseries", note: "Annual reported financial statement values.", status: fundResult.status === "fulfilled" ? "live" : "unavailable" },
-      { name: "Yahoo Finance quote", note: "Latest market price observation.", status: quoteResult.status === "fulfilled" ? "live" : "unavailable" },
-    ],
-  };
-}
+export { buildFundamentalAnalysis as fundamentals } from "./fundamentals";
+export type { FundamentalAnalysis } from "@/server/fundamental-analysis";
 
 /* ------------------------------------------------------------------ *
  * News
