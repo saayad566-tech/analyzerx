@@ -2,9 +2,9 @@ import { createTRPCReact } from "@trpc/react-query";
 import { httpBatchLink } from "@trpc/client";
 import superjson from "superjson";
 import type { AppRouter } from "@/server/routers";
-import { getApiBaseUrl } from "@/constants/oauth";
 import * as Auth from "@/lib/_core/auth";
 import { assertJsonApiResponse } from "@/lib/api-response-validation";
+import { localLink } from "@/lib/open-data/link";
 
 /**
  * tRPC React client for type-safe API calls.
@@ -56,11 +56,21 @@ export async function fetchWithTimeout(
  * Creates the tRPC client with proper configuration.
  * Call this once in your app's root layout.
  */
+/**
+ * AnalyzerX 1.4.0 is on-device first: every procedure resolves locally against
+ * free/open sources through `localLink`, so the app needs no backend to show
+ * live data. A remote server is used only when one is explicitly configured
+ * through EXPO_PUBLIC_API_BASE_URL.
+ */
 export function createTRPCClient() {
+  const remoteBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+  if (!remoteBaseUrl) {
+    return trpc.createClient({ links: [localLink] });
+  }
   return trpc.createClient({
     links: [
       httpBatchLink({
-        url: `${getApiBaseUrl()}/api/trpc`,
+        url: `${remoteBaseUrl.replace(/\/$/, "")}/api/trpc`,
         // tRPC v11: transformer MUST be inside httpBatchLink, not at root
         transformer: superjson,
         async headers() {
