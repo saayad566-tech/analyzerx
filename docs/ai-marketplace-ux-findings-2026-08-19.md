@@ -1,0 +1,7 @@
+# AI Marketplace UX Findings — 2026-08-19
+
+Google Play’s management pattern separates discovery from lifecycle management: users can open a profile area, choose “Manage apps & device,” inspect “Updates available,” update one item or update all, and enable per-item automatic updates. The product therefore establishes a clear installed inventory, explicit update actions, and settings for bandwidth/update policy. Source: [Google Play Help](https://support.google.com/googleplay/answer/113412?hl=en).
+
+Google AI Studio’s current entry surface combines a broad “experiment with models” area, capability-specific launch points, API/SDK/tool sections, and a gallery of remixable projects. It also uses an idea prompt as a fast entry point and exposes model/tool categories as first-class navigation. AnalyzerX should adapt this by making model capability, hardware fit, install action, and “use now” action visible on every tool card rather than presenting names only. Source: [Google AI Studio](https://aistudio.google.com/welcome).
+
+Initial product direction: name the AnalyzerX marketplace **ForgeShelf**. It should be an in-app library of open-source local AI models and finance/developer tools, with verified source links, license, checksum, size, required RAM/storage, supported Android ABI, runtime backend, privacy mode, install state, update state, and one-tap launch into the Assistant or relevant AnalyzerX workflow.
