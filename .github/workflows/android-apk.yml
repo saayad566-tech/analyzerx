@@ -43,7 +43,11 @@ jobs:
           ANALYZERX_SOURCE_REVISION: ${{ github.sha }}
       - run: pnpm check
       - run: pnpm test -- --run
-      - run: cd android && ./gradlew assembleRelease --no-daemon --max-workers=1 -Dorg.gradle.jvmargs="-Xmx2200m -XX:MaxMetaspaceSize=512m" -Dkotlin.daemon.jvm.options="-Xmx768m"
+      - name: Build release APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --max-workers=1 -Dorg.gradle.jvmargs="-Xmx2200m -XX:MaxMetaspaceSize=512m" -Dkotlin.daemon.jvm.options="-Xmx768m"
         env:
           NODE_OPTIONS: --max-old-space-size=1536
           CI: "1"
