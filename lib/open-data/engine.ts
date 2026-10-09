@@ -147,43 +147,60 @@ export type MarketSnapshot = {
 };
 
 export async function snapshot(symbol: string, marketId: MarketId = "IN"): Promise<MarketSnapshot> {
-  const yahooSymbol = toYahooSymbol(symbol, marketId);
-  try {
-    const result = await cached(`quote:${yahooSymbol}`, TTL.quote, () =>
-      tracked("yahoo-finance", () => yahooChart(yahooSymbol, "5d", "1d")),
-    );
-    const quote = quoteFromSeries(result.value.series);
-    return {
-      symbol: quote.displaySymbol || symbol.toUpperCase(),
-      source: "Yahoo Finance",
-      sourceUrl: result.value.url,
-      asOf: quote.asOf ?? nowIso(),
-      status: result.fromCache && result.ageMs > TTL.quote ? "delayed" : "live",
-      quote,
-      provenance: {
-        sourceKey: "yahoo-finance",
-        sourceName: "Yahoo Finance",
-        sourceType: "market-data",
-        url: result.value.url,
-        retrievedAt: nowIso(),
-        asOf: quote.asOf,
-        status: result.fromCache && result.ageMs > TTL.quote ? "delayed" : "live",
-        latencyMs: result.value.latencyMs,
-        basis: "reported",
-      },
-    };
-  } catch (error) {
-    return {
-      symbol: symbol.toUpperCase(),
-      source: "Yahoo Finance",
-      sourceUrl: `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}`,
-      asOf: nowIso(),
-      status: "unavailable",
-      quote: null,
-      provenance: unavailableProvenance("yahoo-finance", "Yahoo Finance", "market-data", `chart/${yahooSymbol}`, String(error)),
-      note: `Live quote unavailable: ${String(error).slice(0, 160)}`,
-    };
+  const primary = toYahooSymbol(symbol, marketId);
+  const clean = symbol.trim().toUpperCase();
+  const hasSuffix = /\.(NS|BO|L|T|DE|PA|AS|MI|HK|SI|AX|TO|V|F)$/.test(clean) || clean.startsWith("^") || clean.includes("-");
+  // Indian names trade on both exchanges: fall back to the BSE listing (.BO)
+  // when the NSE listing (.NS) is unavailable, so both NSE and BSE are covered.
+  const candidates = !hasSuffix && marketId === "IN" ? [primary, `${clean}.BO`] : [primary];
+
+  let lastError: unknown = null;
+  for (const yahooSymbol of candidates) {
+    try {
+      const result = await cached(`quote:${yahooSymbol}`, TTL.quote, () =>
+        tracked("yahoo-finance", () => yahooChart(yahooSymbol, "5d", "1d")),
+      );
+      const quote = quoteFromSeries(result.value.series);
+      if (quote.current === null && candidates.length > 1) {
+        lastError = new Error(`No price returned for ${yahooSymbol}`);
+        continue;
+      }
+      const onBse = yahooSymbol.endsWith(".BO");
+      const status: SourceStatus = result.fromCache && result.ageMs > TTL.quote ? "delayed" : "live";
+      return {
+        symbol: quote.displaySymbol || clean,
+        source: onBse ? "Yahoo Finance (BSE)" : "Yahoo Finance (NSE)",
+        sourceUrl: result.value.url,
+        asOf: quote.asOf ?? nowIso(),
+        status,
+        quote,
+        provenance: {
+          sourceKey: "yahoo-finance",
+          sourceName: onBse ? "Yahoo Finance · BSE listing" : "Yahoo Finance · NSE listing",
+          sourceType: "market-data",
+          url: result.value.url,
+          retrievedAt: nowIso(),
+          asOf: quote.asOf,
+          status,
+          latencyMs: result.value.latencyMs,
+          basis: "reported",
+        },
+      };
+    } catch (error) {
+      lastError = error;
+    }
   }
+
+  return {
+    symbol: clean,
+    source: "Yahoo Finance",
+    sourceUrl: `https://query1.finance.yahoo.com/v8/finance/chart/${primary}`,
+    asOf: nowIso(),
+    status: "unavailable",
+    quote: null,
+    provenance: unavailableProvenance("yahoo-finance", "Yahoo Finance", "market-data", `chart/${primary}`, String(lastError)),
+    note: `Live quote unavailable: ${String(lastError).slice(0, 160)}`,
+  };
 }
 
 export async function quotes(symbols: string[], marketId: MarketId = "IN"): Promise<MarketSnapshot[]> {

@@ -258,4 +258,55 @@ describe("local tRPC link resolves every screen path without a server", () => {
     expect(answer.answer.length).toBeGreaterThan(20);
     expect(answer.runtime).toBe("deterministic");
   }, NETWORK_TIMEOUT);
+
+  it("chat.ask matches the screen contract", async () => {
+    const r = (await resolveLocal("chat.ask", { message: "What is happening with Reliance?", symbol: "RELIANCE", marketId: "IN" })) as Record<string, unknown>;
+    expect(typeof r.answer).toBe("string");
+    expect(["high", "medium", "low"]).toContain(r.confidence);
+    expect(Array.isArray(r.sources)).toBe(true);
+    expect(Array.isArray(r.limitations)).toBe(true);
+    expect(Array.isArray(r.suggestedQuestions)).toBe(true);
+    expect(r).toHaveProperty("dataAsOf");
+    for (const s of r.sources as Array<Record<string, unknown>>) {
+      expect(typeof s.label).toBe("string");
+      expect(typeof s.detail).toBe("string");
+    }
+  }, NETWORK_TIMEOUT);
+
+  it("chat.ground matches the screen contract", async () => {
+    const r = (await resolveLocal("chat.ground", { message: "Reliance", symbol: "RELIANCE" })) as Record<string, unknown>;
+    expect(Array.isArray(r.sources)).toBe(true);
+    expect(r).toHaveProperty("dataAsOf");
+    expect(typeof r.context).toBe("string");
+  }, NETWORK_TIMEOUT);
+
+  it("chat.general returns a non-empty answer", async () => {
+    const r = (await resolveLocal("chat.general", { message: "How is the market today?" })) as { answer: string };
+    expect(typeof r.answer).toBe("string");
+    expect(r.answer.length).toBeGreaterThan(10);
+  }, NETWORK_TIMEOUT);
+
+  it("sector constituents honour sort and direction", async () => {
+    const desc = (await resolveLocal("market.sectorConstituents", { sector: "NIFTYBANK", sort: "score", direction: "desc" })) as { rows: Array<{ score: number | null }>; sort: string; direction: string };
+    expect(desc.sort).toBe("score");
+    expect(desc.direction).toBe("desc");
+    const scores = desc.rows.map((r) => r.score).filter((s): s is number => typeof s === "number");
+    for (let i = 1; i < scores.length; i += 1) expect(scores[i - 1]).toBeGreaterThanOrEqual(scores[i]);
+
+    const asc = (await resolveLocal("market.sectorConstituents", { sector: "NIFTYBANK", sort: "score", direction: "asc" })) as { rows: Array<{ score: number | null }> };
+    const ascScores = asc.rows.map((r) => r.score).filter((s): s is number => typeof s === "number");
+    for (let i = 1; i < ascScores.length; i += 1) expect(ascScores[i - 1]).toBeLessThanOrEqual(ascScores[i]);
+  }, NETWORK_TIMEOUT);
+
+  it("exposes security-wise flow state so the sector screen never infers it", async () => {
+    const r = (await resolveLocal("market.sectorConstituents", { sector: "NIFTY50" })) as { securityWiseFlow: { available: boolean; topFii: unknown[]; topDii: unknown[] } };
+    expect(r.securityWiseFlow.available).toBe(false);
+    expect(Array.isArray(r.securityWiseFlow.topFii)).toBe(true);
+    expect(Array.isArray(r.securityWiseFlow.topDii)).toBe(true);
+  }, NETWORK_TIMEOUT);
+
+  it("labels the exchange it actually priced from (NSE or BSE)", async () => {
+    const r = (await resolveLocal("market.snapshot", { symbol: "RELIANCE", marketId: "IN" })) as { source: string; quote: unknown };
+    expect(r.source).toMatch(/NSE|BSE/);
+  }, NETWORK_TIMEOUT);
 });

@@ -136,39 +136,64 @@ function officialFilingLinks(symbol: string) {
  * Deterministic local chat (no LLM, no server)
  * ------------------------------------------------------------------ */
 
-async function groundedAnswer(question: string, symbol: string) {
-  const clean = symbol || (question.match(/\b([A-Z]{2,12})\b/)?.[1] ?? "");
+async function groundedAnswer(question: string, symbol: string, marketId: MarketId = "IN") {
+  const clean = (symbol || question.match(/\b([A-Z]{2,12})\b/)?.[1] || "").toUpperCase();
   const parts: string[] = [];
-  const evidence: Array<{ id: string; label: string; source: string; url?: string }> = [];
+  const sources: Array<{ label: string; detail: string; url?: string }> = [];
+  let dataAsOf: string | null = null;
+
   if (clean) {
-    try {
-      const [snap, fund, news] = await Promise.all([snapshot(clean, "IN"), fundamentals(clean, "IN"), stockNews(clean, 8)]);
-      if (snap.quote) {
-        parts.push(`${snap.quote.name || clean} last traded at ${snap.quote.current ?? "unavailable"} ${snap.quote.currency || ""} (${snap.quote.changePercent ?? "n/a"}%).`);
-        evidence.push({ id: `quote-${clean}`, label: `Quote for ${clean}`, source: "Yahoo Finance", url: snap.sourceUrl });
-      }
-      parts.push(`Reported-fundamentals score is ${fund.score}/100 with ${fund.coverage.label} coverage.`);
-      if (fund.metrics.revenueGrowth.value !== null) parts.push(`Revenue growth was ${fund.metrics.revenueGrowth.value}% year over year.`);
-      if (news.articles.length) {
-        parts.push(`Latest headline: "${news.articles[0].headline}" (${news.articles[0].source}).`);
-        evidence.push({ id: news.articles[0].id, label: news.articles[0].headline, source: news.articles[0].source, url: news.articles[0].url });
-      }
-    } catch (error) {
-      parts.push(`Live data for ${clean} is unavailable right now: ${String(error).slice(0, 120)}.`);
+    const [snap, fund, news] = await Promise.allSettled([
+      snapshot(clean, marketId),
+      fundamentals(clean, marketId),
+      stockNews(clean, 6),
+    ]);
+    if (snap.status === "fulfilled" && snap.value.quote) {
+      const q = snap.value.quote;
+      parts.push(`${q.name || clean} last traded at ${q.current ?? "unavailable"} ${q.currency} (${q.changePercent ?? "n/a"}% on the day).`);
+      sources.push({ label: `Live quote · ${clean}`, detail: `${snap.value.source} · as of ${q.asOf ?? "unavailable"}`, url: snap.value.sourceUrl });
+      dataAsOf = q.asOf;
+    } else {
+      parts.push(`A live quote for ${clean} is unavailable right now.`);
+    }
+    if (fund.status === "fulfilled") {
+      const f = fund.value;
+      parts.push(`${f.companyName} scores ${f.score}/100 on reported fundamentals with ${f.coverage.label.toLowerCase()} coverage.`);
+      if (f.metrics.revenueGrowth) parts.push(`Revenue grew ${f.metrics.revenueGrowth.value}% year over year.`);
+      if (f.metrics.profitMargin) parts.push(`Net margin is ${f.metrics.profitMargin.value}%.`);
+      if (f.metrics.debtToEquity) parts.push(`Debt-to-equity is ${f.metrics.debtToEquity.value}x.`);
+      for (const s of f.sources.filter((x) => x.status === "used").slice(0, 3)) sources.push({ label: s.name, detail: s.note });
+      if (f.risks.length) parts.push(`Risk flags: ${f.risks.slice(0, 2).join(" ")}`);
+    }
+    if (news.status === "fulfilled" && news.value.articles.length) {
+      const top = news.value.articles[0];
+      parts.push(`Latest headline: "${top.headline}" (${top.source}).`);
+      for (const a of news.value.articles.slice(0, 3)) sources.push({ label: a.headline, detail: `${a.source} · ${a.publishedAt ?? "date unavailable"}`, url: a.url });
+      dataAsOf = dataAsOf ?? news.value.fetchedAt;
     }
   } else {
-    const market = await marketNews(5);
+    const market = await marketNews(6);
     parts.push("Ask about a specific ticker for a sourced answer. Latest market headlines:");
-    for (const article of market.articles.slice(0, 3)) parts.push(`• ${article.headline} (${article.source})`);
+    for (const article of market.articles.slice(0, 3)) {
+      parts.push(`• ${article.headline} (${article.source})`);
+      sources.push({ label: article.headline, detail: article.source, url: article.url });
+    }
+    dataAsOf = market.fetchedAt;
   }
+
   parts.push("This is source-grounded research context, not investment advice.");
   return {
     answer: parts.join(" "),
     symbol: clean || null,
-    evidence,
+    sources,
+    dataAsOf,
+    evidence: sources,
     runtime: "deterministic" as const,
     generatedAt: nowIso(),
-    limitations: ["Deterministic on-device synthesis over open sources; no language model is used."],
+    limitations: ["Deterministic on-device synthesis over free/open sources; no language model is used in this path."],
+    suggestedQuestions: clean
+      ? [`What are the main risks for ${clean}?`, `How has ${clean} revenue trended?`, `What is the latest news on ${clean}?`]
+      : ["How is the Indian market doing today?", "What is driving bank stocks?", "Show me the latest market headlines."],
   };
 }
 
@@ -180,7 +205,16 @@ type Handler = (input: Input) => unknown;
 
 const HANDLERS: Record<string, Handler> = {
   /* ---- market ---- */
-  "market.search": (input) => search(str(input, "query"), market(input)),
+  "market.search": async (input) => {
+    const result = await search(str(input, "query"), market(input));
+    // Keep the provider flags the search screen renders, mapped onto the
+    // on-device sources that actually produced the rows.
+    return {
+      ...result,
+      sources: { finnhub: false, indianApi: result.sources.nseUniverse, indianOpenApi: false, yahooSearch: result.sources.yahooSearch, nseUniverse: result.sources.nseUniverse },
+      errors: { finnhub: null, indianApi: result.errors.nseUniverse, indianOpenApi: null, yahooSearch: result.errors.yahooSearch, nseUniverse: result.errors.nseUniverse },
+    };
+  },
   "market.snapshot": async (input) => {
     const symbol = str(input, "symbol");
     const marketId = market(input);
@@ -233,24 +267,70 @@ const HANDLERS: Record<string, Handler> = {
     const flows = await institutionalFlows(str(input, "range", "TODAY")).catch(() => null);
     const fii = flows?.rows.find((r) => /FII/i.test(r.category));
     const dii = flows?.rows.find((r) => /DII/i.test(r.category));
+    // Scoring every constituent would mean hundreds of network calls; score a
+    // bounded, stable prefix and leave the remainder explicitly unscored rather
+    // than inventing a value for them.
+    const SCORED_LIMIT = 15;
     const scored = await Promise.all(
-      base.constituents.slice(0, 25).map(async (row) => {
+      base.constituents.slice(0, SCORED_LIMIT).map(async (row) => {
         try {
-          const analysis = await fundamentals(row.symbol, "IN");
-          return { ...row, score: analysis.score, marketCap: analysis.marketCap.value, pe: analysis.metrics.pe?.value ?? null, changePercent: null };
+          const [analysis, snap] = await Promise.all([fundamentals(row.symbol, "IN"), snapshot(row.symbol, "IN")]);
+          return {
+            symbol: row.symbol,
+            name: row.name,
+            industry: row.industry,
+            sector: row.sector,
+            score: analysis.score,
+            marketCap: analysis.marketCap.value,
+            marketCapBand: analysis.marketCap.band,
+            pe: analysis.metrics.pe?.value ?? null,
+            changePercent: snap.quote?.changePercent ?? null,
+            fiiNet: null,
+            diiNet: null,
+            source: row.source,
+          };
         } catch {
-          return { ...row, score: null, marketCap: null, pe: null, changePercent: null };
+          return { symbol: row.symbol, name: row.name, industry: row.industry, sector: row.sector, score: null, marketCap: null, marketCapBand: "unknown" as const, pe: null, changePercent: null, fiiNet: null, diiNet: null, source: row.source };
         }
       }),
     );
+    const sortKey = str(input, "sort", "score");
+    const direction = str(input, "direction", "desc") === "asc" ? 1 : -1;
+    const keyOf = (row: (typeof scored)[number]): number | null => {
+      switch (sortKey) {
+        case "marketCap": return row.marketCap;
+        case "pe": return row.pe;
+        case "changePercent": return row.changePercent;
+        case "fii": return row.fiiNet;
+        case "dii": return row.diiNet;
+        default: return row.score;
+      }
+    };
+    const rows = [...scored].sort((a, b) => {
+      const av = keyOf(a);
+      const bv = keyOf(b);
+      // Rows without a source value always fall to the bottom and are never inferred.
+      if (av === null && bv === null) return (a.symbol ?? "").localeCompare(b.symbol ?? "");
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      return (av - bv) * direction;
+    });
+    const unavailableSort = ["fii", "dii"].includes(sortKey);
     return {
       sector,
       asOf: base.asOf,
-      rows: scored,
+      sort: sortKey,
+      direction: direction === 1 ? "asc" : "desc",
+      rows,
       flow: { fiiNet: fii?.netValue ?? null, diiNet: dii?.netValue ?? null, freshnessLabel: flows?.freshnessLabel ?? "Unavailable" },
-      securityWiseFlow: { reportDate: null, topFii: [], topDii: [] },
+      securityWiseFlow: { available: false, reportDate: null, topFii: [], topDii: [] },
       coverageLabel: base.error ? "Unavailable" : `${base.constituents.length} constituents from the NSE index list`,
-      limitations: base.error ? [base.error] : ["Sector scores are rule-based over reported fundamentals; security-wise flow needs an exchange feed."],
+      limitations: base.error
+        ? [base.error]
+        : [
+            `Fundamental scores are computed on-device for the first ${Math.min(SCORED_LIMIT, base.constituents.length)} constituents; the remainder are shown unscored rather than estimated.`,
+            unavailableSort ? "Security-wise FII/DII attribution requires an exchange feed; those rows stay at the bottom and are never inferred." : "Security-wise flow needs an exchange feed.",
+          ],
     };
   },
   "market.peerComparison": async (input) => {
@@ -458,8 +538,8 @@ const HANDLERS: Record<string, Handler> = {
   "news.refresh": async (input) => stockNews(str(input, "symbol"), 40),
   "news.flagIrrelevant": async (input) => localSet("news.flagged", input ?? {}),
   "news.undoIrrelevant": async () => localSet("news.flagged", {}),
-  "news.reviewHeld": async () => ({ items: await localGet("news.held", []) }),
-  "news.held": async () => ({ items: await localGet("news.held", []) }),
+  "news.reviewHeld": async () => ({ items: await localGet("news.held", []), held: await localGet("news.held", []) }),
+  "news.held": async () => ({ items: await localGet("news.held", []), held: await localGet("news.held", []) }),
   "news.archiveExport": async (input) => {
     const payload = await marketNews(500);
     const rows = payload.articles;
@@ -475,12 +555,50 @@ const HANDLERS: Record<string, Handler> = {
   "events.search": (input) => eventProjections(500).then((rows) => rows.filter((row) => JSON.stringify(row).toLowerCase().includes(str(input, "query").toLowerCase())).slice(0, Number(input?.limit ?? 100) || 100)),
 
   /* ---- graph ---- */
-  "graph.projection": async () => ({ nodes: [], edges: [], asOf: nowIso(), note: "Graph projection requires an entity-relationship store; not available from open sources." }),
+  "graph.projection": async (input) => {
+    const symbol = str(input, "symbol");
+    const nodes: Array<{ id: string; label: string; kind: string }> = [];
+    const edges: Array<{ from: string; to: string; label: string }> = [];
+    if (symbol) {
+      const [fund, news] = await Promise.all([fundamentals(symbol, "IN").catch(() => null), stockNews(symbol, 8).catch(() => null)]);
+      const root = symbol.toUpperCase();
+      nodes.push({ id: root, label: fund?.companyName ?? root, kind: "company" });
+      for (const article of news?.articles ?? []) {
+        const id = article.source || "source";
+        if (!nodes.some((n) => n.id === id)) nodes.push({ id, label: id, kind: "source" });
+        edges.push({ from: root, to: id, label: "reported by" });
+      }
+      for (const industry of new Set([fund?.stockAnalysis.profile.sector].filter(Boolean) as string[])) {
+        nodes.push({ id: industry, label: industry, kind: "sector" });
+        edges.push({ from: root, to: industry, label: "operates in" });
+      }
+    }
+    return { nodes, edges, asOf: nowIso(), note: nodes.length > 1 ? "On-device relationship projection from live news sources and sector membership." : "Supply an explicit symbol to build a relationship projection; a full entity graph needs a server-side store." };
+  },
 
   /* ---- chat ---- */
-  "chat.ask": (input) => groundedAnswer(str(input, "message", str(input, "question")), str(input, "symbol")),
-  "chat.general": (input) => groundedAnswer(str(input, "message", str(input, "question")), str(input, "symbol")),
-  "chat.ground": (input) => groundedAnswer(str(input, "message", str(input, "question")), str(input, "symbol")),
+  "chat.ask": async (input) => {
+    const answer = await groundedAnswer(str(input, "message", str(input, "question")), str(input, "symbol"), market(input));
+    return {
+      answer: answer.answer,
+      confidence: answer.evidence.length ? "medium" : "low",
+      symbol: answer.symbol,
+      sources: answer.sources,
+      dataAsOf: answer.dataAsOf,
+      limitations: answer.limitations,
+      suggestedQuestions: answer.suggestedQuestions,
+      action: null,
+      runtime: answer.runtime,
+    };
+  },
+  "chat.general": async (input) => {
+    const answer = await groundedAnswer(str(input, "message", str(input, "question")), str(input, "symbol"), market(input));
+    return { answer: answer.answer, confidence: "medium", limitations: answer.limitations, suggestedQuestions: answer.suggestedQuestions };
+  },
+  "chat.ground": async (input) => {
+    const answer = await groundedAnswer(str(input, "message", str(input, "question")), str(input, "symbol"), market(input));
+    return { symbol: answer.symbol, sources: answer.sources, dataAsOf: answer.dataAsOf, context: answer.answer, limitations: answer.limitations };
+  },
 
   /* ---- research desk ---- */
   "researchDesk.run": (input) => researchRun(input),
@@ -552,7 +670,22 @@ const HANDLERS: Record<string, Handler> = {
   "account.alertRuleRevoke": async () => localSet("alertRules", []),
   "account.alertResults": async () => localGet("alertResults", []),
   "account.alertResultsPage": async () => ({ items: await localGet("alertResults", []), total: 0, nextCursor: null, hasMore: false }),
-  "account.alertResultDetail": async (input) => ({ id: str(input, "id"), detail: null }),
+  "account.alertResultDetail": async (input) => {
+    const id = str(input, "id");
+    const results = await localGet<Array<Record<string, unknown>>>("alertResults", []);
+    const found = results.find((row) => String(row.id) === id) ?? null;
+    return {
+      id,
+      symbol: found?.symbol ?? null,
+      ruleId: found?.ruleId ?? null,
+      marketId: found?.marketId ?? null,
+      status: found?.status ?? "unavailable",
+      evidenceJson: found?.evidenceJson ?? null,
+      createdAt: found?.createdAt ?? null,
+      updatedAt: found?.updatedAt ?? null,
+      detail: found,
+    };
+  },
   "account.notifications": async () => {
     const items = await localGet<Array<{ readAt?: string | null }>>("notifications", []);
     return { items, nextCursor: null, unreadCount: items.filter((i) => !i.readAt).length };
