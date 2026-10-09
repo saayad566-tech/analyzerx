@@ -28,6 +28,14 @@ import {
 const YAHOO = "https://query1.finance.yahoo.com";
 const YAHOO_SEARCH = "https://query2.finance.yahoo.com";
 
+/** Yahoo exposes the same endpoints on two independent hosts; the chain uses
+ *  both so a single-host outage does not blank quotes or fundamentals. */
+export type YahooHost = "query1" | "query2";
+export const YAHOO_HOSTS: Record<YahooHost, string> = {
+  query1: "https://query1.finance.yahoo.com",
+  query2: "https://query2.finance.yahoo.com",
+};
+
 /* ------------------------------------------------------------------ *
  * Yahoo Finance — quotes, history, search, fundamentals
  * ------------------------------------------------------------------ */
@@ -76,8 +84,9 @@ export async function yahooChart(
   yahooSymbol: string,
   range = "5d",
   interval = "1d",
+  host: YahooHost = "query1",
 ): Promise<{ series: ChartSeries; latencyMs: number; url: string }> {
-  const url = `${YAHOO}/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=${range}&interval=${interval}`;
+  const url = `${YAHOO_HOSTS[host]}/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=${range}&interval=${interval}`;
   const { data, latencyMs } = await fetchJson<ChartResponse>(url);
   const result = data.chart?.result?.[0];
   if (!result?.meta) {
@@ -142,8 +151,8 @@ type SearchResponse = {
   quotes?: Array<Record<string, unknown>>;
 };
 
-export async function yahooSearch(query: string, limit = 12): Promise<{ hits: SearchHit[]; latencyMs: number; url: string }> {
-  const url = `${YAHOO_SEARCH}/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=${Math.min(50, Math.max(1, limit))}&newsCount=0&enableFuzzyQuery=false`;
+export async function yahooSearch(query: string, limit = 12, host: YahooHost = "query2"): Promise<{ hits: SearchHit[]; latencyMs: number; url: string }> {
+  const url = `${YAHOO_HOSTS[host]}/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=${Math.min(50, Math.max(1, limit))}&newsCount=0&enableFuzzyQuery=false`;
   const { data, latencyMs } = await fetchJson<SearchResponse>(url);
   const hits: SearchHit[] = (data.quotes ?? [])
     .map((entry) => {
@@ -194,11 +203,12 @@ const FUNDAMENTAL_TYPES = [
 
 export async function yahooFundamentals(
   yahooSymbol: string,
+  host: YahooHost = "query1",
 ): Promise<{ data: Fundamentals; latencyMs: number; url: string }> {
   const period2 = Math.floor(Date.now() / 1000);
   const period1 = period2 - 60 * 60 * 24 * 365 * 6;
   const url =
-    `${YAHOO}/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(yahooSymbol)}` +
+    `${YAHOO_HOSTS[host]}/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(yahooSymbol)}` +
     `?symbol=${encodeURIComponent(yahooSymbol)}&type=${FUNDAMENTAL_TYPES.join(",")}&period1=${period1}&period2=${period2}`;
   const { data, latencyMs } = await fetchJson<TimeseriesResponse>(url);
   const results = data.timeseries?.result ?? [];
@@ -497,6 +507,57 @@ export async function coingeckoPrices(ids = ["bitcoin", "ethereum"], limit = 8):
     change24h: safeNumber(row.price_change_percentage_24h),
   }));
   return { quotes, latencyMs, url };
+}
+
+/* ------------------------------------------------------------------ *
+ * Additional redundant news + universe providers
+ * ------------------------------------------------------------------ */
+
+/** Yahoo Finance headline RSS — an independent news feed from Google News. */
+export async function yahooNewsRss(symbol: string, limit = 20): Promise<{ articles: NewsArticle[]; latencyMs: number; url: string }> {
+  const url = `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(symbol)}&region=US&lang=en-US`;
+  const { text, latencyMs } = await fetchText(url);
+  const items = parseRss(text).slice(0, limit);
+  return { articles: items.map((item) => toArticle(item, symbol.replace(/\.[A-Z]+$/, ""), "Yahoo Finance")), latencyMs, url };
+}
+
+/** Official NSE corporate announcements RSS — exchange-sourced, not aggregated. */
+export async function nseAnnouncementsRss(limit = 40): Promise<{ articles: NewsArticle[]; latencyMs: number; url: string }> {
+  const url = `${NSE_ARCHIVES}/content/RSS/Online_announcements.xml`;
+  const { text, latencyMs } = await fetchText(url);
+  const items = parseRss(text).slice(0, limit);
+  const articles = items.map((item) => {
+    const { sentiment, score } = classifySentiment(`${item.title} ${item.description}`);
+    return {
+      id: articleId(item.link, item.title),
+      symbol: "",
+      headline: item.title,
+      summary: item.description.slice(0, 400),
+      source: "NSE announcements",
+      url: item.link,
+      publishedAt: item.pubDate && Number.isFinite(Date.parse(item.pubDate)) ? new Date(item.pubDate).toISOString() : null,
+      sentiment,
+      impactScore: score,
+      keyEntities: item.title ? [item.title] : [],
+    } satisfies NewsArticle;
+  });
+  return { articles, latencyMs, url };
+}
+
+/** NSE SME (small-cap) universe — a second listing universe for redundancy. */
+export async function nseSmeUniverse(): Promise<{ rows: UniverseRow[]; latencyMs: number; url: string }> {
+  const url = `${NSE_ARCHIVES}/emerge/corporates/content/SME_EQUITY_L.csv`;
+  const { text, latencyMs } = await fetchText(url);
+  const rows = csvToObjects(text)
+    .map((record) => ({
+      symbol: (record["SYMBOL"] ?? "").toUpperCase(),
+      name: record["NAME OF COMPANY"] ?? "",
+      isin: record["ISIN NUMBER"] ?? "",
+      series: record[" SERIES"] ?? record["SERIES"] ?? "",
+    }))
+    .filter((row) => row.symbol && row.name);
+  if (!rows.length) throw new SourceError("NSE SME universe returned no rows");
+  return { rows, latencyMs, url };
 }
 
 /* ------------------------------------------------------------------ *

@@ -139,7 +139,7 @@ export async function fetchRaw(
   // One bounded attempt by default: retrying a timeout doubles the wait a user
   // sees, and the cache already covers transient blips by serving the last good
   // value. Screens degrade fast instead of hanging.
-  const { timeoutMs = 9_000, headers = {}, retries = 0 } = options;
+  const { timeoutMs = 6_000, headers = {}, retries = 0 } = options;
   let lastError: unknown = null;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     const started = Date.now();

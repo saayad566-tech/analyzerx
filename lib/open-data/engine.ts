@@ -24,20 +24,26 @@ import {
 import {
   googleNews,
   googleNewsHeadlines,
+  nseAnnouncementsRss,
   nseEquityMaster,
   nseFiiDii,
   nseIndexConstituents,
+  nseSmeUniverse,
+  yahooNewsRss,
   quoteFromSeries,
   yahooChart,
   yahooFundamentals,
   yahooSearch,
   yoyGrowth,
+  YAHOO_HOSTS,
   type AnnualMetric,
   type FlowRow,
   type NewsArticle,
   type Quote,
   type UniverseRow,
+  type YahooHost,
 } from "./sources";
+import { allLinkHealth, runChain, runMerge, type ChainAttempt } from "./chain";
 
 const TTL = {
   quote: 60_000,
@@ -108,8 +114,9 @@ export function recordHealth(key: string, ok: boolean, latencyMs: number | null,
 }
 
 export function providerRegistry(): ProviderRecord[] {
+  const chainHealth = new Map(allLinkHealth().map((entry) => [entry.key, entry]));
   return PROVIDER_DEFS.map((def) => {
-    const h = health.get(def.key);
+    const h = chainHealth.get(def.key) ?? health.get(def.key);
     return {
       ...def,
       status: h?.status ?? "live",
@@ -144,51 +151,73 @@ export type MarketSnapshot = {
   quote: Quote | null;
   provenance: Provenance;
   note?: string;
+  /** Every provider the failover chain tried, in order. */
+  chain?: ChainAttempt[];
 };
+
+type QuoteLinkValue = { quote: Quote; url: string; latencyMs: number; onBse: boolean; host: YahooHost; providerKey: string; providerName: string };
 
 export async function snapshot(symbol: string, marketId: MarketId = "IN"): Promise<MarketSnapshot> {
   const primary = toYahooSymbol(symbol, marketId);
   const clean = symbol.trim().toUpperCase();
   const hasSuffix = /\.(NS|BO|L|T|DE|PA|AS|MI|HK|SI|AX|TO|V|F)$/.test(clean) || clean.startsWith("^") || clean.includes("-");
-  // Indian names trade on both exchanges: fall back to the BSE listing (.BO)
-  // when the NSE listing (.NS) is unavailable, so both NSE and BSE are covered.
-  const candidates = !hasSuffix && marketId === "IN" ? [primary, `${clean}.BO`] : [primary];
+  // Indian names trade on both exchanges, and Yahoo serves both hosts: the chain
+  // covers NSE, BSE and a second Yahoo host, so one failure never blanks a quote.
+  const listings = !hasSuffix && marketId === "IN" ? [primary, `${clean}.BO`] : [primary];
 
-  let lastError: unknown = null;
-  for (const yahooSymbol of candidates) {
-    try {
-      const result = await cached(`quote:${yahooSymbol}`, TTL.quote, () =>
-        tracked("yahoo-finance", () => yahooChart(yahooSymbol, "5d", "1d")),
-      );
-      const quote = quoteFromSeries(result.value.series);
-      if (quote.current === null && candidates.length > 1) {
-        lastError = new Error(`No price returned for ${yahooSymbol}`);
-        continue;
-      }
-      const onBse = yahooSymbol.endsWith(".BO");
-      const status: SourceStatus = result.fromCache && result.ageMs > TTL.quote ? "delayed" : "live";
+  const links = listings.flatMap((listing) =>
+    (["query1", "query2"] as YahooHost[]).map((host) => {
+      const onBse = listing.endsWith(".BO");
       return {
-        symbol: quote.displaySymbol || clean,
-        source: onBse ? "Yahoo Finance (BSE)" : "Yahoo Finance (NSE)",
-        sourceUrl: result.value.url,
-        asOf: quote.asOf ?? nowIso(),
-        status,
-        quote,
-        provenance: {
-          sourceKey: "yahoo-finance",
-          sourceName: onBse ? "Yahoo Finance · BSE listing" : "Yahoo Finance · NSE listing",
-          sourceType: "market-data",
-          url: result.value.url,
-          retrievedAt: nowIso(),
-          asOf: quote.asOf,
-          status,
-          latencyMs: result.value.latencyMs,
-          basis: "reported",
+        key: `yahoo-${host}${onBse ? "-bse" : ""}`,
+        name: `Yahoo Finance (${host}${onBse ? " · BSE listing" : ""})`,
+        run: async (): Promise<QuoteLinkValue | null> => {
+          const result = await cached(`quote:${listing}:${host}`, TTL.quote, () =>
+            yahooChart(listing, "5d", "1d", host),
+          );
+          const quote = quoteFromSeries(result.value.series);
+          if (quote.current === null) return null;
+          return {
+            quote,
+            url: result.value.url,
+            latencyMs: result.value.latencyMs,
+            onBse,
+            host,
+            providerKey: `yahoo-${host}${onBse ? "-bse" : ""}`,
+            providerName: `Yahoo Finance (${host}${onBse ? " · BSE listing" : ""})`,
+          };
         },
       };
-    } catch (error) {
-      lastError = error;
-    }
+    }),
+  );
+
+  const outcome = await runChain<QuoteLinkValue>(links);
+  const attempts = outcome.attempts;
+
+  if (outcome.value) {
+    const { quote, url, latencyMs, onBse, providerKey, providerName } = outcome.value;
+    const status: SourceStatus = outcome.degraded ? "delayed" : "live";
+    return {
+      symbol: quote.displaySymbol || clean,
+      source: onBse ? "Yahoo Finance (BSE)" : "Yahoo Finance (NSE)",
+      sourceUrl: url,
+      asOf: quote.asOf ?? nowIso(),
+      status,
+      quote,
+      chain: attempts,
+      provenance: {
+        sourceKey: providerKey,
+        sourceName: providerName,
+        sourceType: "market-data",
+        url,
+        retrievedAt: nowIso(),
+        asOf: quote.asOf,
+        status,
+        latencyMs,
+        basis: "reported",
+        ...(outcome.degraded ? { note: `${attempts.filter((a) => !a.ok).length} provider(s) failed before ${providerName} answered.` } : {}),
+      },
+    };
   }
 
   return {
@@ -198,8 +227,15 @@ export async function snapshot(symbol: string, marketId: MarketId = "IN"): Promi
     asOf: nowIso(),
     status: "unavailable",
     quote: null,
-    provenance: unavailableProvenance("yahoo-finance", "Yahoo Finance", "market-data", `chart/${primary}`, String(lastError)),
-    note: `Live quote unavailable: ${String(lastError).slice(0, 160)}`,
+    chain: attempts,
+    provenance: unavailableProvenance(
+      "yahoo-finance",
+      "Yahoo Finance",
+      "market-data",
+      `chart/${primary}`,
+      `All ${attempts.length} quote providers failed: ${attempts.map((a) => a.error).filter(Boolean).join(" | ").slice(0, 200)}`,
+    ),
+    note: `Live quote unavailable from all ${attempts.length} providers (NSE, BSE and both Yahoo hosts were tried).`,
   };
 }
 
@@ -239,7 +275,12 @@ export async function search(query: string, marketId: MarketId = "IN"): Promise<
   const results: SearchResult[] = [];
 
   try {
-    const hit = await cached(`search:${q}`, TTL.search, () => tracked("yahoo-search", () => yahooSearch(q, 15)));
+    const outcome = await runChain([
+      { key: "yahoo-query2-search", name: "Yahoo Finance search (query2)", run: () => cached(`search:q2:${q}`, TTL.search, () => yahooSearch(q, 15, "query2")) },
+      { key: "yahoo-query1-search", name: "Yahoo Finance search (query1)", run: () => cached(`search:q1:${q}`, TTL.search, () => yahooSearch(q, 15, "query1")) },
+    ]);
+    if (!outcome.value) throw new Error("Both Yahoo search hosts failed.");
+    const hit = outcome.value;
     for (const row of hit.value.hits) {
       results.push({
         symbol: row.displaySymbol,
@@ -306,9 +347,12 @@ function checksumOf(value: string): string {
 
 export async function nseUniverse(): Promise<UniverseSnapshot> {
   try {
-    const result = await cached("universe:nse", TTL.universe, () =>
-      tracked("nse-equity-master", () => nseEquityMaster()),
-    );
+    const outcome = await runChain([
+      { key: "nse-equity-master", name: "NSE Equity Master", run: () => cached("universe:nse", TTL.universe, () => nseEquityMaster()) },
+      { key: "nse-sme-universe", name: "NSE SME Universe", run: () => cached("universe:nse-sme", TTL.universe, () => nseSmeUniverse()) },
+    ]);
+    if (!outcome.value) throw new Error("Every NSE universe provider failed.");
+    const result = outcome.value;
     const securities = result.value.rows.map((row: UniverseRow) => ({
       symbol: row.symbol,
       name: row.name,
@@ -347,64 +391,85 @@ export type NewsPayload = {
   providerFailures: number;
   articles: NewsArticle[];
   sources: Array<{ key: string; name: string; status: SourceStatus }>;
+  /** Every news provider the merge tried, with per-provider counts. */
+  chain?: ChainAttempt[];
 };
 
 export async function stockNews(symbol: string, limit = 40): Promise<NewsPayload> {
   const clean = toDisplaySymbol(toYahooSymbol(symbol, "IN"));
-  let articles: NewsArticle[] = [];
-  const sources: NewsPayload["sources"] = [];
-  let failures = 0;
+  const yahooSymbol = toYahooSymbol(symbol, "IN");
 
-  try {
-    const result = await cached(`news:${clean}`, TTL.news, () =>
-      tracked("google-news-rss", () => googleNews(`"${clean}" OR "${symbol}" stock`, clean, limit)),
-    );
-    articles = result.value.articles;
-    sources.push({ key: "google-news-rss", name: "Google News RSS", status: result.fromCache ? "delayed" : "live" });
-  } catch (error) {
-    failures += 1;
-    sources.push({ key: "google-news-rss", name: "Google News RSS", status: "error" });
-    void error;
-  }
-
-  const deduped = [...new Map(articles.map((a) => [a.id, a])).values()].sort(
-    (a, b) => Date.parse(b.publishedAt ?? "") - Date.parse(a.publishedAt ?? "") || 0,
+  // Three independent news providers. If one feed is down or rate-limited the
+  // others still supply coverage, and every provider's contribution is recorded.
+  const merge = await runMerge<NewsArticle>(
+    [
+      {
+        key: "google-news-rss",
+        name: "Google News RSS",
+        run: async () => (await cached(`news:g:${clean}`, TTL.news, () => googleNews(`"${clean}" OR "${symbol}" stock`, clean, limit))).value.articles,
+      },
+      {
+        key: "yahoo-news-rss",
+        name: "Yahoo Finance news RSS",
+        run: async () => (await cached(`news:y:${clean}`, TTL.news, () => yahooNewsRss(yahooSymbol, limit))).value.articles,
+      },
+      {
+        key: "nse-announcements-rss",
+        name: "NSE announcements RSS",
+        run: async () =>
+          (await cached("news:nse-announcements", TTL.news, () => nseAnnouncementsRss(60))).value.articles.filter(
+            (article) => article.headline.toUpperCase().includes(clean) || article.summary.toUpperCase().includes(clean),
+          ),
+      },
+    ],
+    { key: (article) => article.id, limit: 250 },
   );
-  const freshCount = deduped.filter((a) => a.publishedAt && Date.now() - Date.parse(a.publishedAt) < 3 * 86_400_000).length;
+
+  const articles = [...merge.items].sort(
+    (a, b) => (Date.parse(b.publishedAt ?? "") || 0) - (Date.parse(a.publishedAt ?? "") || 0),
+  );
+  const freshCount = articles.filter((a) => a.publishedAt && Date.now() - Date.parse(a.publishedAt) < 3 * 86_400_000).length;
   return {
     symbol: clean,
     fetchedAt: nowIso(),
     stale: freshCount === 0,
     freshArticleCount: freshCount,
-    providerFailures: failures,
-    articles: deduped,
-    sources,
+    providerFailures: merge.providers.filter((p) => p.status === "error").length,
+    articles,
+    sources: merge.providers.map((p) => ({ key: p.key, name: p.name, status: p.status })),
+    chain: merge.attempts,
   };
 }
 
 export async function marketNews(limit = 60): Promise<NewsPayload> {
-  let articles: NewsArticle[] = [];
-  const sources: NewsPayload["sources"] = [];
-  let failures = 0;
-  try {
-    const result = await cached("news:market", TTL.news, () =>
-      tracked("google-news-rss", () => googleNewsHeadlines(limit)),
-    );
-    articles = result.value.articles;
-    sources.push({ key: "google-news-rss", name: "Google News RSS", status: result.fromCache ? "delayed" : "live" });
-  } catch (error) {
-    failures += 1;
-    sources.push({ key: "google-news-rss", name: "Google News RSS", status: "error" });
-    void error;
-  }
+  const merge = await runMerge<NewsArticle>(
+    [
+      {
+        key: "google-news-rss",
+        name: "Google News RSS (market)",
+        run: async () => (await cached("news:market:g", TTL.news, () => googleNewsHeadlines(limit))).value.articles,
+      },
+      {
+        key: "nse-announcements-rss",
+        name: "NSE announcements RSS",
+        run: async () => (await cached("news:nse-announcements", TTL.news, () => nseAnnouncementsRss(60))).value.articles,
+      },
+    ],
+    { key: (article) => article.id, limit: 300 },
+  );
+
+  const articles = [...merge.items].sort(
+    (a, b) => (Date.parse(b.publishedAt ?? "") || 0) - (Date.parse(a.publishedAt ?? "") || 0),
+  );
   return {
     symbol: "",
     fetchedAt: nowIso(),
     stale: false,
     freshArticleCount: articles.length,
-    providerFailures: failures,
+    providerFailures: merge.providers.filter((p) => p.status === "error").length,
     articles,
-    sources,
+    sources: merge.providers.map((p) => ({ key: p.key, name: p.name, status: p.status })),
+    chain: merge.attempts,
   };
 }
 
@@ -599,9 +664,15 @@ export async function primeEps(symbols: string[]) {
 
 export async function priceHistory(symbol: string, range = "6mo", interval = "1d", marketId: MarketId = "IN") {
   const yahooSymbol = toYahooSymbol(symbol, marketId);
-  const result = await cached(`history:${yahooSymbol}:${range}:${interval}`, TTL.history, () =>
-    tracked("yahoo-finance", () => yahooChart(yahooSymbol, range, interval)),
+  const outcome = await runChain(
+    (["query1", "query2"] as YahooHost[]).map((host) => ({
+      key: `yahoo-${host}`,
+      name: `Yahoo Finance (${host})`,
+      run: () => cached(`history:${yahooSymbol}:${range}:${interval}:${host}`, TTL.history, () => yahooChart(yahooSymbol, range, interval, host)),
+    })),
   );
+  if (!outcome.value) throw new Error(`Price history unavailable from all ${outcome.attempts.length} providers.`);
+  const result = outcome.value;
   const series = result.value.series;
   const points = series.timestamps
     .map((ts, index) => ({ t: new Date(ts * 1000).toISOString(), c: series.closes[index] ?? null }))
