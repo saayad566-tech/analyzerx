@@ -1,0 +1,29 @@
+{
+  "cli": {
+    "version": ">= 10.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {
+      "autoIncrement": true
+    },
+    "analyzerx-1.4.0-local-ai": {
+      "distribution": "internal",
+      "env": {
+        "ANALYZERX_RELEASE_VERSION": "1.4.0",
+        "ANALYZERX_ANDROID_VERSION_CODE": "1400",
+        "ANALYZERX_IOS_BUILD_NUMBER": "1.4.0",
+        "ANALYZERX_ENABLE_NATIVE_LOCAL_AI": "true"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    }
+  }
+}

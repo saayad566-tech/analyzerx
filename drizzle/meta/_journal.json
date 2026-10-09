@@ -1,0 +1,139 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1763372440610,
+      "tag": "0000_elite_eternals",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1786916556359,
+      "tag": "0001_free_eddie_brock",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1786916618902,
+      "tag": "0002_worried_sheva_callister",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1786941855941,
+      "tag": "0003_silly_scream",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1786942358898,
+      "tag": "0004_magical_mac_gargan",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1787035986705,
+      "tag": "0005_uneven_krista_starr",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1787039225789,
+      "tag": "0006_yielding_roland_deschain",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1787039937654,
+      "tag": "0007_nebulous_silver_surfer",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1787040185933,
+      "tag": "0008_white_skullbuster",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1787044377465,
+      "tag": "0009_furry_iron_fist",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1787062929495,
+      "tag": "0010_clear_ozymandias",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1787087718797,
+      "tag": "0011_glorious_sugar_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1787088976234,
+      "tag": "0012_nice_cannonball",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "5",
+      "when": 1787128735484,
+      "tag": "0013_pink_captain_midlands",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "5",
+      "when": 1787149171465,
+      "tag": "0014_previous_groot",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "5",
+      "when": 1787152578991,
+      "tag": "0015_colorful_black_tarantula",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "5",
+      "when": 1787159286038,
+      "tag": "0016_cold_bullseye",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1787160970746,
+      "tag": "0017_boring_greymalkin",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1787266629142,
+      "tag": "0018_light_stardust",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+ALTER TABLE `user_alert_results` ADD `marketId` varchar(8) DEFAULT 'IN' NOT NULL;

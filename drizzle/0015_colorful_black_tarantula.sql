@@ -1,0 +1,1 @@
+ALTER TABLE `news_events` ADD `marketId` varchar(8) DEFAULT 'IN' NOT NULL;

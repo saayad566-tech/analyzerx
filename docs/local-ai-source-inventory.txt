@@ -1,0 +1,87 @@
+lib/local-ai-policy.ts:23:  installability: LocalAIInstallability;
+lib/local-ai-policy.ts:43:  nativeRuntimeAvailable: boolean;
+lib/local-ai-policy.ts:57:export const LOCAL_AI_MODELS: readonly LocalAIModelManifest[] = [
+lib/local-ai-policy.ts:67:    installability: "verified_installable",
+lib/local-ai-policy.ts:87:    installability: "verified_installable",
+lib/local-ai-policy.ts:107:    installability: "runtime_pending",
+lib/local-ai-policy.ts:127:    installability: "runtime_pending",
+lib/local-ai-policy.ts:147:    installability: "runtime_pending",
+lib/local-ai-policy.ts:167:    installability: "runtime_pending",
+lib/local-ai-policy.ts:181:  const model = LOCAL_AI_MODELS.find((item) => item.id === modelId);
+lib/local-ai-policy.ts:194:  if (model.installability !== "verified_installable") reasons.push(`The ${model.runtime} adapter is not shipped in this AnalyzerX build yet.`);
+lib/local-ai-policy.ts:195:  if (model.installability === "verified_installable" && device.platform !== "android") reasons.push("The native LiteRT-LM bridge is Android-only in this release.");
+lib/local-ai-policy.ts:196:  if (model.installability === "verified_installable" && !device.nativeRuntimeAvailable) reasons.push("This build does not include the native LiteRT-LM bridge.");
+lib/local-ai-policy.ts:199:  if (model.installability === "verified_installable" && device.cpuArchitectures.length > 0 && !device.cpuArchitectures.some((arch) => /arm64|aarch64/i.test(arch))) reasons.push("This artifact requires a 64-bit ARM Android architecture.");
+lib/local-ai-policy.ts:204:  const assessments = LOCAL_AI_MODELS.map((model) => assessLocalAIModel(model, device));
+lib/local-ai.ts:10:  LOCAL_AI_MODELS,
+lib/local-ai.ts:45:  const nativeRuntimeAvailable = Platform.OS === "android" && Boolean(NativeModules.AnalyzerXLocalAI);
+lib/local-ai.ts:53:    backend: nativeRuntimeAvailable ? "gpu" : "unknown",
+lib/local-ai.ts:54:    nativeRuntimeAvailable,
+lib/local-ai.ts:70:  if (model.installability !== "verified_installable" || !model.artifactFile || !model.artifactUrl || model.sizeBytes === null || model.requiredFreeStorageBytes === null || model.recommendedRamBytes === null) {
+lib/local-ai.ts:78:  if (model.installability !== "verified_installable" || !model.artifactFile || model.sizeBytes === null) {
+lib/local-ai.ts:148:export async function getActiveLocalAIModelId(): Promise<LocalAIModelId | null> {
+lib/local-ai.ts:150:  return value && LOCAL_AI_MODELS.some((model) => model.id === value) ? value as LocalAIModelId : null;
+lib/local-ai.ts:153:export async function setActiveLocalAIModelId(modelId: LocalAIModelId | null): Promise<void> {
+lib/local-ai.ts:178:  if (Platform.OS !== "android" || !NativeModules.AnalyzerXLocalAI) return createUnavailableLocalAIRuntime();
+lib/local-ai.ts:179:  const nativeModule = NativeModules.AnalyzerXLocalAI as {
+lib/local-ai.ts:192:      const emitter = new NativeEventEmitter(NativeModules.AnalyzerXLocalAI);
+lib/local-ai.ts:193:      const subscription = emitter.addListener("AnalyzerXLocalAIToken", (payload: { text?: string }) => { if (payload.text) onToken(payload.text); });
+plugins/with-analyzerx-local-ai.js:13:module.exports = function withAnalyzerXLocalAI(config) {
+plugins/with-analyzerx-local-ai.js:39:    const importLine = `import ${BRIDGE_PACKAGE}.AnalyzerXLocalAIPackage`;
+plugins/with-analyzerx-local-ai.js:41:    const addLine = "add(AnalyzerXLocalAIPackage())";
+plugins/with-analyzerx-local-ai.js:54:    for (const file of ["AnalyzerXLocalAIModule.kt", "AnalyzerXLocalAIPackage.kt"]) {
+plugins/with-analyzerx-local-ai.ts:13:const withAnalyzerXLocalAI: ConfigPlugin = (config) => {
+plugins/with-analyzerx-local-ai.ts:39:    const importLine = `import ${BRIDGE_PACKAGE}.AnalyzerXLocalAIPackage`;
+plugins/with-analyzerx-local-ai.ts:41:    const addLine = "add(AnalyzerXLocalAIPackage())";
+plugins/with-analyzerx-local-ai.ts:54:    for (const file of ["AnalyzerXLocalAIModule.kt", "AnalyzerXLocalAIPackage.kt"]) {
+plugins/with-analyzerx-local-ai.ts:63:export default withAnalyzerXLocalAI;
+tests/local-ai.test.ts:4:  LOCAL_AI_MODELS,
+tests/local-ai.test.ts:18:  nativeRuntimeAvailable: true,
+tests/local-ai.test.ts:23:    const gemmaModels = LOCAL_AI_MODELS.filter((model) => model.id.startsWith("gemma4-"));
+tests/local-ai.test.ts:24:    expect(LOCAL_AI_MODELS.length).toBeGreaterThanOrEqual(6);
+tests/local-ai.test.ts:34:    expect(result.filter((item) => item.model.installability === "verified_installable").every((item) => item.eligible)).toBe(true);
+tests/local-ai.test.ts:35:    expect(result.filter((item) => item.model.installability === "runtime_pending").every((item) => !item.eligible && item.reasons.join(" ").includes("adapter"))).toBe(true);
+tests/local-ai.test.ts:39:    const result = recommendLocalAIModel({ ...androidFlagship, nativeRuntimeAvailable: false });
+app/local-ai.tsx:8:  LOCAL_AI_MODELS,
+app/local-ai.tsx:17:  setActiveLocalAIModelId,
+app/local-ai.tsx:41:    const entries = await Promise.all(LOCAL_AI_MODELS.map(async (model) => [model.id, await getLocalAIModelState(model.id)] as const));
+app/local-ai.tsx:50:    if (!query) return LOCAL_AI_MODELS;
+app/local-ai.tsx:51:    return LOCAL_AI_MODELS.filter((model) => `${model.displayName} ${model.description} ${model.capabilities.join(" ")} ${model.runtime}`.toLowerCase().includes(query));
+app/local-ai.tsx:70:    if (!localUri || !device?.nativeRuntimeAvailable) return;
+app/local-ai.tsx:74:      await setActiveLocalAIModelId(modelId);
+app/local-ai.tsx:81:    try { await getLocalAIRuntime().unload(); await setActiveLocalAIModelId(null); setLoadedModel((current) => current === modelId ? null : current); } catch (error) { Alert.alert("Could not unload model", error instanceof Error ? error.message : "Please try again."); } finally { setBusy(null); }
+app/local-ai.tsx:86:    try { await deleteLocalAIModel(modelId); await setActiveLocalAIModelId(null); await refresh(); } catch (error) { Alert.alert("Could not delete model", error instanceof Error ? error.message : "Please try again."); } finally { setBusy(null); }
+app/local-ai.tsx:102:          <View style={styles.statusHeader}><Ionicons name={device?.nativeRuntimeAvailable ? "checkmark-circle" : "information-circle"} size={18} color={device?.nativeRuntimeAvailable ? teal : amber} /><Text style={styles.statusTitle}>{device?.nativeRuntimeAvailable ? "Running locally on your device" : "Native Local AI bridge not included in this build"}</Text></View>
+app/local-ai.tsx:104:          {!device?.nativeRuntimeAvailable ? <Text style={styles.warning}>No cloud fallback is triggered from this screen. The current web/Expo preview cannot load LiteRT-LM inference.</Text> : null}
+app/local-ai.tsx:106:        <Text style={styles.sectionLabel}>{search.trim() ? `Matching models · ${visibleModels.length}` : `Available model families · ${LOCAL_AI_MODELS.length}`}</Text>
+app/local-ai.tsx:117:            <View style={styles.actionRow}>{downloaded ? <><View style={styles.downloaded}><Ionicons name={loadedModel === model.id ? "radio-button-on" : "checkmark-circle"} size={17} color={loadedModel === model.id ? amber : teal} /><Text style={[styles.downloadedText, loadedModel === model.id && { color: amber }]}>{loadedModel === model.id ? "Loaded for on-device inference" : "Verified artifact on device"}</Text></View><View style={styles.actionButtons}>{loadedModel === model.id ? <Pressable onPress={() => void unloadModel(model.id)} disabled={isBusy} style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}><Text style={styles.secondaryText}>Unload</Text></Pressable> : <Pressable onPress={() => void loadModel(model.id)} disabled={isBusy || !device?.nativeRuntimeAvailable} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, (!device?.nativeRuntimeAvailable || isBusy) && styles.disabled]}><Ionicons name="play-outline" size={17} color="#09111F" /><Text style={styles.primaryText}>{isBusy ? "Loading…" : "Load model"}</Text></Pressable>}<Pressable onPress={() => void remove(model.id)} disabled={isBusy || loadedModel === model.id} style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, loadedModel === model.id && styles.disabled]}><Text style={styles.secondaryText}>Delete</Text></Pressable></View></> : <View style={styles.downloadActionRow}><Pressable onPress={() => void download(model.id)} disabled={isBusy || !assessment?.eligible} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, (!assessment?.eligible || isBusy) && styles.disabled]}><Ionicons name={isBusy ? "pause-outline" : "download-outline"} size={17} color="#09111F" /><Text style={styles.primaryText}>{isBusy ? "Downloading…" : model.installability === "verified_installable" ? (state?.progress ? "Resume download" : "Download model") : "Runtime pending"}</Text></Pressable>{isBusy ? <Pressable onPress={() => void pauseLocalAIModelDownload(model.id)} style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}><Text style={styles.secondaryText}>Pause</Text></Pressable> : null}</View>}</View>
+lib/local-preferences.ts:90:const MARKET_CHAT_HISTORY_KEY = "market-event-intelligence.market-chat.history.v1";
+docs/local-ai-qa-report.md:15:| Expo web export | Passed | 27 static routes exported, including `/local-ai`, `/assistant`, and `/market-chat` |
+tests/assistant-report.test.ts:2:import { validateAnalyzerXAction } from "../server/market-chat";
+plugins/local-ai-android/AnalyzerXLocalAIPackage.kt:8:class AnalyzerXLocalAIPackage : ReactPackage {
+plugins/local-ai-android/AnalyzerXLocalAIPackage.kt:9:  override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> = listOf(AnalyzerXLocalAIModule(reactContext))
+server/market-chat.ts:10:  | { type: "navigate"; route: "/" | "/flows" | "/graph" | "/sectors" | "/screener" | "/alerts" | "/market-chat" | "/storylines" | "/research-workspace" | "/support" | "/account"; params?: Record<string, string> }
+server/market-chat.ts:57:  if (type === "navigate" && typeof value.actionRoute === "string" && ["/", "/flows", "/graph", "/sectors", "/screener", "/alerts", "/market-chat", "/storylines", "/research-workspace", "/support", "/account"].includes(value.actionRoute)) {
+server/market-chat.ts:75:  if (/clear .*history|delete .*assistant history|remove .*chat/.test(lower)) return base("Use the trash icon in the AnalyzerX Assistant header. Chat history is stored locally on this device and can be cleared there.", { type: "navigate", route: "/market-chat" });
+server/market-chat.ts:101:export async function answerMarketChat(message: string, explicitSymbol?: string, history: MarketChatMessage[] = [], attachments: MarketChatAttachment[] = []): Promise<MarketChatResponse> {
+plugins/local-ai-android/AnalyzerXLocalAIModule.kt:17:class AnalyzerXLocalAIModule(private val context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
+plugins/local-ai-android/AnalyzerXLocalAIModule.kt:23:  override fun getName(): String = "AnalyzerXLocalAI"
+plugins/local-ai-android/AnalyzerXLocalAIModule.kt:73:            context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java).emit("AnalyzerXLocalAIToken", payload)
+app/market-chat.tsx:11:import type { AnalyzerXAction, MarketChatAttachment } from "@/server/market-chat";
+app/market-chat.tsx:12:import { getActiveLocalAIModelId, getLocalAIModel } from "@/lib/local-ai";
+app/market-chat.tsx:55:    void getActiveLocalAIModelId().then((modelId) => setActiveLocalModel(modelId ? getLocalAIModel(modelId).displayName : null));
+tests/market-chat.test.ts:32:import { answerMarketChat } from "../server/market-chat";
+tests/market-chat.test.ts:39:    const result = await answerMarketChat("Can you analyze Tata Consultancy Services fundamentals?");
+tests/market-chat.test.ts:47:    const result = await answerMarketChat("What are the latest risks for TCS?");
+tests/market-chat.test.ts:55:    const result = await answerMarketChat("Where do I find Market Flows in AnalyzerX?");
+tests/market-chat.test.ts:62:    const result = await answerMarketChat("Show positive news for Reliance");
+tests/market-chat.test.ts:68:    const result = await answerMarketChat("Explain compound interest simply.");
+tests/market-chat.test.ts:75:    await expect(answerMarketChat("  ")).rejects.toThrow("market question is required");
+docs/local-ai-implementation.md:7:The JavaScript layer does not pretend that a cloud model is local. `lib/local-ai.ts` exposes a replaceable `LocalAIRuntime` interface and returns an explicit unavailable runtime when the native module is absent. On Android, `NativeModules.AnalyzerXLocalAI` is registered by the Kotlin bridge and calls LiteRT-LM directly.
+docs/local-ai-implementation.md:28:- `android/app/src/main/java/com/app/marketeventintelligence/localai/AnalyzerXLocalAIModule.kt`: real Engine/Conversation bridge.
+docs/local-ai-implementation.md:29:- `android/app/src/main/java/com/app/marketeventintelligence/localai/AnalyzerXLocalAIPackage.kt`: React Native package registration.
+docs/local-ai-implementation.md:38:- `app/market-chat.tsx`: direct Local AI entry point from the Assistant screen.
+app/(tabs)/assistant.tsx:1:export { default } from "../market-chat";
+server/routers.ts:11:import { answerMarketChat, type MarketChatAttachment, type MarketChatMessage } from "./market-chat";
+server/routers.ts:221:    ask: publicProcedure.input(z.object({ message: z.string().trim().max(2_000).default(""), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(1_000) })).max(8).default([]), attachments: z.array(z.object({ kind: z.enum(["image", "audio"]), dataUrl: z.string().max(8_000_000), mimeType: z.string().max(80), name: z.string().max(160).optional() })).max(2).default([]) })).mutation(({ input }) => answerMarketChat(input.message, input.symbol, input.history as MarketChatMessage[], input.attachments as MarketChatAttachment[])),
+app/(tabs)/index.tsx:214:            <View style={styles.researchPulse}><View style={styles.researchPulseHeader}><View><Text style={styles.finnhubEyebrow}>RESEARCH PULSE</Text><Text style={styles.finnhubTitle}>Return to the work that matters</Text></View><Ionicons name="pulse-outline" size={18} color={amber} /></View><Text style={styles.researchPulseBody}>Fast paths for discovery, repeat research, and high-signal market context. Usage counts stay on this device.</Text><View style={styles.pulseMetrics}><View><Text style={styles.pulseMetricValue}>{usageSummary?.searches ?? 0}</Text><Text style={styles.pulseMetricLabel}>SEARCHES</Text></View><View><Text style={styles.pulseMetricValue}>{usageSummary?.analyses ?? 0}</Text><Text style={styles.pulseMetricLabel}>ANALYSES</Text></View><View><Text style={styles.pulseMetricValue}>{usageSummary?.newsReads ?? 0}</Text><Text style={styles.pulseMetricLabel}>NEWS READS</Text></View><View><Text style={styles.pulseMetricValue}>{usageSummary?.exports ?? 0}</Text><Text style={styles.pulseMetricLabel}>EXPORTS</Text></View></View>{usageSummary?.topSymbols.length ? <Text style={styles.researchPulseBody}>Most revisited · {usageSummary.topSymbols.join(" · ")}</Text> : null}<View style={styles.pulseActions}><Pressable onPress={() => { void recordResearchEvent({ type: "analysis_open", route: "research-workspace" }); router.push("/research-workspace"); }} style={({ pressed }) => [styles.pulseAction, pressed && styles.newsItemPressed]}><Ionicons name="briefcase-outline" size={15} color={teal} /><Text style={styles.pulseActionText}>Workspace</Text></Pressable><Pressable onPress={() => router.push("/sectors")} style={({ pressed }) => [styles.pulseAction, pressed && styles.newsItemPressed]}><Ionicons name="grid-outline" size={15} color={violet} /><Text style={styles.pulseActionText}>Sectors</Text></Pressable><Pressable onPress={() => router.push("/storylines")} style={({ pressed }) => [styles.pulseAction, pressed && styles.newsItemPressed]}><Ionicons name="git-network-outline" size={15} color={amber} /><Text style={styles.pulseActionText}>Stories</Text></Pressable><Pressable onPress={() => router.push("/alerts")} style={({ pressed }) => [styles.pulseAction, pressed && styles.newsItemPressed]}><Ionicons name="notifications-outline" size={15} color={coral} /><Text style={styles.pulseActionText}>Alerts</Text></Pressable><Pressable onPress={() => router.push("/market-chat")} style={({ pressed }) => [styles.pulseAction, pressed && styles.newsItemPressed]}><Ionicons name="chatbubble-ellipses-outline" size={15} color={amber} /><Text style={styles.pulseActionText}>Market Chat</Text></Pressable></View></View>

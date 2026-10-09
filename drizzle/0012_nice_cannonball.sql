@@ -1,0 +1,2 @@
+CREATE INDEX `user_alert_results_user_market_updated_idx` ON `user_alert_results` (`userId`,`marketId`,`updatedAt`);--> statement-breakpoint
+CREATE INDEX `user_alert_results_user_rule_updated_idx` ON `user_alert_results` (`userId`,`ruleId`,`updatedAt`);

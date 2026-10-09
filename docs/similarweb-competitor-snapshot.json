@@ -1,0 +1,59 @@
+{
+  "screener.in": {
+    "domain": "screener.in",
+    "global_rank": {
+      "code": "failed_precondition",
+      "message": "Credit check passed but current user has insufficient Manus credits. Request was stooped before API call."
+    },
+    "visits": {
+      "code": "failed_precondition",
+      "message": "Credit check passed but current user has insufficient Manus credits. Request was stooped before API call."
+    },
+    "traffic_sources": {
+      "code": "failed_precondition",
+      "message": "Credit check passed but current user has insufficient Manus credits. Request was stooped before API call."
+    },
+    "countries": {
+      "code": "failed_precondition",
+      "message": "Credit check passed but current user has insufficient Manus credits. Request was stooped before API call."
+    }
+  },
+  "tradingview.com": {
+    "domain": "tradingview.com",
+    "global_rank": {
+      "code": "failed_precondition",
+      "message": "Credit check passed but current user has insufficient Manus credits. Request was stooped before API call."
+    },
+    "visits": {
+      "code": "failed_precondition",
+      "message": "Credit check passed but current user has insufficient Manus credits. Request was stooped before API call."
+    },
+    "traffic_sources": {
+      "code": "failed_precondition",
+      "message": "Credit check passed but current user has insufficient Manus credits. Request was stooped before API call."
+    },
+    "countries": {
+      "code": "failed_precondition",
+      "message": "Credit check passed but current user has insufficient Manus credits. Request was stooped before API call."
+    }
+  },
+  "moneycontrol.com": {
+    "domain": "moneycontrol.com",
+    "global_rank": {
+      "code": "failed_precondition",
+      "message": "Credit check passed but current user has insufficient Manus credits. Request was stooped before API call."
+    },
+    "visits": {
+      "code": "failed_precondition",
+      "message": "Credit check passed but current user has insufficient Manus credits. Request was stooped before API call."
+    },
+    "traffic_sources": {
+      "code": "failed_precondition",
+      "message": "Credit check passed but current user has insufficient Manus credits. Request was stooped before API call."
+    },
+    "countries": {
+      "code": "failed_precondition",
+      "message": "Credit check passed but current user has insufficient Manus credits. Request was stooped before API call."
+    }
+  }
+}
