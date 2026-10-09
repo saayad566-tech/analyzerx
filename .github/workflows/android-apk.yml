@@ -1,0 +1,77 @@
+name: AnalyzerX Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "v1.4.0"
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+      - name: Configure Android SDK path
+        run: echo "sdk.dir=${ANDROID_HOME}" > android/local.properties
+      - run: pnpm release:verify
+        env:
+          ANALYZERX_SOURCE_REVISION: ${{ github.sha }}
+      - run: pnpm check
+      - run: pnpm test -- --run
+      - run: cd android && ./gradlew assembleRelease --no-daemon --max-workers=1 -Dorg.gradle.jvmargs="-Xmx2200m -XX:MaxMetaspaceSize=512m" -Dkotlin.daemon.jvm.options="-Xmx768m"
+        env:
+          NODE_OPTIONS: --max-old-space-size=1536
+          CI: "1"
+      - name: Sign APK with v2 and v3 schemes
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)
+          test -n "$apk"
+          keytool -genkeypair -v \
+            -keystore /tmp/analyzerx-release.keystore \
+            -storepass analyzerx-build-password \
+            -keypass analyzerx-build-password \
+            -alias analyzerx \
+            -keyalg RSA -keysize 4096 -validity 10000 \
+            -dname "CN=AnalyzerX 1.4.0 Release, OU=Mobile, O=AnalyzerX, L=Local, ST=Local, C=IN"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$apk" "$apk.aligned"
+          mv "$apk.aligned" "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+            --ks /tmp/analyzerx-release.keystore \
+            --ks-pass pass:analyzerx-build-password \
+            --key-pass pass:analyzerx-build-password \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+          rm -f /tmp/analyzerx-release.keystore
+      - name: Generate artifact checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)
+          test -n "$apk"
+          node scripts/checksum-artifact.mjs "$apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: analyzerx-1.4.0-apk
+          path: |
+            android/app/build/outputs/apk/release/*.apk
+            android/app/build/outputs/apk/release/*.apk.sha256
+          if-no-files-found: error
