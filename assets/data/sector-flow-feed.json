@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "1.0",
+  "source": "JSON import feed",
+  "asOf": "2026-08-16T06:00:00+05:30",
+  "staleAfterHours": 24,
+  "sectors": [
+    {
+      "sector": "Renewable energy",
+      "fiiNetCr": 1842,
+      "diiNetCr": 1260,
+      "mutualFundNetCr": 684,
+      "buyingStrength": 92,
+      "fiiWeight": 68,
+      "diiWeight": 54,
+      "catalyst": "Order-to-capex chain active",
+      "risk": "Valuation sensitivity",
+      "evidence": "LT → WAAREE order and capacity storyline"
+    },
+    {
+      "sector": "Capital goods",
+      "fiiNetCr": 1218,
+      "diiNetCr": 1410,
+      "mutualFundNetCr": 792,
+      "buyingStrength": 84,
+      "fiiWeight": 51,
+      "diiWeight": 73,
+      "catalyst": "Government order visibility",
+      "risk": "Execution timing",
+      "evidence": "Titagarh government order signal"
+    },
+    {
+      "sector": "Defence",
+      "fiiNetCr": 936,
+      "diiNetCr": 1168,
+      "mutualFundNetCr": 606,
+      "buyingStrength": 78,
+      "fiiWeight": 44,
+      "diiWeight": 66,
+      "catalyst": "Supplier network widening",
+      "risk": "Policy / tender timing",
+      "evidence": "9 connected events in the current window"
+    },
+    {
+      "sector": "Railways",
+      "fiiNetCr": 802,
+      "diiNetCr": 984,
+      "mutualFundNetCr": 544,
+      "buyingStrength": 74,
+      "fiiWeight": 39,
+      "diiWeight": 58,
+      "catalyst": "Multi-year order pipeline",
+      "risk": "Order concentration",
+      "evidence": "Execution-stage tender activity"
+    }
+  ]
+}
+
