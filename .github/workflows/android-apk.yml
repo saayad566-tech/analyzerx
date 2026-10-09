@@ -24,8 +24,18 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - uses: android-actions/setup-android@v3
-      - run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+      - name: Provision Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          SDKMGR="$(ls "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -n1)"
+          if [ -z "$SDKMGR" ]; then echo "sdkmanager not found under $SDK"; exit 1; fi
+          echo "Using $SDKMGR"
+          yes | "$SDKMGR" --sdk_root="$SDK" --licenses >/dev/null 2>&1 || true
+          "$SDKMGR" --sdk_root="$SDK" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
       - name: Configure Android SDK path
         run: echo "sdk.dir=${ANDROID_HOME}" > android/local.properties
       - run: pnpm release:verify
