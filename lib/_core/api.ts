@@ -8,6 +8,11 @@ type ApiResponse<T> = {
 };
 
 export async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  // AnalyzerX runs on-device with no backend. Only call out when a remote API is
+  // explicitly configured, so auth never stalls the app on a dead host.
+  if (!process.env.EXPO_PUBLIC_API_BASE_URL?.trim()) {
+    throw new Error("No remote AnalyzerX API is configured; the app runs on-device.");
+  }
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...((options.headers as Record<string, string>) || {}),
@@ -132,6 +137,7 @@ export async function getMe(): Promise<{
   loginMethod: string | null;
   lastSignedIn: string;
 } | null> {
+  if (!process.env.EXPO_PUBLIC_API_BASE_URL?.trim()) return null;
   try {
     const result = await apiCall<{ user: any }>("/api/auth/me");
     return result.user || null;
@@ -144,6 +150,7 @@ export async function getMe(): Promise<{
 // Establish session cookie on the backend (3000-xxx domain)
 // Called after receiving token via postMessage to get a proper Set-Cookie from the backend
 export async function establishSession(token: string): Promise<boolean> {
+  if (!process.env.EXPO_PUBLIC_API_BASE_URL?.trim()) return false;
   try {
     console.log("[API] establishSession: setting cookie on backend...");
     const baseUrl = getApiBaseUrl();
