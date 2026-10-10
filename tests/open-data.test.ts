@@ -134,6 +134,47 @@ describe("open-data live sources (contract + availability)", () => {
     expect(flows).toHaveProperty("rangeLabel");
   }, NETWORK_TIMEOUT);
 
+  it("backfills real FII/DII history from the open dataset", async () => {
+    const flows = await institutionalFlows("TODAY");
+    expect(Array.isArray(flows.history)).toBe(true);
+    // The open dataset carries ~60 sessions; at least several must normalise.
+    expect(flows.history.length).toBeGreaterThanOrEqual(5);
+    for (const point of flows.history.slice(0, 3)) {
+      expect(typeof point.reportDate).toBe("string");
+      expect(point.fiiNet === null || typeof point.fiiNet === "number").toBe(true);
+      expect(point.diiNet === null || typeof point.diiNet === "number").toBe(true);
+    }
+    // History must be chronological for the chart to render.
+    const dates = flows.history.map((point) => point.reportDate);
+    expect([...dates].sort()).toEqual(dates);
+  }, NETWORK_TIMEOUT);
+
+  it("serves FII/DII rows from NSE or the open dataset, and never invents them", async () => {
+    const flows = await institutionalFlows("TODAY");
+    if (flows.rows.length) {
+      expect(flows.status).toBe("live");
+      for (const row of flows.rows) {
+        expect(row).toHaveProperty("category");
+        expect(row).toHaveProperty("netLabel");
+        expect(row.netValue === null || typeof row.netValue === "number").toBe(true);
+      }
+    } else {
+      // Honest failure: both providers down means an explicit error, not a zero.
+      expect(flows.status).toBe("unavailable");
+      expect(flows.error).toBeTruthy();
+    }
+  }, NETWORK_TIMEOUT);
+
+  it("exposes FPI sector allocation and degrades honestly when the source is blocked", async () => {
+    const flows = await institutionalFlows("TODAY");
+    expect(flows.sectorAllocation).toBeDefined();
+    expect(Array.isArray(flows.sectorAllocation?.rows)).toBe(true);
+    if (!flows.sectorAllocation?.rows.length) {
+      // The NSDL-derived dataset is device-side; when unreachable it must say so.
+      expect(typeof flows.sectorAllocation?.error).toBe("string");
+    }
+  }, NETWORK_TIMEOUT);
+
   it("returns well-formed news", async () => {
     const news = await stockNews("RELIANCE", 10);
     expect(Array.isArray(news.articles)).toBe(true);
