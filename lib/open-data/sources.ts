@@ -652,6 +652,111 @@ export async function nseBhavcopy(limit = 0): Promise<{ rows: BhavRow[]; latency
 
 
 /* ------------------------------------------------------------------ *
+ * Institutional flows — GitHub-hosted open dataset + NSDL sector flows
+ *
+ * NSE's own endpoint exposes only the current session. This keyless,
+ * community-maintained dataset is versioned in a public repository and served
+ * through raw.githubusercontent.com / jsDelivr, so it gives real FII/DII
+ * history. It carries its own nse -> groww -> moneycontrol fallback chain and
+ * records which upstream it used.
+ * ------------------------------------------------------------------ */
+
+const FII_DII_BASE = "https://raw.githubusercontent.com/chirag127/fii-dii-activity-api/main/data";
+
+export type FiiDiiLeg = { fiiBuy: number | null; fiiSell: number | null; fiiNet: number | null; diiBuy: number | null; diiSell: number | null; diiNet: number | null };
+export type FiiDiiSession = { date: string; upstream: string; equity: FiiDiiLeg; derivative: FiiDiiLeg };
+
+type RawFiiDiiLeg = { fii_buy?: number; fii_sell?: number; fii_net?: number; dii_buy?: number; dii_sell?: number; dii_net?: number };
+type RawFiiDiiSession = { date?: string; source?: string; equity?: RawFiiDiiLeg; derivative?: RawFiiDiiLeg };
+
+function normalizeLeg(leg: RawFiiDiiLeg | undefined): FiiDiiLeg {
+  return {
+    fiiBuy: safeNumber(leg?.fii_buy),
+    fiiSell: safeNumber(leg?.fii_sell),
+    fiiNet: safeNumber(leg?.fii_net),
+    diiBuy: safeNumber(leg?.dii_buy),
+    diiSell: safeNumber(leg?.dii_sell),
+    diiNet: safeNumber(leg?.dii_net),
+  };
+}
+
+function normalizeSession(raw: RawFiiDiiSession): FiiDiiSession | null {
+  if (!raw?.date) return null;
+  return { date: raw.date, upstream: raw.source ?? "unknown", equity: normalizeLeg(raw.equity), derivative: normalizeLeg(raw.derivative) };
+}
+
+/** Manifest of available sessions (dates + count + latest). */
+export async function fiiDiiGithubIndex(): Promise<{ count: number; latest: string | null; dates: string[]; latencyMs: number; url: string }> {
+  const url = `${FII_DII_BASE}/index.json`;
+  const { data, latencyMs } = await fetchJson<{ count?: number; latest?: string; dates?: string[] }>(url);
+  const dates = Array.isArray(data.dates) ? data.dates.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)) : [];
+  if (!dates.length) throw new SourceError("FII/DII dataset manifest returned no dates");
+  return { count: data.count ?? dates.length, latest: data.latest ?? dates[dates.length - 1] ?? null, dates, latencyMs, url };
+}
+
+/** One session of FII/DII cash + derivative flows (₹ crore). */
+export async function fiiDiiGithubSession(date: string): Promise<{ session: FiiDiiSession; latencyMs: number; url: string }> {
+  const url = `${FII_DII_BASE}/${date}.json`;
+  const { data, latencyMs } = await fetchJson<RawFiiDiiSession>(url);
+  const session = normalizeSession(data);
+  if (!session) throw new SourceError(`FII/DII session ${date} was malformed`);
+  return { session, latencyMs, url };
+}
+
+/** Most recent session. */
+export async function fiiDiiGithubLatest(): Promise<{ session: FiiDiiSession; latencyMs: number; url: string }> {
+  const url = `${FII_DII_BASE}/latest.json`;
+  const { data, latencyMs } = await fetchJson<RawFiiDiiSession>(url);
+  const session = normalizeSession(data);
+  if (!session) throw new SourceError("FII/DII latest session was malformed");
+  return { session, latencyMs, url };
+}
+
+/** Backfill the most recent `limit` sessions (newest first). */
+export async function fiiDiiGithubHistory(limit = 30): Promise<{ sessions: FiiDiiSession[]; latencyMs: number; url: string }> {
+  const started = Date.now();
+  const index = await fiiDiiGithubIndex();
+  // Ascending (oldest -> newest): the flow chart renders the trailing window.
+  const wanted = index.dates.slice(-Math.max(1, Math.min(90, limit)));
+  const settled = await Promise.all(
+    wanted.map(async (date) => {
+      try {
+        return (await fiiDiiGithubSession(date)).session;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const sessions = settled.filter((session): session is FiiDiiSession => Boolean(session));
+  if (!sessions.length) throw new SourceError("FII/DII history returned no usable sessions");
+  return { sessions, latencyMs: Date.now() - started, url: `${FII_DII_BASE}/index.json` };
+}
+
+/* ------------------------------------------------------------------ *
+ * NSDL-derived sector institutional allocation
+ * Fortnightly FPI sector allocation (AUM %, net flow, one-year flow).
+ * Reachable on a normal device connection; blocked by the build sandbox's
+ * DNS allowlist, so it is wired with honest degradation.
+ * ------------------------------------------------------------------ */
+
+export type SectorFlowRow = { sector: string; aumPct: number | null; fortnightNet: number | null; oneYearNet: number | null; asOf: string | null };
+
+export async function nsdlSectorFlows(): Promise<{ rows: SectorFlowRow[]; asOf: string | null; latencyMs: number; url: string }> {
+  const url = "https://fii-diidata.mrchartist.com/api/sectors";
+  const { data, latencyMs } = await fetchJson<Record<string, unknown>>(url);
+  const source = Array.isArray(data) ? data : Array.isArray((data as { sectors?: unknown }).sectors) ? ((data as { sectors: unknown[] }).sectors) : [];
+  const rows = (source as Array<Record<string, unknown>>).map((row) => ({
+    sector: String(row.sector ?? row.name ?? ""),
+    aumPct: safeNumber(row.aum_pct ?? row.aumPercent ?? row.aum),
+    fortnightNet: safeNumber(row.fortnight_net ?? row.fortnightNet ?? row.net),
+    oneYearNet: safeNumber(row.one_year_net ?? row.oneYearNet ?? row.year_net),
+    asOf: typeof row.date === "string" ? row.date : null,
+  })).filter((row) => row.sector);
+  if (!rows.length) throw new SourceError("NSDL sector flow dataset returned no rows");
+  return { rows, asOf: rows.find((row) => row.asOf)?.asOf ?? null, latencyMs, url };
+}
+
+/* ------------------------------------------------------------------ *
  * Provenance helpers for these sources
  * ------------------------------------------------------------------ */
 

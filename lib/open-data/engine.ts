@@ -29,6 +29,10 @@ import {
   nseFiiDii,
   nseIndexConstituents,
   nseSmeUniverse,
+  type SectorFlowRow,
+  fiiDiiGithubHistory,
+  fiiDiiGithubLatest,
+  nsdlSectorFlows,
   yahooNewsRss,
   quoteFromSeries,
   yahooChart,
@@ -499,21 +503,35 @@ export type InstitutionalFlows = {
   freshnessLabel: string;
   freshnessBusinessDays: number | null;
   rows: InstitutionalFlowRow[];
-  history: never[];
+  history: Array<{ reportDate: string; fiiNet: number | null; diiNet: number | null }>;
   range: string;
   rangeLabel: string;
   comparison: never[];
   error: string | null;
+  /** Fortnightly FPI sector allocation (NSDL-derived). Device-side source. */
+  sectorAllocation?: { rows: SectorFlowRow[]; asOf: string | null; source: string; error: string | null };
 };
 
 const RANGE_LABELS: Record<string, string> = { TODAY: "Today", THREE_DAYS: "Last 3 sessions", ONE_WEEK: "Last week", ONE_MONTH: "Last month", QTD: "Quarter to date" };
 
 export async function institutionalFlows(range = "TODAY"): Promise<InstitutionalFlows> {
-  try {
-    const result = await cached("flows:fii-dii", TTL.flows, () => tracked("nse-fii-dii", () => nseFiiDii()));
-    const rows: InstitutionalFlowRow[] = result.value.rows.map((row: FlowRow) => {
+  const rows: InstitutionalFlowRow[] = [];
+  let status: SourceStatus = "unavailable";
+  let sourceName = "NSE FII/DII provisional report";
+  let upstream: "NSE" | "NSE via intermediary" = "NSE";
+  let reportDate: string | null = null;
+  let freshnessLabel = "Unavailable";
+  let error: string | null = null;
+
+  // Primary: NSE's own provisional report for the current session.
+  const nseOutcome = await runChain([
+    { key: "nse-fii-dii", name: "NSE FII/DII", run: () => cached("flows:fii-dii", TTL.flows, () => nseFiiDii()) },
+  ]);
+
+  if (nseOutcome.value) {
+    for (const row of nseOutcome.value.value.rows) {
       const net = row.netValue;
-      return {
+      rows.push({
         category: row.category,
         label: row.category === "DII" ? "Domestic Institutional Investors" : row.category === "FII/FPI" ? "Foreign Institutional Investors" : row.category,
         buyValue: row.buyValue,
@@ -524,40 +542,86 @@ export async function institutionalFlows(range = "TODAY"): Promise<Institutional
         sentiment: net === null ? "Neutral" : net > 0 ? "Positive" : net < 0 ? "Negative" : "Neutral",
         source: "NSE FII/DII report",
         reportDate: row.date,
+      });
+    }
+    status = "live";
+    reportDate = rows[0]?.reportDate ?? null;
+    freshnessLabel = "Provisional, as published by NSE";
+  } else {
+    // Secondary: the keyless GitHub-hosted dataset (own nse/groww/moneycontrol chain).
+    const gh = await runChain([
+      { key: "fii-dii-github", name: "FII/DII open dataset", run: () => cached("flows:fii-dii-github", TTL.flows, () => fiiDiiGithubLatest()) },
+    ]);
+    const ghSession = gh.value ? gh.value.value.session : null;
+    if (ghSession) {
+      const leg = ghSession.equity;
+      const push = (category: string, label: string, net: number | null, buy: number | null, sell: number | null) => {
+        rows.push({
+          category,
+          label,
+          buyValue: buy,
+          sellValue: sell,
+          netValue: net,
+          netLabel: net === null ? "Unavailable" : `₹${Math.abs(net).toLocaleString("en-IN")} Cr ${net >= 0 ? "net buy" : "net sell"}`,
+          action: net === null ? "Neutral" : net > 0 ? "Buy" : net < 0 ? "Sell" : "Neutral",
+          sentiment: net === null ? "Neutral" : net > 0 ? "Positive" : net < 0 ? "Negative" : "Neutral",
+          source: "FII/DII open dataset",
+          reportDate: ghSession.date,
+        });
       };
-    });
-    return {
-      status: result.fromCache ? "delayed" : "live",
-      source: "NSE FII/DII provisional report",
-      upstream: "NSE",
-      reportDate: rows[0]?.reportDate ?? null,
-      fetchedAt: nowIso(),
-      freshnessLabel: result.fromCache ? "Cached snapshot" : "Provisional, as published by NSE",
-      freshnessBusinessDays: 0,
-      rows,
-      history: [],
-      range,
-      rangeLabel: RANGE_LABELS[range] ?? range,
-      comparison: [],
-      error: null,
-    };
-  } catch (error) {
-    return {
-      status: "unavailable",
-      source: "NSE FII/DII provisional report",
-      upstream: "NSE",
-      reportDate: null,
-      fetchedAt: nowIso(),
-      freshnessLabel: "Unavailable",
-      freshnessBusinessDays: null,
-      rows: [],
-      history: [],
-      range,
-      rangeLabel: RANGE_LABELS[range] ?? range,
-      comparison: [],
-      error: String(error).slice(0, 240),
-    };
+      push("FII/FPI", "Foreign Institutional Investors", leg.fiiNet, leg.fiiBuy, leg.fiiSell);
+      push("DII", "Domestic Institutional Investors", leg.diiNet, leg.diiBuy, leg.diiSell);
+      status = "live";
+      sourceName = "FII/DII open dataset (keyless, GitHub-hosted)";
+      upstream = "NSE via intermediary";
+      reportDate = ghSession.date;
+      freshnessLabel = `Via ${ghSession.upstream}; provisional until custodian confirmation`;
+    } else {
+      error = `NSE and the open dataset both failed: ${nseOutcome.attempts[0]?.error ?? "unknown"}`;
+    }
   }
+
+  // History: backfilled from the open dataset (NSE's endpoint exposes only today).
+  let history: InstitutionalFlows["history"] = [];
+  try {
+    const backfill = await cached("flows:fii-dii-history", 6 * 60 * 60_000, () => fiiDiiGithubHistory(30));
+    history = backfill.value.sessions
+      .map((session) => ({ reportDate: session.date, fiiNet: session.equity.fiiNet, diiNet: session.equity.diiNet }))
+      .filter((point) => point.fiiNet !== null || point.diiNet !== null);
+    if (!reportDate && history.length) reportDate = history[0].reportDate;
+  } catch {
+    history = [];
+  }
+
+  const sectorAllocation = await sectorInstitutionalFlows();
+
+  return {
+    status,
+    source: sourceName,
+    upstream,
+    reportDate,
+    fetchedAt: nowIso(),
+    freshnessLabel,
+    freshnessBusinessDays: 0,
+    rows,
+    history,
+    range,
+    rangeLabel: RANGE_LABELS[range] ?? range,
+    comparison: [],
+    error,
+    sectorAllocation,
+  };
+}
+
+/** NSDL-derived fortnightly FPI sector allocation. Device-side. */
+export async function sectorInstitutionalFlows(): Promise<{ rows: SectorFlowRow[]; asOf: string | null; source: string; error: string | null }> {
+  const outcome = await runChain([
+    { key: "nsdl-sector-flows", name: "NSDL FPI sector allocation", run: () => cached("flows:sector", 6 * 60 * 60_000, () => nsdlSectorFlows()) },
+  ]);
+  if (!outcome.value) {
+    return { rows: [], asOf: null, source: "NSDL FPI sector allocation", error: `Sector flow dataset unavailable: ${outcome.attempts[0]?.error ?? "unknown"}` };
+  }
+  return { rows: outcome.value.value.rows, asOf: outcome.value.value.asOf, source: outcome.value.value.url, error: null };
 }
 
 /* ------------------------------------------------------------------ *
