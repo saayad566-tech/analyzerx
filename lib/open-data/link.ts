@@ -30,6 +30,10 @@ import {
   stockNews,
 } from "./engine";
 import { NSE_INDEX_FILES, type NewsArticle } from "./sources";
+import { queryArchive, storeStats } from "./store";
+import { catalogSummary, collectorStats, runCollectionCycle } from "./collector";
+import { buildCatalog, providerOf } from "./catalog";
+import { allLinkHealth, linkHealth, runChain, runMerge, type ChainAttempt } from "./chain";
 
 type Input = Record<string, unknown> | undefined;
 
@@ -504,38 +508,90 @@ const HANDLERS: Record<string, Handler> = {
   },
   "news.archive": async (input) => {
     const days = Number(input?.days ?? 30) || 30;
-    const payload = await marketNews(200);
     const symbol = str(input, "symbol");
-    const articles = symbol ? payload.articles.filter((a) => a.symbol === symbol || a.headline.toUpperCase().includes(symbol)) : payload.articles;
-    const sourceCoverage = [...new Set(articles.map((a) => a.source))].map((source) => ({ source, count: articles.filter((a) => a.source === source).length }));
+    const orderMap: Record<string, "newest" | "oldest" | "impact-high" | "impact-low"> = {
+      "Newest first": "newest",
+      "Oldest first": "oldest",
+      "Impact low → high": "impact-low",
+      "Impact high → low": "impact-high",
+    };
+    const order = orderMap[str(input, "archiveOrder", "Newest first")] ?? "newest";
+    const sentimentRaw = str(input, "archiveSentiment", "All sentiment");
+    const sentiment = ["Positive", "Neutral", "Negative"].includes(sentimentRaw) ? (sentimentRaw as "Positive" | "Neutral" | "Negative") : undefined;
+
+    // Stored history first: this is the phone's own archive, so it reaches back
+    // to the day collection started rather than a live window.
+    let result = await queryArchive({
+      symbol: symbol || undefined,
+      days,
+      sentiment,
+      order,
+      limit: Math.min(500, Number(input?.limit ?? 200) || 200),
+      offset: (Number(input?.page ?? 0) || 0) * (Math.min(500, Number(input?.limit ?? 200) || 200)),
+    });
+
+    // First run on a fresh install: top the archive up with a live pass so the
+    // screen is never empty while history builds.
+    if (!result.articles.length) {
+      const payload = await marketNews(200);
+      const live = symbol ? payload.articles.filter((a) => a.symbol === symbol || a.headline.toUpperCase().includes(symbol.toUpperCase())) : payload.articles;
+      result = {
+        ...result,
+        articles: live.map((a) => ({ ...a, collectedAt: nowIso(), sourceKey: "live", sourceName: a.source, kind: "news" })),
+        total: live.length,
+        returned: live.length,
+        coverage: { from: live[0]?.publishedAt ?? null, to: live[0]?.publishedAt ?? null, months: 0, stored: 0 },
+        sources: [...new Set(live.map((a) => a.source))].map((source) => ({ source, count: live.filter((a) => a.source === source).length })),
+      };
+    }
+
     return {
-      coverage: articles.length ? "available" : "empty",
+      coverage: result.articles.length ? "available" : "empty",
       missingCoverage: [],
       days,
       startDate: new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10),
       endDate: new Date().toISOString().slice(0, 10),
-      sourceCoverage,
-      articles,
+      sourceCoverage: result.sources,
+      coverageWindow: result.coverage,
+      total: result.total,
+      returned: result.returned,
+      hasMore: result.hasMore,
+      offset: result.offset,
+      order,
+      articles: result.articles,
     };
   },
   "news.status": async () => {
-    const payload = await marketNews(200);
+    const [collector, store, catalog] = await Promise.all([collectorStats(), storeStats(), Promise.resolve(catalogSummary())]);
     const universe = await nseUniverse().catch(() => ({ securities: [] as Array<{ symbol: string }> }));
-    const covered = new Set(payload.articles.map((a) => a.symbol).filter(Boolean));
     return {
-      running: true,
-      coverageMode: "on-device open sources",
-      articlesStored: payload.articles.length,
+      running: collector.running,
+      coverageMode: "on-device continuous collection",
+      articlesStored: store.total,
       universeCount: universe.securities.length,
-      coveredSymbols: [...covered].length,
-      lastSuccessAt: payload.fetchedAt,
-      lastError: payload.providerFailures ? `${payload.providerFailures} provider(s) failed on the last refresh.` : null,
-      providerFailures: payload.providerFailures,
-      stale: payload.stale,
-      sources: payload.sources,
+      coveredSymbols: Object.keys(store.bySource).length,
+      lastSuccessAt: collector.lastRunAt ?? store.updatedAt,
+      lastError: collector.lastError,
+      providerFailures: collector.sourcesFailed,
+      stale: false,
+      collector: {
+        cycles: collector.cycles,
+        sourcesTried: collector.sourcesTried,
+        sourcesOk: collector.sourcesOk,
+        sourcesFailed: collector.sourcesFailed,
+        sourcesSkipped: collector.sourcesSkipped,
+        articlesCollected: collector.articlesCollected,
+        lastDurationMs: collector.lastDurationMs,
+      },
+      catalog: { total: catalog.total, collectable: catalog.collectable, verified: catalog.verified, device: catalog.device, byProvider: catalog.byProvider },
+      history: { total: store.total, months: store.months, oldest: store.oldest, newest: store.newest, byKind: store.byKind },
+      sources: [],
     };
   },
-  "news.refresh": async (input) => stockNews(str(input, "symbol"), 40),
+  "news.refresh": async (input) => {
+    await runCollectionCycle({ batchSize: 18, budgetMs: 15_000, symbols: str(input, "symbol") ? [str(input, "symbol")] : [] }).catch(() => undefined);
+    return stockNews(str(input, "symbol"), 40);
+  },
   "news.flagIrrelevant": async (input) => localSet("news.flagged", input ?? {}),
   "news.undoIrrelevant": async () => localSet("news.flagged", {}),
   "news.reviewHeld": async () => ({ items: await localGet("news.held", []), held: await localGet("news.held", []) }),
@@ -634,9 +690,34 @@ const HANDLERS: Record<string, Handler> = {
   "providers.runNow": async (input) => ({ provider: str(input, "key", str(input, "provider")), triggered: true, at: nowIso() }),
   "providers.gdeltBudget": async () => ({ requestsInWindow: 0, maxRequestsPerWindow: 0, remaining: null, nextAllowedAt: null, consecutiveFailures: 0, note: "GDELT is called on-device with no shared server-side budget." }),
   "providers.webResearch": async () => ({ results: [], note: "Web research requires a search provider credential." }),
-  "sources.list": () => providerRegistry().map((p) => ({ key: p.key, name: p.name, capability: p.capability, endpoint: p.endpoint, markets: p.markets, credentialState: p.credentialState, licensing: p.licensing, status: p.status })),
-  "sources.health": () => providerRegistry().map((p) => ({ key: p.key, status: p.status, latencyMs: p.latencyMs, lastSuccessAt: p.lastSuccessAt, lastError: p.lastError })),
-  "sources.latest": async () => [],
+  "sources.list": () =>
+    buildCatalog().map((source) => ({
+      key: source.id,
+      name: source.name,
+      capability: source.kind,
+      endpoint: source.url,
+      markets: [source.market],
+      credentialState: source.credentialState,
+      licensing: source.license,
+      provider: providerOf(source),
+      format: source.format,
+      reachability: source.reachability,
+      cadenceMs: source.cadenceMs,
+      status: linkHealth(source.id).status,
+      latencyMs: linkHealth(source.id).latencyMs,
+    })),
+  "sources.health": () => [
+    ...providerRegistry().map((p) => ({ key: p.key, status: p.status, latencyMs: p.latencyMs, lastSuccessAt: p.lastSuccessAt, lastError: p.lastError })),
+    ...buildCatalog().map((source) => {
+      const health = linkHealth(source.id);
+      return { key: source.id, status: health.status, latencyMs: health.latencyMs, lastSuccessAt: health.lastSuccessAt, lastError: health.lastError, consecutiveFailures: health.consecutiveFailures };
+    }),
+  ],
+  "sources.latest": async (input) => {
+    const limit = Number(input?.limit ?? 50) || 50;
+    const result = await queryArchive({ order: "newest", limit });
+    return result.articles.map((article) => ({ key: article.sourceKey, title: article.headline, source: article.sourceName, url: article.url, publishedAt: article.publishedAt, collectedAt: article.collectedAt, kind: article.kind, symbol: article.symbol }));
+  },
   "sources.nseCollectors": async () => [{ key: "nse-equity-master", status: "live", cadence: "daily" }, { key: "nse-index-constituents", status: "live", cadence: "daily" }, { key: "nse-fii-dii", status: "live", cadence: "intraday" }],
   "sources.regionalCollectors": async () => [],
   "sources.publicMacro": async () => {
