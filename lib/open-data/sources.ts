@@ -561,6 +561,97 @@ export async function nseSmeUniverse(): Promise<{ rows: UniverseRow[]; latencyMs
 }
 
 /* ------------------------------------------------------------------ *
+ * Generic RSS adapter + official NSE data files
+ * ------------------------------------------------------------------ */
+
+/** Parse any RSS/Atom feed into news articles with a fixed source label. */
+export async function genericRssFeed(
+  url: string,
+  sourceName: string,
+  options: { symbol?: string; kind?: string; limit?: number } = {},
+): Promise<{ articles: NewsArticle[]; latencyMs: number; url: string }> {
+  const { text, latencyMs } = await fetchText(url);
+  const items = parseRss(text).slice(0, options.limit ?? 60);
+  const articles = items.map((item) => {
+    const { sentiment, score } = classifySentiment(`${item.title} ${item.description}`);
+    return {
+      id: articleId(item.link || item.guid || item.title, item.title),
+      symbol: options.symbol ?? "",
+      headline: stripHtml(item.title),
+      summary: item.description.slice(0, 600),
+      source: sourceName,
+      url: item.link,
+      publishedAt: item.pubDate && Number.isFinite(Date.parse(item.pubDate)) ? new Date(item.pubDate).toISOString() : null,
+      sentiment,
+      impactScore: score,
+      keyEntities: [options.kind ?? "disclosure"],
+    } satisfies NewsArticle;
+  });
+  return { articles, latencyMs, url };
+}
+
+export type DealRow = { date: string; symbol: string; security: string; client: string; side: string; quantity: number | null; price: number | null };
+
+function parseDeals(text: string): DealRow[] {
+  return csvToObjects(text)
+    .map((record) => ({
+      date: (record["Date"] ?? "").trim(),
+      symbol: (record["Symbol"] ?? "").trim().toUpperCase(),
+      security: (record["Security Name"] ?? "").trim(),
+      client: (record["Client Name"] ?? "").trim(),
+      side: (record["Buy/Sell"] ?? "").trim(),
+      quantity: safeNumber(record["Quantity Traded"]),
+      price: safeNumber(record["Trade Price / Wgh"]),
+    }))
+    .filter((row) => row.symbol && row.client);
+}
+
+/** NSE bulk deals — daily, official. */
+export async function nseBulkDeals(): Promise<{ rows: DealRow[]; latencyMs: number; url: string }> {
+  const url = `${NSE_ARCHIVES}/content/equities/bulk.csv`;
+  const { text, latencyMs } = await fetchText(url);
+  return { rows: parseDeals(text), latencyMs, url };
+}
+
+/** NSE block deals — daily, official. */
+export async function nseBlockDeals(): Promise<{ rows: DealRow[]; latencyMs: number; url: string }> {
+  const url = `${NSE_ARCHIVES}/content/equities/block.csv`;
+  const { text, latencyMs } = await fetchText(url);
+  return { rows: parseDeals(text), latencyMs, url };
+}
+
+export type BhavRow = { symbol: string; series: string; date: string; prevClose: number | null; open: number | null; high: number | null; low: number | null; last: number | null; close: number | null; volume: number | null; turnover: number | null };
+
+/** NSE full daily bhavcopy — official OHLCV for every listed security. */
+export async function nseBhavcopy(limit = 0): Promise<{ rows: BhavRow[]; latencyMs: number; url: string }> {
+  const url = `${NSE_ARCHIVES}/products/content/sec_bhavdata_full.csv`;
+  const { text, latencyMs } = await fetchText(url);
+  const rows = csvToObjects(text)
+    .map((record) => {
+      const pick = (key: string) => {
+        const found = Object.keys(record).find((candidate) => candidate.trim().toUpperCase() === key);
+        return found ? record[found] : "";
+      };
+      return {
+        symbol: pick("SYMBOL").trim().toUpperCase(),
+        series: pick("SERIES").trim(),
+        date: pick("DATE1").trim(),
+        prevClose: safeNumber(pick("PREV_CLOSE")),
+        open: safeNumber(pick("OPEN_PRICE")),
+        high: safeNumber(pick("HIGH_PRICE")),
+        low: safeNumber(pick("LOW_PRICE")),
+        last: safeNumber(pick("LAST_PRICE")),
+        close: safeNumber(pick("CLOSE_PRICE")),
+        volume: safeNumber(pick("TTL_TRD_QNTY")),
+        turnover: safeNumber(pick("TURNOVER_LACS")),
+      };
+    })
+    .filter((row) => row.symbol && row.series === "EQ");
+  return { rows: limit > 0 ? rows.slice(0, limit) : rows, latencyMs, url };
+}
+
+
+/* ------------------------------------------------------------------ *
  * Provenance helpers for these sources
  * ------------------------------------------------------------------ */
 
