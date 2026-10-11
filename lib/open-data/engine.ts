@@ -481,17 +481,31 @@ export async function marketNews(limit = 60): Promise<NewsPayload> {
  * Institutional flows (NSE FII/DII)
  * ------------------------------------------------------------------ */
 
+export type InstitutionalParticipant = "FII/FPI" | "DII";
+export type FlowRange = "TODAY" | "THREE_DAYS" | "ONE_WEEK" | "ONE_MONTH" | "QTD";
+
+/**
+ * The flow contract is taken verbatim from the original server module
+ * (server/nse-flows.ts) because the screens were written against it. Emitting
+ * anything else makes the UI read undefined fields and render wrong numbers.
+ */
 export type InstitutionalFlowRow = {
-  category: string;
-  label: string;
-  buyValue: number | null;
-  sellValue: number | null;
-  netValue: number | null;
-  netLabel: string;
-  action: "Buy" | "Sell" | "Neutral";
-  sentiment: "Positive" | "Negative" | "Neutral";
-  source: string;
+  participant: InstitutionalParticipant;
+  buy: number | null;
+  sell: number | null;
+  net: number | null;
+};
+
+export type InstitutionalHistoryRecord = {
   reportDate: string;
+  rows: InstitutionalFlowRow[];
+};
+
+export type InstitutionalFlowComparison = {
+  participant: InstitutionalParticipant;
+  currentNet: number | null;
+  previousNet: number | null;
+  changePct: number | null;
 };
 
 export type InstitutionalFlows = {
@@ -503,25 +517,62 @@ export type InstitutionalFlows = {
   freshnessLabel: string;
   freshnessBusinessDays: number | null;
   rows: InstitutionalFlowRow[];
-  history: Array<{ reportDate: string; fiiNet: number | null; diiNet: number | null }>;
+  history: InstitutionalHistoryRecord[];
   range: string;
   rangeLabel: string;
-  comparison: never[];
+  comparison: InstitutionalFlowComparison[];
   error: string | null;
   /** Fortnightly FPI sector allocation (NSDL-derived). Device-side source. */
   sectorAllocation?: { rows: SectorFlowRow[]; asOf: string | null; source: string; error: string | null };
 };
 
+/** Sum buy/sell/net per participant across the records in a window. */
+function aggregateFlows(records: InstitutionalHistoryRecord[]): InstitutionalFlowRow[] {
+  return (["FII/FPI", "DII"] as InstitutionalParticipant[]).map((participant) => {
+    const rows = records
+      .map((record) => record.rows.find((row) => row.participant === participant))
+      .filter((row): row is InstitutionalFlowRow => Boolean(row));
+    const add = (key: "buy" | "sell" | "net") => {
+      const values = rows.map((row) => row[key]).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+      return values.length ? Number(values.reduce((sum, value) => sum + value, 0).toFixed(2)) : null;
+    };
+    return { participant, buy: add("buy"), sell: add("sell"), net: add("net") };
+  });
+}
+
+/** Split the newest-first history into the selected window and the one before it. */
+function rangeRecords(
+  history: InstitutionalHistoryRecord[],
+  range: string,
+): { current: InstitutionalHistoryRecord[]; previous: InstitutionalHistoryRecord[] } {
+  if (!history.length) return { current: [], previous: [] };
+  if (range === "TODAY") return { current: history.slice(0, 1), previous: history.slice(1, 2) };
+  if (range === "QTD") {
+    const anchor = new Date(`${history[0].reportDate}T00:00:00.000Z`);
+    if (Number.isNaN(anchor.getTime())) return { current: history, previous: [] };
+    const quarterStart = new Date(Date.UTC(anchor.getUTCFullYear(), Math.floor(anchor.getUTCMonth() / 3) * 3, 1));
+    const current = history.filter((item) => new Date(`${item.reportDate}T00:00:00.000Z`) >= quarterStart);
+    return { current, previous: history.slice(current.length, current.length * 2) };
+  }
+  const size = range === "THREE_DAYS" ? 3 : range === "ONE_WEEK" ? 5 : 22;
+  return { current: history.slice(0, size), previous: history.slice(size, size * 2) };
+}
+
+function percentChange(current: number | null, previous: number | null): number | null {
+  if (current === null || previous === null || previous === 0) return null;
+  return Number((((current - previous) / Math.abs(previous)) * 100).toFixed(2));
+}
+
 const RANGE_LABELS: Record<string, string> = { TODAY: "Today", THREE_DAYS: "Last 3 sessions", ONE_WEEK: "Last week", ONE_MONTH: "Last month", QTD: "Quarter to date" };
 
 export async function institutionalFlows(range = "TODAY"): Promise<InstitutionalFlows> {
-  const rows: InstitutionalFlowRow[] = [];
   let status: SourceStatus = "unavailable";
   let sourceName = "NSE FII/DII provisional report";
   let upstream: "NSE" | "NSE via intermediary" = "NSE";
   let reportDate: string | null = null;
   let freshnessLabel = "Unavailable";
   let error: string | null = null;
+  let liveRows: InstitutionalFlowRow[] = [];
 
   // Primary: NSE's own provisional report for the current session.
   const nseOutcome = await runChain([
@@ -529,49 +580,28 @@ export async function institutionalFlows(range = "TODAY"): Promise<Institutional
   ]);
 
   if (nseOutcome.value) {
-    for (const row of nseOutcome.value.value.rows) {
-      const net = row.netValue;
-      rows.push({
-        category: row.category,
-        label: row.category === "DII" ? "Domestic Institutional Investors" : row.category === "FII/FPI" ? "Foreign Institutional Investors" : row.category,
-        buyValue: row.buyValue,
-        sellValue: row.sellValue,
-        netValue: net,
-        netLabel: net === null ? "Unavailable" : `₹${Math.abs(net).toLocaleString("en-IN")} Cr ${net >= 0 ? "net buy" : "net sell"}`,
-        action: net === null ? "Neutral" : net > 0 ? "Buy" : net < 0 ? "Sell" : "Neutral",
-        sentiment: net === null ? "Neutral" : net > 0 ? "Positive" : net < 0 ? "Negative" : "Neutral",
-        source: "NSE FII/DII report",
-        reportDate: row.date,
-      });
-    }
-    status = "live";
-    reportDate = rows[0]?.reportDate ?? null;
+    liveRows = nseOutcome.value.value.rows.map((row) => ({
+      participant: /DII/i.test(row.category) ? ("DII" as const) : ("FII/FPI" as const),
+      buy: row.buyValue,
+      sell: row.sellValue,
+      net: row.netValue,
+    }));
+    status = "fresh";
+    reportDate = nseOutcome.value.value.rows[0]?.date ?? null;
     freshnessLabel = "Provisional, as published by NSE";
   } else {
-    // Secondary: the keyless GitHub-hosted dataset (own nse/groww/moneycontrol chain).
+    // Secondary: the keyless GitHub-hosted dataset, which carries its own chain.
     const gh = await runChain([
       { key: "fii-dii-github", name: "FII/DII open dataset", run: () => cached("flows:fii-dii-github", TTL.flows, () => fiiDiiGithubLatest()) },
     ]);
     const ghSession = gh.value ? gh.value.value.session : null;
     if (ghSession) {
       const leg = ghSession.equity;
-      const push = (category: string, label: string, net: number | null, buy: number | null, sell: number | null) => {
-        rows.push({
-          category,
-          label,
-          buyValue: buy,
-          sellValue: sell,
-          netValue: net,
-          netLabel: net === null ? "Unavailable" : `₹${Math.abs(net).toLocaleString("en-IN")} Cr ${net >= 0 ? "net buy" : "net sell"}`,
-          action: net === null ? "Neutral" : net > 0 ? "Buy" : net < 0 ? "Sell" : "Neutral",
-          sentiment: net === null ? "Neutral" : net > 0 ? "Positive" : net < 0 ? "Negative" : "Neutral",
-          source: "FII/DII open dataset",
-          reportDate: ghSession.date,
-        });
-      };
-      push("FII/FPI", "Foreign Institutional Investors", leg.fiiNet, leg.fiiBuy, leg.fiiSell);
-      push("DII", "Domestic Institutional Investors", leg.diiNet, leg.diiBuy, leg.diiSell);
-      status = "live";
+      liveRows = [
+        { participant: "FII/FPI", buy: leg.fiiBuy, sell: leg.fiiSell, net: leg.fiiNet },
+        { participant: "DII", buy: leg.diiBuy, sell: leg.diiSell, net: leg.diiNet },
+      ];
+      status = "fresh";
       sourceName = "FII/DII open dataset (keyless, GitHub-hosted)";
       upstream = "NSE via intermediary";
       reportDate = ghSession.date;
@@ -581,17 +611,52 @@ export async function institutionalFlows(range = "TODAY"): Promise<Institutional
     }
   }
 
-  // History: backfilled from the open dataset (NSE's endpoint exposes only today).
-  let history: InstitutionalFlows["history"] = [];
+  // History: newest first, matching the server contract so the range windows
+  // and the screens' slicing both behave as designed.
+  let history: InstitutionalHistoryRecord[] = [];
   try {
     const backfill = await cached("flows:fii-dii-history", 6 * 60 * 60_000, () => fiiDiiGithubHistory(30));
     history = backfill.value.sessions
-      .map((session) => ({ reportDate: session.date, fiiNet: session.equity.fiiNet, diiNet: session.equity.diiNet }))
-      .filter((point) => point.fiiNet !== null || point.diiNet !== null);
-    if (!reportDate && history.length) reportDate = history[0].reportDate;
+      .map((session) => ({
+        reportDate: session.date,
+        rows: [
+          { participant: "FII/FPI" as const, buy: session.equity.fiiBuy, sell: session.equity.fiiSell, net: session.equity.fiiNet },
+          { participant: "DII" as const, buy: session.equity.diiBuy, sell: session.equity.diiSell, net: session.equity.diiNet },
+        ],
+      }))
+      .filter((record) => record.rows.some((row) => row.net !== null || row.buy !== null || row.sell !== null))
+      .sort((a, b) => b.reportDate.localeCompare(a.reportDate));
   } catch {
     history = [];
   }
+
+  // If the live session could not be fetched but history exists, the newest
+  // history record is the live session. It is labelled as backfilled.
+  if (liveRows.length === 0 && history.length > 0) {
+    liveRows = history[0].rows;
+    status = "fresh";
+    sourceName = "FII/DII open dataset (keyless, GitHub-hosted)";
+    upstream = "NSE via intermediary";
+    reportDate = history[0].reportDate;
+    freshnessLabel = "Backfilled from the open dataset; provisional until custodian confirmation";
+  }
+
+  // The selected range must actually change the numbers, so the rows become the
+  // aggregate over the window and the comparison is like-for-like.
+  const windows = rangeRecords(history, range);
+  const rows = windows.current.length ? aggregateFlows(windows.current) : liveRows;
+  const previousRows = aggregateFlows(windows.previous);
+  const comparison: InstitutionalFlowComparison[] = rows.map((row) => {
+    const previousNet = previousRows.find((item) => item.participant === row.participant)?.net ?? null;
+    return {
+      participant: row.participant,
+      currentNet: row.net,
+      previousNet,
+      changePct: percentChange(row.net, previousNet),
+    };
+  });
+  const sessions = windows.current.length || (liveRows.length ? 1 : 0);
+  const rangeLabel = `${RANGE_LABELS[range] ?? range} · ${sessions} session${sessions === 1 ? "" : "s"} available`;
 
   const sectorAllocation = await sectorInstitutionalFlows();
 
@@ -606,14 +671,14 @@ export async function institutionalFlows(range = "TODAY"): Promise<Institutional
     rows,
     history,
     range,
-    rangeLabel: RANGE_LABELS[range] ?? range,
-    comparison: [],
+    rangeLabel,
+    comparison,
     error,
     sectorAllocation,
   };
 }
 
-/** NSDL-derived fortnightly FPI sector allocation. Device-side. */
+/** NSDL-derived fortnightly FPI sector allocation. Device-side source. */
 export async function sectorInstitutionalFlows(): Promise<{ rows: SectorFlowRow[]; asOf: string | null; source: string; error: string | null }> {
   const outcome = await runChain([
     { key: "nsdl-sector-flows", name: "NSDL FPI sector allocation", run: () => cached("flows:sector", 6 * 60 * 60_000, () => nsdlSectorFlows()) },

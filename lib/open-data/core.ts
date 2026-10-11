@@ -12,6 +12,9 @@ import { getMarketProfile, type MarketId } from "../market-regions";
 export type { MarketId };
 
 export type SourceStatus =
+  // "fresh" is the value the AnalyzerX screens check for a live, verified
+  // source. "live" is retained as an accepted alias for older call sites.
+  | "fresh"
   | "live"
   | "delayed"
   | "stale"
@@ -85,7 +88,7 @@ export function provenance(input: {
     url: input.url,
     retrievedAt: nowIso(),
     asOf: isoOrNull(input.asOf),
-    status: input.status ?? "live",
+    status: input.status ?? "fresh",
     latencyMs: Math.max(0, Math.round(input.latencyMs ?? 0)),
     basis: input.basis ?? "reported",
     ...(input.note ? { note: input.note } : {}),

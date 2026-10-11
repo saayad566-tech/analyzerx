@@ -269,8 +269,8 @@ const HANDLERS: Record<string, Handler> = {
     const sector = str(input, "sector");
     const base = await sectorConstituents(sector, Number(input?.limit ?? 100) || 100);
     const flows = await institutionalFlows(str(input, "range", "TODAY")).catch(() => null);
-    const fii = flows?.rows.find((r) => /FII/i.test(r.category));
-    const dii = flows?.rows.find((r) => /DII/i.test(r.category));
+    const fii = flows?.rows.find((r) => r.participant === "FII/FPI");
+    const dii = flows?.rows.find((r) => r.participant === "DII");
     // Scoring every constituent would mean hundreds of network calls; score a
     // bounded, stable prefix and leave the remainder explicitly unscored rather
     // than inventing a value for them.
@@ -326,7 +326,22 @@ const HANDLERS: Record<string, Handler> = {
       sort: sortKey,
       direction: direction === 1 ? "asc" : "desc",
       rows,
-      flow: { fiiNet: fii?.netValue ?? null, diiNet: dii?.netValue ?? null, freshnessLabel: flows?.freshnessLabel ?? "Unavailable" },
+      flow: {
+        fiiNet: fii?.net ?? null,
+        diiNet: dii?.net ?? null,
+        freshnessLabel: flows?.freshnessLabel ?? "Unavailable",
+        // The sector chart reads a flat {reportDate, fiiNet, diiNet} series, so
+        // the record-shaped history is projected into that shape here. Without
+        // it the chart reports "no historical sessions" even though real
+        // backfilled sessions exist.
+        history: (flows?.history ?? []).map((record) => ({
+          reportDate: record.reportDate,
+          fiiNet: record.rows.find((row) => row.participant === "FII/FPI")?.net ?? null,
+          diiNet: record.rows.find((row) => row.participant === "DII")?.net ?? null,
+        })),
+        source: flows?.source ?? null,
+        reportDate: flows?.reportDate ?? null,
+      },
       securityWiseFlow: { available: false, reportDate: null, topFii: [], topDii: [] },
       coverageLabel: base.error ? "Unavailable" : `${base.constituents.length} constituents from the NSE index list`,
       limitations: base.error
