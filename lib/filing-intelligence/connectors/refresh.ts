@@ -17,10 +17,13 @@ import { evaluateAccess, type AccessBasis, type AccessMode } from "./policy";
 import { CONNECTORS } from "./registry";
 import type { Connector } from "./types";
 import type { CoverageStatus } from "../types";
+import type { MarketId } from "../../market-regions";
 
 export type SourceOutcome = {
   sourceId: string;
   label: string;
+  /** The market this source belongs to. */
+  marketId: MarketId;
   market: string;
   /** One of connected | stale | blocked | unsupported | planned | degraded. */
   status: CoverageStatus;
@@ -37,6 +40,8 @@ export type SourceOutcome = {
 };
 
 export type RefreshResult = {
+  /** The market this run was scoped to. No other market's sources were read. */
+  marketId: MarketId;
   mode: AccessMode;
   ranAtUtc: string;
   outcomes: SourceOutcome[];
@@ -50,6 +55,12 @@ export type RefreshOptions = {
   cache: CachedFiling[];
   query?: { symbol?: string; companyName?: string; limit?: number };
   mode: AccessMode;
+  /**
+   * The market to refresh. Only connectors bound to this market are run, so a
+   * refresh for one market can never read another market's sources.
+   */
+  marketId: MarketId;
+  /** Override the connector set, for tests. Still filtered by market. */
   connectors?: Connector[];
   now?: Date;
 };
@@ -61,7 +72,10 @@ export type RefreshOptions = {
  * back blocked, which is the point: a background run must not harvest them.
  */
 export async function refreshFilings(options: RefreshOptions): Promise<RefreshResult> {
-  const connectors = options.connectors ?? CONNECTORS;
+  const all = options.connectors ?? CONNECTORS;
+  // Market isolation: a connector whose terms belong to another market is never
+  // run, whatever the caller passed in.
+  const connectors = all.filter((connector) => connector.terms.marketId === options.marketId);
   const now = options.now ?? new Date();
   const query = options.query ?? {};
   let cache = options.cache;
@@ -76,6 +90,7 @@ export async function refreshFilings(options: RefreshOptions): Promise<RefreshRe
       outcomes.push({
         sourceId: terms.sourceId,
         label: terms.label,
+        marketId: terms.marketId,
         market: terms.market,
         status: decision.status,
         allowed: false,
@@ -100,6 +115,7 @@ export async function refreshFilings(options: RefreshOptions): Promise<RefreshRe
       outcomes.push({
         sourceId: terms.sourceId,
         label: terms.label,
+        marketId: terms.marketId,
         market: terms.market,
         status: "degraded",
         allowed: true,
@@ -120,6 +136,7 @@ export async function refreshFilings(options: RefreshOptions): Promise<RefreshRe
       outcomes.push({
         sourceId: terms.sourceId,
         label: terms.label,
+        marketId: terms.marketId,
         market: terms.market,
         status: "planned",
         allowed: true,
@@ -149,6 +166,7 @@ export async function refreshFilings(options: RefreshOptions): Promise<RefreshRe
     outcomes.push({
       sourceId: terms.sourceId,
       label: terms.label,
+      marketId: terms.marketId,
       market: terms.market,
       status,
       allowed: true,
@@ -169,12 +187,13 @@ export async function refreshFilings(options: RefreshOptions): Promise<RefreshRe
   const failed = outcomes.filter((outcome) => outcome.status === "degraded").length;
 
   const parts: string[] = [];
+  parts.push(`Market ${options.marketId}: ${connectors.length} source${connectors.length === 1 ? "" : "s"} registered.`);
   parts.push(totalAdded > 0 ? `${totalAdded} new filing${totalAdded === 1 ? "" : "s"} cached.` : "No new filings.");
   parts.push(`${connected} source${connected === 1 ? "" : "s"} read.`);
   if (blocked) parts.push(`${blocked} blocked by the source's terms.`);
   if (failed) parts.push(`${failed} source${failed === 1 ? "" : "s"} failed.`);
 
-  return { mode: options.mode, ranAtUtc: now.toISOString(), outcomes, cache, totalAdded, message: parts.join(" ") };
+  return { marketId: options.marketId, mode: options.mode, ranAtUtc: now.toISOString(), outcomes, cache, totalAdded, message: parts.join(" ") };
 }
 
 /**

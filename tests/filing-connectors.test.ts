@@ -173,7 +173,7 @@ describe("refresh orchestration", () => {
         return { lastSuccessfulCheckUtc: null, lastError: null };
       },
     };
-    const result = await refreshFilings({ cache: [], mode: "automatic", connectors: [connector], now });
+    const result = await refreshFilings({ cache: [], mode: "automatic", marketId: "IN", connectors: [connector], now });
     expect(called).toBe(false);
     expect(result.outcomes[0].status).toBe("blocked");
     expect(result.outcomes[0].allowed).toBe(false);
@@ -183,6 +183,7 @@ describe("refresh orchestration", () => {
     const result = await refreshFilings({
       cache: [],
       mode: "user_initiated",
+      marketId: "IN",
       connectors: [stub("nse", NSE_TERMS, { sourceId: "nse", status: "ok", filings: [filing], message: "ok" }, true)],
       now,
     });
@@ -192,22 +193,22 @@ describe("refresh orchestration", () => {
   });
 
   it("reports a not-implemented adapter as planned, not as working", async () => {
-    const result = await refreshFilings({ cache: [], mode: "user_initiated", connectors: [stub("sebi", BSE_TERMS, undefined, false, "not_implemented")], now });
+    const result = await refreshFilings({ cache: [], mode: "user_initiated", marketId: "IN", connectors: [stub("sebi", BSE_TERMS, undefined, false, "not_implemented")], now });
     expect(result.outcomes[0].status).toBe("planned");
   });
 
   it("maps an empty result to stale and an error to degraded", async () => {
-    const empty = await refreshFilings({ cache: [], mode: "user_initiated", connectors: [stub("n", NSE_TERMS, { sourceId: "n", status: "empty", filings: [], message: "none" })], now });
+    const empty = await refreshFilings({ cache: [], mode: "user_initiated", marketId: "IN", connectors: [stub("n", NSE_TERMS, { sourceId: "n", status: "empty", filings: [], message: "none" })], now });
     expect(empty.outcomes[0].status).toBe("stale");
-    const error = await refreshFilings({ cache: [], mode: "user_initiated", connectors: [stub("n", NSE_TERMS, { sourceId: "n", status: "error", filings: [], message: "HTTP 500" })], now });
+    const error = await refreshFilings({ cache: [], mode: "user_initiated", marketId: "IN", connectors: [stub("n", NSE_TERMS, { sourceId: "n", status: "error", filings: [], message: "HTTP 500" })], now });
     expect(error.outcomes[0].status).toBe("degraded");
     expect(error.outcomes[0].lastError).toBe("HTTP 500");
   });
 
   it("does not re-add a filing on a repeat refresh", async () => {
     const connector = stub("nse", NSE_TERMS, { sourceId: "nse", status: "ok", filings: [filing], message: "ok" });
-    const first = await refreshFilings({ cache: [], mode: "user_initiated", connectors: [connector], now });
-    const second = await refreshFilings({ cache: first.cache, mode: "user_initiated", connectors: [connector], now });
+    const first = await refreshFilings({ cache: [], mode: "user_initiated", marketId: "IN", connectors: [connector], now });
+    const second = await refreshFilings({ cache: first.cache, mode: "user_initiated", marketId: "IN", connectors: [connector], now });
     expect(first.totalAdded).toBe(1);
     expect(second.totalAdded).toBe(0);
   });

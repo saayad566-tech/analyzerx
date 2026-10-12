@@ -28,6 +28,7 @@ import type { Connector, ConnectorHealth, ConnectorResult } from "./types";
 export const NSE_TERMS: SourceTerms = {
   sourceId: "nse_corporate_announcements",
   label: "NSE India corporate announcements",
+  marketId: "IN",
   market: "India",
   homepage: "https://www.nseindia.com/companies-listing/corporate-filings-announcements",
   accessBasis: "published_feed",
@@ -44,6 +45,7 @@ export const NSE_TERMS: SourceTerms = {
 export const BSE_TERMS: SourceTerms = {
   sourceId: "bse_corporate_announcements",
   label: "BSE India corporate announcements",
+  marketId: "IN",
   market: "India",
   homepage: "https://www.bseindia.com/corporates/ann.html",
   accessBasis: "published_feed",
@@ -60,6 +62,7 @@ export const BSE_TERMS: SourceTerms = {
 export const SEBI_TERMS: SourceTerms = {
   sourceId: "sebi_regulatory_filings",
   label: "SEBI regulatory orders and circulars",
+  marketId: "IN",
   market: "India",
   homepage: "https://www.sebi.gov.in/",
   accessBasis: "published_feed",
@@ -76,6 +79,7 @@ export const SEBI_TERMS: SourceTerms = {
 export const DATAGOVIN_TERMS: SourceTerms = {
   sourceId: "datagovin_open_data",
   label: "data.gov.in open government data",
+  marketId: "IN",
   market: "India",
   homepage: "https://www.data.gov.in/",
   accessBasis: "open_licence",
@@ -97,6 +101,7 @@ export const DATAGOVIN_TERMS: SourceTerms = {
 export const SEC_TERMS: SourceTerms = {
   sourceId: "sec_edgar_submissions",
   label: "SEC EDGAR company submissions",
+  marketId: "US",
   market: "United States",
   homepage: "https://www.sec.gov/edgar/sec-api-documentation",
   accessBasis: "authorized_feed",

@@ -6,7 +6,7 @@ on:
     branches:
       - main
     tags:
-      - "v2.7.0"
+      - "v2.8.0"
 
 jobs:
   build-apk:
@@ -65,7 +65,7 @@ jobs:
             -keypass analyzerx-build-password \
             -alias analyzerx \
             -keyalg RSA -keysize 4096 -validity 10000 \
-            -dname "CN=AnalyzerX 2.7.0 Release, OU=Mobile, O=AnalyzerX, L=Local, ST=Local, C=IN"
+            -dname "CN=AnalyzerX 2.8.0 Release, OU=Mobile, O=AnalyzerX, L=Local, ST=Local, C=IN"
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$apk" "$apk.aligned"
           mv "$apk.aligned" "$apk"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
@@ -91,17 +91,17 @@ jobs:
         run: |
           set -euo pipefail
           dir=android/app/build/outputs/apk/release
-          tag="apk-2.7.0-${GITHUB_RUN_NUMBER}"
+          tag="apk-2.8.0-${GITHUB_RUN_NUMBER}"
           gh release create "$tag" \
             "$dir/app-release.apk" \
             "$dir/app-release.apk.sha256" \
-            --title "AnalyzerX 2.7.0 · build ${GITHUB_RUN_NUMBER}" \
+            --title "AnalyzerX 2.8.0 · build ${GITHUB_RUN_NUMBER}" \
             --notes "CI-built, v2/v3-signed release APK from ${GITHUB_SHA}." \
             --latest
       - uses: actions/upload-artifact@v4
         continue-on-error: true
         with:
-          name: analyzerx-2.7.0-apk
+          name: analyzerx-2.8.0-apk
           path: |
             android/app/build/outputs/apk/release/*.apk
             android/app/build/outputs/apk/release/*.apk.sha256
@@ -112,9 +112,9 @@ jobs:
           set -euo pipefail
           dir=android/app/build/outputs/apk/release
           mkdir -p apk-out
-          cp "$dir/app-release.apk" apk-out/analyzerx-2.7.0.apk
-          cp "$dir/app-release.apk.sha256" apk-out/analyzerx-2.7.0.apk.sha256
-          split -b 4194304 -d -a 3 apk-out/analyzerx-2.7.0.apk apk-out/analyzerx-2.7.0.apk.part
+          cp "$dir/app-release.apk" apk-out/analyzerx-2.8.0.apk
+          cp "$dir/app-release.apk.sha256" apk-out/analyzerx-2.8.0.apk.sha256
+          split -b 4194304 -d -a 3 apk-out/analyzerx-2.8.0.apk apk-out/analyzerx-2.8.0.apk.part
           ls -la apk-out
           git config user.email "ci@analyzerx.local"
           git config user.name "AnalyzerX CI"
@@ -122,5 +122,5 @@ jobs:
           git checkout --orphan apk-artifact
           git rm -rf --cached . >/dev/null 2>&1 || true
           git add -f apk-out
-          git commit -m "AnalyzerX 2.7.0 signed release APK (build ${GITHUB_RUN_NUMBER})"
+          git commit -m "AnalyzerX 2.8.0 signed release APK (build ${GITHUB_RUN_NUMBER})"
           git push --force origin apk-artifact

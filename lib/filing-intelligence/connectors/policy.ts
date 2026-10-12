@@ -23,6 +23,7 @@
  */
 
 import type { CoverageStatus } from "../types";
+import type { MarketId } from "../../market-regions";
 
 /** How the source's terms characterise access to the content. */
 export type AccessBasis =
@@ -36,6 +37,9 @@ export type AccessBasis =
 export type SourceTerms = {
   sourceId: string;
   label: string;
+  /** The market code from the app's registry. Exactly one, so markets never mix. */
+  marketId: MarketId;
+  /** The country name, for display. */
   market: string;
   homepage: string;
   accessBasis: AccessBasis;

@@ -21,7 +21,7 @@ async function main() {
   console.log("search 'reliance':", hits.map((h) => `${h.symbol} (${h.matchKind})`).join(", "));
 
   console.log("\n=== user_initiated refresh across all four sources ===");
-  const run = await refreshFilings({ cache: [], mode: "user_initiated", query: { limit: 12 } });
+  const run = await refreshFilings({ cache: [], mode: "user_initiated", marketId: "IN", query: { limit: 12 } });
   console.log("summary:", run.message);
   for (const o of run.outcomes) {
     console.log(` - ${o.sourceId} [${o.status}] basis=${o.accessBasis} added=${o.added} verified=${o.verifiedEndToEnd}`);
@@ -29,12 +29,12 @@ async function main() {
   }
 
   console.log("\n=== automatic (background) run ===");
-  const auto = await refreshFilings({ cache: run.cache, mode: "automatic" });
+  const auto = await refreshFilings({ cache: run.cache, mode: "automatic", marketId: "IN" });
   console.log("summary:", auto.message);
   for (const o of auto.outcomes) console.log(` - ${o.sourceId} [${o.status}] allowed=${o.allowed}`);
 
   console.log("\n=== idempotency ===");
-  const repeat = await refreshFilings({ cache: run.cache, mode: "user_initiated", query: { limit: 12 } });
+  const repeat = await refreshFilings({ cache: run.cache, mode: "user_initiated", marketId: "IN", query: { limit: 12 } });
   console.log("repeat added:", repeat.totalAdded, "| cache:", cacheSummary(repeat.cache));
 
   console.log("\n=== real cached filings by source ===");

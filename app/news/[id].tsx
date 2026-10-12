@@ -4,6 +4,7 @@ import { useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";
+import { useMarketContext } from "@/lib/market-context";
 
 const amber = "#F4B860";
 const teal = "#4FD1C5";
@@ -54,8 +55,11 @@ export default function NewsDetailScreen() {
   // The detail screen reads the same on-device archive the list uses and looks
   // the story up by id, so it needs no procedure the typed router does not
   // already expose.
+  // Scoped to the selected market, so a story can only be opened from the
+  // market it belongs to.
+  const { marketId } = useMarketContext();
   const archiveQuery = trpc.news.archive.useQuery(
-    { days: 365, limit: 500, archiveOrder: "Newest first", page: 0 },
+    { days: 365, limit: 500, archiveOrder: "Newest first", page: 0, marketId },
     { staleTime: 60_000, retry: false },
   );
   const articleQuery = archiveQuery;

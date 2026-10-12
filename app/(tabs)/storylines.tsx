@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";
+import { useMarketContext } from "@/lib/market-context";
 
 const amber = "#F4B860";
 const teal = "#4FD1C5";
@@ -92,8 +93,11 @@ export default function StorylinesScreen() {
   // news.archive accepts only 30/90/180/270/365 day windows, so query the
   // nearest window that covers the selection and then narrow it precisely.
   const archiveDays = ARCHIVE_DAYS.find((value) => value >= selectedWindow) ?? 365;
+  // The archive is scoped to the selected market, so a story from another
+  // market never appears here.
+  const { marketId } = useMarketContext();
   const archiveQuery = trpc.news.archive.useQuery(
-    { days: archiveDays, limit: 300, archiveOrder: "Newest first", page: 0 },
+    { days: archiveDays, limit: 300, archiveOrder: "Newest first", page: 0, marketId },
     { staleTime: 60_000, retry: false },
   );
 
@@ -209,7 +213,7 @@ export default function StorylinesScreen() {
           <View style={styles.collectionStatus}>
             <Ionicons name="cloud-download-outline" size={15} color={teal} />
             <Text style={styles.collectionStatusText}>
-              Collecting {windowLabel} of news from this device's archive…
+              Collecting {windowLabel} of news from the archive on this device…
             </Text>
           </View>
         ) : null}
