@@ -1323,19 +1323,27 @@ export default function LiveEventsScreen() {
               </Text>
               <Text style={styles.liveSubtext}>
                 {newsTrackerStatus.data?.lastSuccessAt
-                  ? `Last successful poll ${new Date(newsTrackerStatus.data.lastSuccessAt).toLocaleTimeString()}`
-                  : "Waiting for the first server poll"}
+                  ? `Last collection ${new Date(newsTrackerStatus.data.lastSuccessAt).toLocaleTimeString()}`
+                  : newsTrackerStatus.isLoading
+                    ? "Reading collector status"
+                    : "Collection starts automatically on this device"}
               </Text>
               <Ionicons name="chevron-forward" size={16} color="#6E7D92" />
             </View>
             <View style={styles.finnhubCard}>
               <View style={styles.finnhubHeader}>
                 <View>
-                  <Text style={styles.finnhubEyebrow}>SERVER NEWS TRACKER</Text>
+                  <Text style={styles.finnhubEyebrow}>ON-DEVICE NEWS TRACKER</Text>
                   <Text style={styles.finnhubTitle}>
-                    {newsTrackerStatus.data?.running
-                      ? `Impact-ranked news · ${newsSymbol.trim().toUpperCase() || "any stock"}`
-                      : "Tracker status unavailable"}
+                    {newsTrackerStatus.data
+                      ? newsTrackerStatus.data.articlesStored > 0
+                        ? `Impact-ranked news · ${newsTrackerStatus.data.articlesStored} stored`
+                        : newsTrackerStatus.data.lastError
+                          ? "Collector ran but stored nothing yet"
+                          : "Collector ready · first pass pending"
+                      : newsTrackerStatus.isLoading
+                        ? "Reading collector status"
+                        : "Collector status unavailable"}
                   </Text>
                 </View>
                 <View
@@ -1428,9 +1436,10 @@ export default function LiveEventsScreen() {
                 </Pressable>
               </View>
               <Text style={styles.finnhubState}>
-                Automatic publication is active: the server polls configured
-                providers, deduplicates verified articles, stores new items, and
-                sends high-impact alerts when eligible.
+                Automatic collection is active on this device: the app polls the
+                configured providers, deduplicates verified articles, stores new
+                items in the local archive, and raises high-impact alerts when
+                eligible. Nothing is sent to a server.
               </Text>
               <Pressable
                 onPress={() => router.push("/held-review")}

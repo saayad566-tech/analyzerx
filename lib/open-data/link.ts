@@ -31,6 +31,7 @@ import {
 } from "./engine";
 import { NSE_INDEX_FILES, type NewsArticle } from "./sources";
 import { queryArchive, storeStats } from "./store";
+import { FALLBACK_UNIVERSE } from "./universe-fallback";
 import { catalogSummary, collectorStats, runCollectionCycle } from "./collector";
 import { buildCatalog, providerOf } from "./catalog";
 import { allLinkHealth, linkHealth, runChain, runMerge, type ChainAttempt } from "./chain";
@@ -109,6 +110,12 @@ function classifyEvent(headline: string): EventKind {
  * undefined. `storylineKey` also used a bare entity rather than the server's
  * `storyline:SYMBOL:TYPE` form, so unrelated stories were grouped together.
  */
+/** Industry from the pinned official NSE constituent snapshot, when known. */
+function industryForSymbol(symbol: string): string | null {
+  const clean = symbol.trim().toUpperCase().replace(/\.(NS|BO)$/, "");
+  return FALLBACK_UNIVERSE.find((row) => row.symbol.toUpperCase() === clean)?.industry ?? null;
+}
+
 function projectionFromArticle(article: NewsArticle) {
   const type = classifyEvent(article.headline);
   const parsed = article.publishedAt ? new Date(article.publishedAt) : null;
@@ -441,6 +448,11 @@ const HANDLERS: Record<string, Handler> = {
               returnOnEquity: analysis?.metrics.roe?.value ?? null,
               profitMargin: analysis?.metrics.profitMargin?.value ?? null,
               marketCap: analysis?.marketCap.value ?? null,
+              // The Live Market Snapshot card renders SECTOR from this field. It
+              // was never emitted, so the field always rendered blank. Fall back
+              // to the pinned official constituent snapshot when the live
+              // analysis carries no sector.
+              sector: analysis?.stockAnalysis.profile.sector || industryForSymbol(symbol) || null,
               mutualFundHolding: null,
             },
             news: (news?.articles ?? []).map((a) => ({ headline: a.headline, source: a.source, url: a.url, publishedAt: a.publishedAt, sentiment: a.sentiment, impactScore: a.impactScore })),
@@ -511,7 +523,7 @@ const HANDLERS: Record<string, Handler> = {
             return {
               symbol: security.symbol,
               name: security.name,
-              sector: analysis.stockAnalysis.profile.sector || "Unclassified",
+              sector: analysis.stockAnalysis.profile.sector || industryForSymbol(security.symbol) || security.industry || "Unclassified",
               score: analysis.score,
               label: analysis.multibaggerThesis.label,
               verdict: analysis.verdict,
@@ -519,7 +531,7 @@ const HANDLERS: Record<string, Handler> = {
               criteria: analysis.institutionalReport.scoreWeights.map((w) => ({ key: w.key, label: w.label, score: w.score, max: w.max })),
             };
           } catch {
-            return { symbol: security.symbol, name: security.name, sector: "Unclassified", score: 0, label: "Insufficient evidence", verdict: "Unavailable", coverage: "Limited", criteria: [] };
+            return { symbol: security.symbol, name: security.name, sector: industryForSymbol(security.symbol) ?? security.industry ?? "Unclassified", score: 0, label: "Insufficient evidence", verdict: "Unavailable", coverage: "Limited", criteria: [] };
           }
         }),
       )
@@ -700,23 +712,71 @@ const HANDLERS: Record<string, Handler> = {
   /* ---- graph ---- */
   "graph.projection": async (input) => {
     const symbol = str(input, "symbol");
-    const nodes: Array<{ id: string; label: string; kind: string }> = [];
-    const edges: Array<{ from: string; to: string; label: string }> = [];
-    if (symbol) {
-      const [fund, news] = await Promise.all([fundamentals(symbol, "IN").catch(() => null), stockNews(symbol, 8).catch(() => null)]);
-      const root = symbol.toUpperCase();
-      nodes.push({ id: root, label: fund?.companyName ?? root, kind: "company" });
-      for (const article of news?.articles ?? []) {
-        const id = article.source || "source";
-        if (!nodes.some((n) => n.id === id)) nodes.push({ id, label: id, kind: "source" });
-        edges.push({ from: root, to: id, label: "reported by" });
-      }
-      for (const industry of new Set([fund?.stockAnalysis.profile.sector].filter(Boolean) as string[])) {
-        nodes.push({ id: industry, label: industry, kind: "sector" });
-        edges.push({ from: root, to: industry, label: "operates in" });
+
+    // The graph screen reads a specific contract: nodes carry type/caption/
+    // confidence/symbol and edges carry evidenceStatus/sourceCount/contradiction/
+    // hop, and it only renders nodes whose type is "entity". Emitting a bare
+    // {id,label,kind} shape left the tab permanently empty.
+    const nodes: Array<{ id: string; type: string; label: string; caption: string; confidence: number; symbol: string | null }> = [];
+    const edges: Array<{ id: string; from: string; to: string; label: string; evidenceStatus: string; confidence: number; sourceCount: number; contradiction: string; hop: number }> = [];
+
+    // With an explicit symbol, use that symbol's live news. Without one, build the
+    // graph from the phone's own archive so the tab is populated from real,
+    // already-collected evidence rather than waiting for a server.
+    const articles: Array<{ symbol: string; source: string }> = symbol
+      ? ((await stockNews(symbol, 20).catch(() => ({ articles: [] }))).articles as Array<{ symbol: string; source: string }>)
+      : ((await queryArchive({ limit: 300, order: "newest" })).articles as Array<{ symbol: string; source: string }>);
+
+    const bySymbol = new Map<string, { count: number; sources: Map<string, number> }>();
+    for (const article of articles) {
+      const sym = (article.symbol || "").toUpperCase();
+      if (!sym) continue;
+      const entry = bySymbol.get(sym) ?? { count: 0, sources: new Map<string, number>() };
+      entry.count += 1;
+      entry.sources.set(article.source, (entry.sources.get(article.source) ?? 0) + 1);
+      bySymbol.set(sym, entry);
+    }
+
+    const ranked = [...bySymbol.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 12);
+    for (const [sym, info] of ranked) {
+      nodes.push({
+        id: `entity:${sym}`,
+        type: "entity",
+        label: sym,
+        caption: `${info.count} source-backed article${info.count === 1 ? "" : "s"}`,
+        confidence: Math.min(95, 55 + info.count * 5),
+        symbol: sym,
+      });
+    }
+    for (const [sym, info] of ranked) {
+      for (const [source, count] of info.sources) {
+        const sourceId = `source:${source}`;
+        if (!nodes.some((node) => node.id === sourceId)) {
+          nodes.push({ id: sourceId, type: "source", label: source, caption: "publisher", confidence: 70, symbol: null });
+        }
+        edges.push({
+          id: `edge:${sym}:${source}`,
+          from: `entity:${sym}`,
+          to: sourceId,
+          label: "reported by",
+          evidenceStatus: "confirmed",
+          confidence: 70,
+          sourceCount: count,
+          contradiction: "none",
+          hop: 1,
+        });
       }
     }
-    return { nodes, edges, asOf: nowIso(), note: nodes.length > 1 ? "On-device relationship projection from live news sources and sector membership." : "Supply an explicit symbol to build a relationship projection; a full entity graph needs a server-side store." };
+
+    return {
+      nodes,
+      edges,
+      evidence: nodes.length > 0 ? "source-backed" : "awaiting-events",
+      asOf: nowIso(),
+      note: nodes.length > 0
+        ? "Built on-device from source-backed articles. Every edge cites the publisher that reported it; no inferred relationship is shown without evidence."
+        : "No source-backed articles are stored yet. The graph populates as the on-device collector stores news.",
+    };
   },
 
   /* ---- chat ---- */

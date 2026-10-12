@@ -48,6 +48,7 @@ import {
   type YahooHost,
 } from "./sources";
 import { allLinkHealth, runChain, runMerge, type ChainAttempt } from "./chain";
+import { FALLBACK_UNIVERSE, UNIVERSE_SNAPSHOT_DATE, UNIVERSE_SNAPSHOT_SOURCE } from "./universe-fallback";
 
 const TTL = {
   quote: 60_000,
@@ -333,7 +334,15 @@ export async function search(query: string, marketId: MarketId = "IN"): Promise<
  * Universe (NSE equity master)
  * ------------------------------------------------------------------ */
 
-export type UniverseSecurity = { symbol: string; name: string; isin: string; series: string; market: "IN" };
+export type UniverseSecurity = {
+  symbol: string;
+  name: string;
+  isin: string;
+  series: string;
+  market: "IN";
+  /** Present when the source (or the pinned snapshot) publishes an industry. */
+  industry?: string;
+};
 
 export type UniverseSnapshot = {
   asOf: string;
@@ -350,6 +359,7 @@ function checksumOf(value: string): string {
 }
 
 export async function nseUniverse(): Promise<UniverseSnapshot> {
+  const industryBySymbol = new Map(FALLBACK_UNIVERSE.map((row) => [row.symbol.toUpperCase(), row.industry]));
   try {
     const outcome = await runChain([
       { key: "nse-equity-master", name: "NSE Equity Master", run: () => cached("universe:nse", TTL.universe, () => nseEquityMaster()) },
@@ -357,13 +367,17 @@ export async function nseUniverse(): Promise<UniverseSnapshot> {
     ]);
     if (!outcome.value) throw new Error("Every NSE universe provider failed.");
     const result = outcome.value;
-    const securities = result.value.rows.map((row: UniverseRow) => ({
+    const securities: UniverseSecurity[] = result.value.rows.map((row: UniverseRow) => ({
       symbol: row.symbol,
       name: row.name,
       isin: row.isin,
       series: row.series,
       market: "IN" as const,
+      // The live equity master has no industry column; the pinned constituent
+      // snapshot supplies it where the symbol is known.
+      industry: industryBySymbol.get(row.symbol.toUpperCase()),
     }));
+    if (securities.length === 0) throw new Error("The NSE universe source returned no rows.");
     return {
       asOf: nowIso(),
       sourceUrls: [result.value.url],
@@ -372,7 +386,25 @@ export async function nseUniverse(): Promise<UniverseSnapshot> {
       errors: [],
     };
   } catch (error) {
-    return { asOf: nowIso(), sourceUrls: ["https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"], checksum: "unavailable", securities: [], errors: [String(error).slice(0, 200)] };
+    // The live source is unreachable from this network. Fall back to the pinned
+    // official snapshot so the Screener and every other universe consumer still
+    // has real candidates instead of rendering 0/0.
+    return {
+      asOf: nowIso(),
+      sourceUrls: [UNIVERSE_SNAPSHOT_SOURCE],
+      checksum: checksumOf(`fallback:${FALLBACK_UNIVERSE.length}`),
+      securities: FALLBACK_UNIVERSE.map((row) => ({
+        symbol: row.symbol,
+        name: row.name,
+        isin: row.isin,
+        series: row.series,
+        market: "IN" as const,
+        industry: row.industry,
+      })),
+      errors: [
+        `Live NSE universe unavailable; using the pinned official snapshot captured ${UNIVERSE_SNAPSHOT_DATE}. ${String(error).slice(0, 160)}`,
+      ],
+    };
   }
 }
 
