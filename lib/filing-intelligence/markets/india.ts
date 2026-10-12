@@ -158,7 +158,7 @@ export function fiscalYearForDate(date: Date): string {
 }
 
 /** Reporting terminology, explained without changing its meaning. */
-export const INDIAN_TERMINOLOGY: Array<{ term: string; meaning: string }> = [
+export const INDIAN_TERMINOLOGY: { term: string; meaning: string }[] = [
   { term: "Standalone", meaning: "The parent company's own accounts, excluding its subsidiaries." },
   { term: "Consolidated", meaning: "The parent and its subsidiaries reported as one entity." },
   { term: "Lakh", meaning: "One hundred thousand (100,000)." },

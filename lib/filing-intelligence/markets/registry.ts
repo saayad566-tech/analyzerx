@@ -12,7 +12,7 @@
  * market is.
  */
 
-import type { MarketSource, DataCategory } from "./types";
+import type { MarketSource } from "./types";
 
 type Seed = Omit<MarketSource, "lastSuccessfulCheckUtc" | "lastError">;
 

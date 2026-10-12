@@ -21,7 +21,7 @@ export type CategoryCoverage = {
   label: string;
   covered: boolean;
   /** The sources in this market that provide it. */
-  sources: Array<{ sourceId: string; name: string; status: MarketSourceStatus; accessClass: string; cost: string }>;
+  sources: { sourceId: string; name: string; status: MarketSourceStatus; accessClass: string; cost: string }[];
   /** What to do when nothing covers it. */
   nextStep: string | null;
 };
@@ -35,7 +35,7 @@ export type MarketCoverage = {
   categories: CategoryCoverage[];
   summary: {
     sources: number;
-    byStatus: Array<{ status: MarketSourceStatus; label: string; count: number }>;
+    byStatus: { status: MarketSourceStatus; label: string; count: number }[];
     categoriesTotal: number;
     categoriesCovered: number;
     /** Share of the market's data categories that have a working source. */
@@ -126,7 +126,7 @@ export function assertMarketIsolation(sources: MarketSource[], marketId: string)
 }
 
 /** One row per source in a market, for the matrix table. */
-export function sourceRows(marketId: string): Array<{
+export function sourceRows(marketId: string): {
   sourceId: string;
   name: string;
   accessClass: string;
@@ -139,7 +139,7 @@ export function sourceRows(marketId: string): Array<{
   licensing: string;
   manualFallback: string;
   cost: string;
-}> {
+}[] {
   return sourcesForMarket(marketId).map((entry) => ({
     sourceId: entry.sourceId,
     name: entry.name,
