@@ -164,6 +164,7 @@ export default function RootLayout() {
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="news/[id]" options={{ title: "Story" }} />
+              <Stack.Screen name="filings" options={{ title: "Filing Intelligence" }} />
               <Stack.Screen name="oauth/callback" />
             </Stack>
           </ErrorBoundary>

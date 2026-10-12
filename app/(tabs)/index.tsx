@@ -1442,12 +1442,27 @@ export default function LiveEventsScreen() {
                 items in the local archive, and raises high-impact alerts when
                 eligible. Nothing is sent to a server.
               </Text>
+              <Pressable
+                onPress={() => router.push("/filings")}
+                style={({ pressed }) => [styles.filingIntelCard, pressed && styles.newsItemPressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Open Filing Intelligence report"
+              >
+                <View style={styles.deepResearchHeader}>
+                  <Text style={styles.deepResearchEyebrow}>FILING INTELLIGENCE</Text>
+                  <Text style={styles.filingIntelArrow}>→</Text>
+                </View>
+                <Text style={styles.filingIntelBody}>
+                  An evidence-linked report built from the disclosures this device holds: every claim classified, every
+                  check shown as passed, failed or not checked, and every source labelled with its real coverage status.
+                </Text>
+              </Pressable>
               {(() => {
                 // Deep-research watch (Rule 6). Every catalyst carries its three
                 // time markers, and events outside the selected window are
                 // dropped unless the text marks them as a live update.
                 const result = scanDeepResearchDetailed(
-                  ((newsArchive.data?.articles ?? []) as Array<Record<string, unknown>>).map((article) => ({
+                  ((newsArchive.data?.articles ?? []) as Record<string, unknown>[]).map((article) => ({
                     id: String(article.id ?? ""),
                     symbol: String(article.symbol ?? ""),
                     headline: String(article.headline ?? ""),
@@ -2442,6 +2457,9 @@ const styles = StyleSheet.create({
   deepResearchTime: { color: "#B8C6D6", fontSize: 9, lineHeight: 14 },
   deepResearchUpdate: { color: "#F4B860", fontSize: 9, fontWeight: "800", marginTop: 3 },
   deepResearchExcluded: { color: "#6E7D92", fontSize: 9, lineHeight: 14, marginTop: 4, fontStyle: "italic" },
+  filingIntelCard: { backgroundColor: "#111C2D", borderRadius: 12, borderWidth: 1, borderColor: "#26364D", padding: 12, marginTop: 12 },
+  filingIntelArrow: { color: "#4FD1C5", fontSize: 15, fontWeight: "800" },
+  filingIntelBody: { color: "#B8C6D6", fontSize: 10, lineHeight: 15, marginTop: 6 },
   listContent: { paddingBottom: 44 },
   headerRow: {
     flexDirection: "row",
