@@ -112,7 +112,7 @@ export function classifyAssistantFailure(error: unknown): "CONTEXT_LIMIT" | "NET
   if (/429|rate limit|too many requests/i.test(message)) return "RATE_LIMIT";
   if (/network|fetch|connect|socket|econn|5\\d\\d/i.test(message)) return "NETWORK";
   if (/json|schema|empty response|malformed/i.test(message)) return "BAD_RESPONSE";
-  if (/native|litert|runtime|bridge/i.test(message)) return "NATIVE_RUNTIME";
+  if (/native|litert|runtime|bridge|rendered template|sendMessageAsync|sendMessage/i.test(message)) return "NATIVE_RUNTIME";
   return "UNKNOWN";
 }
 
@@ -122,7 +122,7 @@ export function formatAssistantFailure(error: unknown): string {
   if (code === "NETWORK" || code === "TIMEOUT") return "The connected AI service was unreachable. AnalyzerX will use a safe local or verified-data fallback when available.";
   if (code === "AUTH") return "The connected AI service rejected the request. No private token was exposed; try Local mode or retry later.";
   if (code === "RATE_LIMIT") return "The connected AI service is temporarily rate-limited. Try again shortly or use Local mode.";
-  if (code === "NATIVE_RUNTIME") return "The local model runtime is unavailable in this build. Connected mode or verified-data fallback is available.";
+  if (code === "NATIVE_RUNTIME") return "The local model could not start on this device. The model may need to be downloaded again, or a different model selected in Model Center.";
   return "The assistant could not complete that request. Your conversation is preserved.";
 }
 

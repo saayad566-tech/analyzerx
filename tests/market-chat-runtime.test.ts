@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildBoundedLocalPrompt, buildLocalGroundedPrompt, estimatePromptTokens, isCurrentDataQuestion, isGeneralChatQuestion, localInputBudget, resolveMarketChatEngine, sanitizeLocalOutput, trimLocalHistory } from "../lib/market-chat-runtime";
+import { buildBoundedLocalPrompt, buildLocalGroundedPrompt, classifyAssistantFailure, estimatePromptTokens, formatAssistantFailure, isCurrentDataQuestion, isGeneralChatQuestion, localInputBudget, resolveMarketChatEngine, sanitizeLocalOutput, trimLocalHistory } from "../lib/market-chat-runtime";
 
 describe("market chat runtime routing", () => {
   it("uses local inference only with a selected model, native runtime, and no attachments", () => {
@@ -61,6 +61,21 @@ describe("market chat runtime routing", () => {
       expect(isCurrentDataQuestion(question)).toBe(true);
       expect(isGeneralChatQuestion(question)).toBe(false);
     }
+  });
+
+  it("never leaks the raw prompt or template tokens into a failure message", () => {
+    // The real LiteRT failure that reached the UI embedded the entire rendered
+    // prompt, including chat-template tokens.
+    const raw = new Error(
+      "Failed to start nativeSendMessageAsync: INTERNAL: The new rendered template string does not start with the previous rendered template string.\n" +
+      "old_string: <|im_start|>user\nYou are AnalyzerX Assistant...\nUSER:\nHi<|im_end|>\n<|im_start|>assistant\n",
+    );
+    expect(classifyAssistantFailure(raw)).toBe("NATIVE_RUNTIME");
+    const message = formatAssistantFailure(raw);
+    expect(message).not.toContain("<|im_start|>");
+    expect(message).not.toContain("rendered template");
+    expect(message).not.toContain("AnalyzerX Assistant");
+    expect(message.length).toBeGreaterThan(0);
   });
 
   it("compacts oversized local context below the hard LiteRT ceiling", () => {

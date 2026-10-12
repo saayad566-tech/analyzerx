@@ -10,7 +10,7 @@ import { trpc } from "@/lib/trpc";
 import { clearMarketChatHistory, loadMarketChatHistory, loadMarketChatRuntimeMode, saveMarketChatHistory, saveMarketChatRuntimeMode, type LocalChatMessage, type MarketChatRuntimeMode } from "@/lib/local-preferences";
 import type { AnalyzerXAction, MarketChatAttachment } from "@/server/market-chat";
 import { getActiveLocalAIModelId, getLocalAIModel, getLocalAIRuntime, type LocalAIModelId } from "@/lib/local-ai";
-import { buildBoundedLocalPrompt, isGeneralChatQuestion, isCurrentDataQuestion, localPromptNotice, resolveMarketChatEngine, sanitizeLocalOutput, trimLocalHistory } from "@/lib/market-chat-runtime";
+import { buildBoundedLocalPrompt, formatAssistantFailure, isGeneralChatQuestion, isCurrentDataQuestion, localPromptNotice, resolveMarketChatEngine, sanitizeLocalOutput, trimLocalHistory } from "@/lib/market-chat-runtime";
 import { getLocalAIDeviceTelemetrySnapshot, recordLocalAIInference } from "@/lib/local-ai-telemetry";
 import { MarketScopeChip } from "@/components/market-scope-chip";
 import { useMarketContext } from "@/lib/market-context";
@@ -197,7 +197,10 @@ export default function MarketChatScreen() {
         if (response.action) executeAnalyzerXAction(response.action);
       }
     } catch (error) {
-      const failure: ChatItem = { id: `error-${Date.now()}`, role: "assistant", content: `I could not complete that request. ${error instanceof Error ? error.message : "The assistant or connected data was unavailable."}`, confidence: "low", limitations: [runtimeMode === "auto" || runtimeMode === "connected" ? "Connected mode could not reach the hosted AI. Your conversation is preserved." : "No answer was generated."], retryQuestion: question, retryAttachments: attachmentSnapshot };
+      // The failure text is a classified, user-facing message. Raw runtime errors can
+      // embed the entire prompt (including chat-template tokens), so the message is
+      // never taken verbatim from the thrown error.
+      const failure: ChatItem = { id: `error-${Date.now()}`, role: "assistant", content: formatAssistantFailure(error), confidence: "low", limitations: [useLocal ? `The local model (${activeLocalModel ?? "the selected model"}) could not complete this request. Your conversation is preserved; retry, or switch to Connected mode.` : "Connected mode could not complete this request. Your conversation is preserved."], retryQuestion: question, retryAttachments: attachmentSnapshot };
       const completed = [...next, failure]; setMessages(completed); await saveMarketChatHistory(completed);
     } finally {
       setLocalStreaming(false);

@@ -25,7 +25,12 @@ import java.util.concurrent.Future
 class AnalyzerXLocalAIModule(private val context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
   private val executor: ExecutorService = Executors.newSingleThreadExecutor()
   private var engine: Engine? = null
-  private var conversation: com.google.ai.edge.litertlm.Conversation? = null
+  // The conversation is created per request. LiteRT's Conversation is a
+  // stateful chat session whose rendered template must strictly extend the
+  // previous one; the JS layer sends a complete prompt each turn, so reusing a
+  // conversation across turns fails with "INTERNAL: The new rendered template
+  // string does not start with the previous rendered template string."
+  private var activeConversation: com.google.ai.edge.litertlm.Conversation? = null
   private var activeJob: Future<*>? = null
 
   override fun getName(): String = "AnalyzerXLocalAI"
@@ -82,7 +87,15 @@ class AnalyzerXLocalAIModule(private val context: ReactApplicationContext) : Rea
         val nextEngine = Engine(config)
         nextEngine.initialize()
         engine = nextEngine
-        conversation = nextEngine.createConversation()
+        // Smoke-test that a conversation can be created for this model, then
+        // release it: every request opens its own.
+        try {
+          nextEngine.createConversation().close()
+        } catch (_: Throwable) {
+          // A model that loads but cannot open a conversation is still usable
+          // for the engine-level checks above; the per-request open below will
+          // surface a precise error if it fails.
+        }
         promise.resolve(true)
       } catch (error: Throwable) {
         closeRuntime()
@@ -112,40 +125,59 @@ class AnalyzerXLocalAIModule(private val context: ReactApplicationContext) : Rea
 
   @ReactMethod
   fun stream(prompt: String, imagePath: String?, audioPath: String?, promise: Promise) {
-    val activeConversation = conversation
-    if (activeConversation == null) {
+    val activeEngine = engine
+    if (activeEngine == null) {
       promise.reject("LOCAL_AI_NOT_LOADED", "Load a verified .litertlm model before generating.")
       return
     }
     activeJob?.cancel(true)
     activeJob = executor.submit {
-      try {
-        val normalizedImagePath = imagePath?.removePrefix("file://")?.takeIf { it.isNotBlank() }
-        val normalizedAudioPath = audioPath?.removePrefix("file://")?.takeIf { it.isNotBlank() }
-        if (normalizedImagePath == null && normalizedAudioPath == null) {
-          sendText(activeConversation, prompt, promise)
-        } else {
-          val contents = mutableListOf<Content>()
-          normalizedImagePath?.let { contents.add(Content.ImageFile(it)) }
-          normalizedAudioPath?.let { contents.add(Content.AudioFile(it)) }
-          contents.add(Content.Text(prompt))
-          sendContents(activeConversation, Contents.of(*contents.toTypedArray()), promise)
-        }
+      // One conversation per request. The prompt already carries the system
+      // preamble, the question and the verified context, so each turn must be
+      // independent of the last.
+      val requestConversation = try {
+        activeEngine.createConversation()
       } catch (error: Throwable) {
         promise.reject("LOCAL_AI_GENERATION_FAILED", error.message, error)
+        null
+      }
+      if (requestConversation != null) {
+        activeConversation = requestConversation
+        try {
+          val normalizedImagePath = imagePath?.removePrefix("file://")?.takeIf { it.isNotBlank() }
+          val normalizedAudioPath = audioPath?.removePrefix("file://")?.takeIf { it.isNotBlank() }
+          if (normalizedImagePath == null && normalizedAudioPath == null) {
+            sendText(requestConversation, prompt, promise)
+          } else {
+            val contents = mutableListOf<Content>()
+            normalizedImagePath?.let { contents.add(Content.ImageFile(it)) }
+            normalizedAudioPath?.let { contents.add(Content.AudioFile(it)) }
+            contents.add(Content.Text(prompt))
+            sendContents(requestConversation, Contents.of(*contents.toTypedArray()), promise)
+          }
+        } catch (error: Throwable) {
+          closeConversation(requestConversation)
+          promise.reject("LOCAL_AI_GENERATION_FAILED", error.message, error)
+        }
       }
     }
   }
 
-  private fun sendText(activeConversation: com.google.ai.edge.litertlm.Conversation, prompt: String, promise: Promise) {
-    activeConversation.sendMessageAsync(prompt, callbackFor(promise))
+  private fun sendText(target: com.google.ai.edge.litertlm.Conversation, prompt: String, promise: Promise) {
+    target.sendMessageAsync(prompt, callbackFor(promise, target))
   }
 
-  private fun sendContents(activeConversation: com.google.ai.edge.litertlm.Conversation, contents: Contents, promise: Promise) {
-    activeConversation.sendMessageAsync(contents, callbackFor(promise))
+  private fun sendContents(target: com.google.ai.edge.litertlm.Conversation, contents: Contents, promise: Promise) {
+    target.sendMessageAsync(contents, callbackFor(promise, target))
   }
 
-  private fun callbackFor(promise: Promise): MessageCallback = object : MessageCallback {
+  private fun closeConversation(target: com.google.ai.edge.litertlm.Conversation?) {
+    if (target == null) return
+    try { target.close() } catch (_: Throwable) {}
+    if (activeConversation === target) activeConversation = null
+  }
+
+  private fun callbackFor(promise: Promise, target: com.google.ai.edge.litertlm.Conversation): MessageCallback = object : MessageCallback {
     override fun onMessage(message: com.google.ai.edge.litertlm.Message) {
       val payload = Arguments.createMap().apply {
         putString("text", message.toString())
@@ -154,10 +186,13 @@ class AnalyzerXLocalAIModule(private val context: ReactApplicationContext) : Rea
     }
 
     override fun onDone() {
+      // Release this request's conversation so the next turn starts clean.
+      closeConversation(target)
       promise.resolve(true)
     }
 
     override fun onError(throwable: Throwable) {
+      closeConversation(target)
       promise.reject("LOCAL_AI_GENERATION_FAILED", throwable.message, throwable)
     }
   }
@@ -166,6 +201,7 @@ class AnalyzerXLocalAIModule(private val context: ReactApplicationContext) : Rea
   fun cancel(promise: Promise) {
     activeJob?.cancel(true)
     activeJob = null
+    closeConversation(activeConversation)
     promise.resolve(true)
   }
 
@@ -178,8 +214,7 @@ class AnalyzerXLocalAIModule(private val context: ReactApplicationContext) : Rea
   }
 
   private fun closeRuntime() {
-    try { conversation?.close() } catch (_: Throwable) {}
-    conversation = null
+    closeConversation(activeConversation)
     try { engine?.close() } catch (_: Throwable) {}
     engine = null
   }
