@@ -115,6 +115,8 @@ export function coverageLabel(status: CoverageStatus): string {
       return "Degraded";
     case "stale":
       return "Stale";
+    case "blocked":
+      return "Blocked";
     case "unsupported":
       return "Unsupported";
     case "production_ready":

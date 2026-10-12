@@ -1,15 +1,21 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useMemo } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
 import { router } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";
 import {
-  buildRegistry,
   buildReportFromAnnouncement,
-  coverageLabel,
-  isLiveSource,
+  cacheSummary,
+  COMPANY_UNIVERSE_SIZE,
+  COMPANY_UNIVERSE_SNAPSHOT,
+  describeStatus,
+  refreshFilings,
+  searchIndianCompanies,
+  type CachedFiling,
   type Claim,
+  type CompanySearchHit,
   type FilingReport,
+  type RefreshResult,
 } from "@/lib/filing-intelligence";
 
 const amber = "#F4B860";
@@ -21,7 +27,6 @@ const panel = "#111C2D";
 const elevated = "#17253A";
 const ink = "#E7EEF7";
 
-/** Archive contract from lib/news-archive.ts. */
 type StoredArticle = {
   id: string;
   symbol: string;
@@ -29,11 +34,9 @@ type StoredArticle = {
   summary: string;
   source: string;
   url: string;
-  impact_score: number;
   published_at: string;
 };
 
-/** Official exchange/regulator sources, as opposed to secondary reporting. */
 function isOfficialSource(source: string): boolean {
   return /\b(nse|bse|sebi|sec edgar|edgar|exchange filing)\b/i.test(source || "");
 }
@@ -45,6 +48,12 @@ function toneForStance(stance: string): string {
 }
 
 function toneForStatus(status: string): string {
+  if (status === "connected" || status === "tested" || status === "production_ready") return teal;
+  if (status === "blocked" || status === "degraded" || status === "failed") return coral;
+  return amber;
+}
+
+function toneForReportStatus(status: string): string {
   if (status === "complete") return teal;
   if (status === "blocked" || status === "failed") return coral;
   return amber;
@@ -89,17 +98,64 @@ function Bullet({ text, tone = ink }: { text: string; tone?: string }) {
   );
 }
 
+/** Turn a cached filing into the announcement shape the report builder takes. */
+function reportFromCached(filing: CachedFiling): FilingReport {
+  return buildReportFromAnnouncement(
+    {
+      id: filing.key,
+      headline: filing.title,
+      summary: filing.companyName ? `Announcement filed by ${filing.companyName}.` : "",
+      source: "NSE India (official archive)",
+      url: filing.url,
+      publishedAt: filing.publishedAt ?? filing.firstSeenUtc,
+      symbol: filing.companyName ?? "",
+      market: "India",
+      fromOfficialSource: true,
+    },
+    new Date(),
+  );
+}
+
 export default function FilingsScreen() {
   const archiveQuery = trpc.news.archive.useQuery(
     { days: 30, limit: 60, page: 0, archiveOrder: "Newest first" },
     { staleTime: 60_000, retry: false },
   );
 
-  // The coverage matrix is built from the registry, with no health records yet,
-  // so every connected source honestly reports as stale until a check runs.
-  const registry = useMemo(() => buildRegistry([]), []);
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<CompanySearchHit | null>(null);
+  const [cache, setCache] = useState<CachedFiling[]>([]);
+  const [refresh, setRefresh] = useState<RefreshResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  const hits = useMemo(() => (query.trim() ? searchIndianCompanies(query, 8) : []), [query]);
+
+  const runRefresh = useCallback(
+    async (mode: "user_initiated" | "automatic") => {
+      setBusy(true);
+      setError(null);
+      try {
+        const result = await refreshFilings({
+          cache,
+          mode,
+          query: { companyName: selected?.name, limit: 40 },
+        });
+        setCache(result.cache);
+        setRefresh(result);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [cache, selected],
+  );
+
+  // Prefer a cached official filing; fall back to the on-device archive so the
+  // screen is useful before the first refresh.
   const report: FilingReport | null = useMemo(() => {
+    if (cache.length) return reportFromCached(cache[0]);
     const articles = (archiveQuery.data?.articles ?? []) as StoredArticle[];
     const article = articles.find((entry) => entry.headline && entry.headline.trim());
     if (!article) return null;
@@ -117,14 +173,15 @@ export default function FilingsScreen() {
       },
       new Date(),
     );
-  }, [archiveQuery.data]);
+  }, [cache, archiveQuery.data]);
 
   const identity = report?.filingIdentity;
   const timestamps = identity?.timestamps;
+  const summary = cacheSummary(cache);
 
   return (
     <ScreenContainer>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <Pressable onPress={() => router.back()} style={styles.backRow} accessibilityRole="button" accessibilityLabel="Go back">
           <Text style={styles.backText}>← Back</Text>
         </Pressable>
@@ -132,54 +189,134 @@ export default function FilingsScreen() {
         <Text style={styles.eyebrow}>FILING INTELLIGENCE</Text>
         <Text style={styles.title}>Evidence-linked filing report</Text>
         <Text style={styles.intro}>
-          Every claim below carries its evidence, its classification and its limitations. Nothing is shown unless the
-          evidence for it is held on this device, and a check that could not be performed is reported as not checked
-          rather than as a pass.
+          Search an Indian listed company, refresh its filings from approved sources, and read a report in which every
+          claim carries its evidence. A source is never polled automatically where its terms forbid it, and a check that
+          could not be run is reported as not checked rather than as a pass.
         </Text>
 
-        {/* Coverage matrix — PRD 5 */}
-        <Section title="Source coverage">
+        {/* Company search */}
+        <Section title="Find a company">
+          <TextInput
+            value={query}
+            onChangeText={(value) => {
+              setQuery(value);
+              setSelected(null);
+            }}
+            placeholder="Company name, symbol or industry"
+            placeholderTextColor={muted}
+            style={styles.input}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            accessibilityLabel="Search Indian listed companies"
+          />
           <Text style={styles.note}>
-            A source is only shown as live once its integration exists and a check has actually succeeded. A connected
-            source with no recorded successful check is reported as stale, not healthy.
+            Searching {COMPANY_UNIVERSE_SIZE} NSE Nifty-500 constituents, pinned from the official list on{" "}
+            {COMPANY_UNIVERSE_SNAPSHOT.date}. Search runs offline.
           </Text>
-          {registry.map((source) => (
-            <View key={source.sourceId} style={styles.registryRow}>
-              <View style={styles.registryHead}>
-                <Text style={styles.registryName}>{source.sourceId}</Text>
-                <View style={[styles.badge, { borderColor: isLiveSource(source.status) ? teal : muted }]}>
-                  <Text style={[styles.badgeText, { color: isLiveSource(source.status) ? teal : muted }]}>
-                    {coverageLabel(source.status)}
-                  </Text>
-                </View>
+          {query.trim() && hits.length === 0 ? (
+            <Text style={styles.note}>No listed company matched that query.</Text>
+          ) : null}
+          {hits.map((hit) => (
+            <Pressable
+              key={hit.symbol}
+              onPress={() => {
+                setSelected(hit);
+                setQuery(hit.name);
+              }}
+              style={({ pressed }) => [styles.hitRow, pressed && styles.pressed, selected?.symbol === hit.symbol && styles.hitRowActive]}
+              accessibilityRole="button"
+              accessibilityLabel={`Select ${hit.name}`}
+            >
+              <View style={styles.hitHead}>
+                <Text style={styles.hitSymbol}>{hit.symbol}</Text>
+                <Text style={styles.hitIndustry}>{hit.industry}</Text>
               </View>
-              <Text style={styles.registryMeta}>
-                {source.market} · {source.supportedFilingTypes.length ? source.supportedFilingTypes.join(", ") : "no filing types integrated"}
-              </Text>
-              <Text style={styles.registryNotes}>{source.coverageNotes}</Text>
-              <Text style={styles.registryMeta}>
-                Last successful check: {source.lastSuccessfulCheckUtc ?? "none recorded"}
-                {source.lastError ? ` · Last error: ${source.lastError}` : ""}
-              </Text>
-            </View>
+              <Text style={styles.hitName}>{hit.name}</Text>
+              <Text style={styles.hitMeta}>ISIN {hit.isin}</Text>
+            </Pressable>
           ))}
         </Section>
 
+        {/* Refresh */}
+        <Section title="Refresh filings">
+          <Text style={styles.note}>
+            A refresh reads the public announcements archive on request. Background polling of the same source is
+            blocked, because its terms prohibit systematic automated collection — the button below is the permitted path.
+          </Text>
+          <View style={styles.buttonRow}>
+            <Pressable
+              onPress={() => runRefresh("user_initiated")}
+              disabled={busy}
+              style={({ pressed }) => [styles.primaryButton, (busy || pressed) && styles.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Refresh filings"
+            >
+              <Text style={styles.primaryButtonText}>{busy ? "Refreshing…" : "Refresh filings"}</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => runRefresh("automatic")}
+              disabled={busy}
+              style={({ pressed }) => [styles.secondaryButton, (busy || pressed) && styles.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Simulate an automatic background run"
+            >
+              <Text style={styles.secondaryButtonText}>Background run</Text>
+            </Pressable>
+          </View>
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {refresh ? <Text style={styles.refreshSummary}>{refresh.message}</Text> : null}
+          {cache.length ? (
+            <Text style={styles.note}>
+              Cache holds {summary.total} filing{summary.total === 1 ? "" : "s"} from {summary.sources} source
+              {summary.sources === 1 ? "" : "s"}. Newest: {summary.newest ?? "unknown"}. A repeat refresh does not
+              download the same filing twice.
+            </Text>
+          ) : null}
+        </Section>
+
+        {/* Per-source status */}
+        {refresh ? (
+          <Section title="Source status">
+            {refresh.outcomes.map((outcome) => (
+              <View key={outcome.sourceId} style={styles.sourceRow}>
+                <View style={styles.sourceHead}>
+                  <Text style={styles.sourceName}>{outcome.label}</Text>
+                  <View style={[styles.badge, { borderColor: toneForStatus(outcome.status) }]}>
+                    <Text style={[styles.badgeText, { color: toneForStatus(outcome.status) }]}>
+                      {describeStatus(outcome.status)}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.sourceMeta}>
+                  {outcome.market} · {outcome.accessBasis.replace(/_/g, " ")}
+                  {outcome.verifiedEndToEnd ? " · verified end-to-end" : " · not yet verified end-to-end"}
+                </Text>
+                <Text style={styles.sourceMessage}>{outcome.message}</Text>
+                {outcome.added > 0 || outcome.existing > 0 ? (
+                  <Text style={styles.sourceMeta}>
+                    {outcome.added} new, {outcome.existing} already cached
+                  </Text>
+                ) : null}
+                <Text style={styles.sourceTerms}>{outcome.termsNote}</Text>
+              </View>
+            ))}
+          </Section>
+        ) : null}
+
         {!report || !identity || !timestamps ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>No item available to analyse</Text>
+            <Text style={styles.emptyTitle}>No filing available to analyse</Text>
             <Text style={styles.emptyText}>
               {archiveQuery.isLoading
                 ? "Reading the on-device archive…"
-                : "The on-device archive holds no announcement yet. Nothing is fabricated to fill the gap — collect some news first and this report will build from it."}
+                : "Refresh filings above to read the NSE announcements archive, or collect some news first. Nothing is fabricated to fill the gap."}
             </Text>
           </View>
         ) : (
           <>
-            {/* 1. Filing identity */}
             <Section title="1 · Filing identity">
-              <View style={[styles.badge, { borderColor: toneForStatus(report.reportStatus), alignSelf: "flex-start", marginBottom: 8 }]}>
-                <Text style={[styles.badgeText, { color: toneForStatus(report.reportStatus) }]}>
+              <View style={[styles.badge, { borderColor: toneForReportStatus(report.reportStatus), alignSelf: "flex-start", marginBottom: 8 }]}>
+                <Text style={[styles.badgeText, { color: toneForReportStatus(report.reportStatus) }]}>
                   {report.reportStatus.toUpperCase()}
                 </Text>
               </View>
@@ -200,7 +337,6 @@ export default function FilingsScreen() {
               </View>
             </Section>
 
-            {/* Verification panel — PRD 7 */}
             <Section title="Verification">
               <Text style={[styles.verificationSummary, { color: report.verification.fullyVerified ? teal : amber }]}>
                 {report.verification.summaryLabel}
@@ -219,14 +355,12 @@ export default function FilingsScreen() {
               ) : null}
             </Section>
 
-            {/* 2. One-minute summary */}
             <Section title="2 · One-minute summary">
               {report.summaryBullets.map((bullet, index) => (
                 <Bullet key={index} text={bullet} />
               ))}
             </Section>
 
-            {/* 3. What was disclosed */}
             <Section title="3 · What the company disclosed">
               {report.facts.length === 0 ? (
                 <Text style={styles.note}>No structured facts were extracted from the text held on this device.</Text>
@@ -246,7 +380,6 @@ export default function FilingsScreen() {
               )}
             </Section>
 
-            {/* 4. Financial comparison */}
             <Section title="4 · Financial comparison">
               {report.calculations.length === 0 ? (
                 <Text style={styles.note}>No calculations were produced — no comparable numeric pair was available.</Text>
@@ -263,7 +396,6 @@ export default function FilingsScreen() {
               )}
             </Section>
 
-            {/* 5 / 6. Factors and risks */}
             <Section title="5 · Positive factors">
               {report.positiveFactors.length === 0 ? (
                 <Text style={styles.note}>None identified from the available evidence.</Text>
@@ -283,7 +415,6 @@ export default function FilingsScreen() {
               ))}
             </Section>
 
-            {/* 7. Stock implications */}
             <Section title="7 · Potential stock implications">
               <View style={[styles.badge, { borderColor: toneForStance(report.stockImplications.stance), alignSelf: "flex-start", marginBottom: 8 }]}>
                 <Text style={[styles.badgeText, { color: toneForStance(report.stockImplications.stance) }]}>
@@ -293,7 +424,6 @@ export default function FilingsScreen() {
               <Text style={styles.bodyText}>{report.stockImplications.rationale}</Text>
             </Section>
 
-            {/* 8. Research view */}
             <Section title="8 · Research view">
               <Text style={styles.note}>
                 {report.researchView
@@ -302,7 +432,6 @@ export default function FilingsScreen() {
               </Text>
             </Section>
 
-            {/* 9. Monitoring */}
             <Section title="9 · What to monitor next">
               <Text style={styles.note}>
                 {report.monitoringItems.length
@@ -314,7 +443,6 @@ export default function FilingsScreen() {
               ))}
             </Section>
 
-            {/* Claims with evidence */}
             <Section title="Claims and evidence">
               {report.claims.length === 0 ? (
                 <Text style={styles.note}>
@@ -342,7 +470,6 @@ export default function FilingsScreen() {
               )}
             </Section>
 
-            {/* 10. Sources */}
             <Section title="10 · Sources and methodology">
               {report.sources.map((source, index) => (
                 <Text key={index} style={styles.bodyText}>
@@ -355,7 +482,6 @@ export default function FilingsScreen() {
               </Text>
             </Section>
 
-            {/* 11. Disclaimer */}
             <Section title="11 · Disclaimer and limitations">
               <Text style={styles.bodyText}>
                 Informational only, not investment advice. This does not execute trades and does not provide
@@ -380,24 +506,46 @@ const styles = StyleSheet.create({
   title: { color: ink, fontSize: 21, fontWeight: "800", marginTop: 4 },
   intro: { color: muted, fontSize: 12, lineHeight: 18, marginTop: 8 },
 
-  section: {
-    marginTop: 18,
-    backgroundColor: panel,
-    borderColor: border,
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-  },
+  section: { marginTop: 18, backgroundColor: panel, borderColor: border, borderWidth: 1, borderRadius: 14, padding: 14 },
   sectionTitle: { color: ink, fontSize: 13, fontWeight: "800", marginBottom: 10 },
-
   note: { color: muted, fontSize: 11, lineHeight: 17, marginBottom: 6 },
   bodyText: { color: ink, fontSize: 12, lineHeight: 18 },
 
-  registryRow: { borderTopColor: border, borderTopWidth: 1, paddingTop: 10, marginTop: 10 },
-  registryHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  registryName: { color: ink, fontSize: 12, fontWeight: "700", flexShrink: 1 },
-  registryMeta: { color: muted, fontSize: 10, marginTop: 4 },
-  registryNotes: { color: "#B8C6D6", fontSize: 10, lineHeight: 15, marginTop: 4 },
+  input: {
+    backgroundColor: elevated,
+    borderColor: border,
+    borderWidth: 1,
+    borderRadius: 10,
+    color: ink,
+    fontSize: 13,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+
+  hitRow: { borderTopColor: border, borderTopWidth: 1, paddingTop: 9, paddingBottom: 9 },
+  hitRowActive: { backgroundColor: elevated, borderRadius: 8, paddingHorizontal: 8 },
+  hitHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  hitSymbol: { color: teal, fontSize: 12, fontWeight: "800" },
+  hitIndustry: { color: muted, fontSize: 9 },
+  hitName: { color: ink, fontSize: 12, marginTop: 2 },
+  hitMeta: { color: muted, fontSize: 9, marginTop: 2 },
+
+  buttonRow: { flexDirection: "row", marginTop: 4 },
+  primaryButton: { backgroundColor: teal, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 11, marginRight: 8, flex: 1, alignItems: "center" },
+  primaryButtonText: { color: "#06202A", fontSize: 12, fontWeight: "800" },
+  secondaryButton: { backgroundColor: elevated, borderColor: border, borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11, alignItems: "center" },
+  secondaryButtonText: { color: ink, fontSize: 12, fontWeight: "700" },
+  pressed: { opacity: 0.7 },
+  refreshSummary: { color: teal, fontSize: 11, fontWeight: "700", marginTop: 10 },
+  errorText: { color: coral, fontSize: 11, marginTop: 8 },
+
+  sourceRow: { borderTopColor: border, borderTopWidth: 1, paddingTop: 10, marginTop: 10 },
+  sourceHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  sourceName: { color: ink, fontSize: 12, fontWeight: "700", flexShrink: 1 },
+  sourceMeta: { color: muted, fontSize: 10, marginTop: 4 },
+  sourceMessage: { color: "#B8C6D6", fontSize: 10, lineHeight: 15, marginTop: 4 },
+  sourceTerms: { color: muted, fontSize: 9, lineHeight: 14, marginTop: 4, fontStyle: "italic" },
 
   badge: { borderWidth: 1, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
   badgeText: { fontSize: 9, fontWeight: "800", letterSpacing: 0.6 },

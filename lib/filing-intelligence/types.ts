@@ -30,6 +30,7 @@ export type CoverageStatus =
   | "tested"
   | "degraded"
   | "stale"
+  | "blocked"
   | "unsupported"
   | "production_ready";
 
