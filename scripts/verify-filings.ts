@@ -5,8 +5,17 @@ if (px) setGlobalDispatcher(new ProxyAgent(px));
 import { refreshFilings } from "../lib/filing-intelligence/connectors/refresh";
 import { cacheSummary } from "../lib/filing-intelligence/connectors/cache";
 import { searchIndianCompanies, COMPANY_UNIVERSE_SIZE } from "../lib/filing-intelligence/company-search";
+import { buildCatalogWithReasons, catalogSummary, accessClassLabel, sourceStateLabel } from "../lib/filing-intelligence";
 
 async function main() {
+  console.log("=== source catalog (Phase 3) ===");
+  for (const { record, reason } of buildCatalogWithReasons()) {
+    console.log(` - ${record.sourceId} | ${record.country} | ${accessClassLabel(record.accessClass)} | ${sourceStateLabel(record.state)}`);
+    console.log(`     ${reason}`);
+    if (record.blocker) console.log(`     dependency: ${record.blocker.slice(0, 120)}`);
+  }
+  console.log("summary:", catalogSummary(buildCatalogWithReasons().map((e) => e.record)).map((e) => `${e.state}:${e.count}`).join(", "));
+  console.log("");
   console.log("universe size:", COMPANY_UNIVERSE_SIZE);
   const hits = searchIndianCompanies("reliance", 3);
   console.log("search 'reliance':", hits.map((h) => `${h.symbol} (${h.matchKind})`).join(", "));

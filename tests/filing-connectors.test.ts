@@ -257,7 +257,7 @@ describe("Indian company search", () => {
 });
 
 describe("all four Indian sources are registered and connected", () => {
-  it("registers NSE, BSE, SEBI and data.gov.in", async () => {
+  it("registers NSE, BSE, SEBI, data.gov.in and SEC EDGAR", async () => {
     const { CONNECTORS } = await import("../lib/filing-intelligence");
     const ids = CONNECTORS.map((c) => c.terms.sourceId).sort();
     expect(ids).toEqual([
@@ -265,6 +265,7 @@ describe("all four Indian sources are registered and connected", () => {
       "datagovin_open_data",
       "nse_corporate_announcements",
       "sebi_regulatory_filings",
+      "sec_edgar_submissions",
     ]);
   });
 

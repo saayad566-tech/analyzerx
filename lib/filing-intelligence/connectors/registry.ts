@@ -17,6 +17,7 @@
 
 import { isApprovedUrl, type SourceTerms } from "./policy";
 import { fetchFeedText, filingsFromFeed } from "./rss";
+import { fetchSecFilings, SEC_APPROVED_DOMAINS } from "./sec-edgar";
 import type { Connector, ConnectorHealth, ConnectorResult } from "./types";
 
 
@@ -104,8 +105,8 @@ export const SEC_TERMS: SourceTerms = {
   redistributionAllowed: true,
   attributionRequired: true,
   termsNote:
-    "A documented public API that permits access with a descriptive User-Agent and fair-access rate limits. Adapter boundary reserved; not implemented in this build.",
-  approvedDomains: ["sec.gov", "data.sec.gov", "www.sec.gov"],
+    "A documented public API, publicly accessible without an API key. The fair-access guidance asks callers to identify themselves with a descriptive User-Agent carrying contact details and to stay within about ten requests per second; this connector does both. Read per company by ticker.",
+  approvedDomains: SEC_APPROVED_DOMAINS,
   filingTypes: ["10-K", "10-Q", "8-K"],
 };
 
@@ -254,6 +255,50 @@ export const dataGovInConnector: Connector = {
 };
 
 /* ------------------------------------------------------------------ *
+ * SEC EDGAR adapter
+ * ------------------------------------------------------------------ */
+
+/**
+ * The SEC adapter resolves a US ticker to a CIK and reads that company's
+ * submissions. It requires a ticker, because the submissions endpoint is keyed
+ * by company rather than offering a global feed. When no ticker is supplied it
+ * says so instead of returning an empty success.
+ */
+export const secEdgarConnector: Connector = {
+  terms: SEC_TERMS,
+  verifiedEndToEnd: false, // not run end to end from the build sandbox
+  async fetchFilings(query): Promise<ConnectorResult> {
+    const ticker = query.symbol?.trim() || query.companyName?.trim();
+    if (!ticker) {
+      return {
+        sourceId: SEC_TERMS.sourceId,
+        status: "empty",
+        filings: [],
+        message: "SEC EDGAR is read per company: supply a US ticker to fetch its filings.",
+      };
+    }
+    const result = await fetchSecFilings(ticker.toUpperCase(), { limit: query.limit ?? 25 });
+    if ("error" in result) {
+      return { sourceId: SEC_TERMS.sourceId, status: "error", filings: [], message: result.error };
+    }
+    return {
+      sourceId: SEC_TERMS.sourceId,
+      status: result.filings.length ? "ok" : "empty",
+      filings: result.filings,
+      message: result.filings.length
+        ? `Read ${result.filings.length} filing${result.filings.length === 1 ? "" : "s"} for ${result.companyName} (CIK ${result.cik}).`
+        : `SEC returned no filings for ${ticker}.`,
+    };
+  },
+  async health(): Promise<ConnectorHealth> {
+    const probe = await fetchSecFilings("AAPL", { limit: 1 });
+    return "error" in probe
+      ? { lastSuccessfulCheckUtc: null, lastError: probe.error }
+      : { lastSuccessfulCheckUtc: new Date().toISOString(), lastError: null };
+  },
+};
+
+/* ------------------------------------------------------------------ *
  * Registry
  * ------------------------------------------------------------------ */
 
@@ -262,6 +307,7 @@ export const CONNECTORS: Connector[] = [
   bseAnnouncementsConnector,
   sebiFilingsConnector,
   dataGovInConnector,
+  secEdgarConnector,
 ];
 
 export function connectorFor(sourceId: string): Connector | undefined {

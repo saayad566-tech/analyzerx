@@ -4,11 +4,14 @@ import { router } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";
 import {
+  accessClassLabel,
+  buildCatalogWithReasons,
   buildReportFromAnnouncement,
   cacheSummary,
   COMPANY_UNIVERSE_SIZE,
   COMPANY_UNIVERSE_SNAPSHOT,
   describeStatus,
+  sourceStateLabel,
   refreshFilings,
   searchIndianCompanies,
   type CachedFiling,
@@ -50,6 +53,7 @@ function toneForStance(stance: string): string {
 function toneForStatus(status: string): string {
   if (status === "connected" || status === "tested" || status === "production_ready") return teal;
   if (status === "blocked" || status === "degraded" || status === "failed") return coral;
+  if (status === "available") return "#7CB9F2";
   return amber;
 }
 
@@ -130,6 +134,7 @@ export default function FilingsScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const hits = useMemo(() => (query.trim() ? searchIndianCompanies(query, 8) : []), [query]);
+  const catalog = useMemo(() => buildCatalogWithReasons(), []);
 
   const runRefresh = useCallback(
     async (mode: "user_initiated" | "automatic") => {
@@ -139,7 +144,7 @@ export default function FilingsScreen() {
         const result = await refreshFilings({
           cache,
           mode,
-          query: { companyName: selected?.name, limit: 40 },
+          query: { companyName: selected?.name, symbol: selected?.symbol, limit: 40 },
         });
         setCache(result.cache);
         setRefresh(result);
@@ -274,6 +279,36 @@ export default function FilingsScreen() {
               download the same filing twice.
             </Text>
           ) : null}
+        </Section>
+
+        {/* Source catalog — Phase 3 classification, with the derived state */}
+        <Section title="Source catalog">
+          <Text style={styles.note}>
+            Every source is classified by how it may actually be accessed, and its state is derived from recorded
+            evidence rather than asserted. A configured connector is not necessarily connected, and a source with no
+            recent successful check is shown as stale rather than healthy.
+          </Text>
+          {catalog.map(({ record, reason }) => (
+            <View key={record.sourceId} style={styles.sourceRow}>
+              <View style={styles.sourceHead}>
+                <Text style={styles.sourceName}>{record.name}</Text>
+                <View style={[styles.badge, { borderColor: toneForStatus(record.state) }]}>
+                  <Text style={[styles.badgeText, { color: toneForStatus(record.state) }]}>
+                    {sourceStateLabel(record.state)}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.sourceMeta}>
+                {record.country} · {accessClassLabel(record.accessClass)} · auth: {record.auth.replace(/_/g, " ")}
+              </Text>
+              <Text style={styles.sourceMessage}>{reason}</Text>
+              {record.blocker ? <Text style={styles.sourceTerms}>Dependency: {record.blocker}</Text> : null}
+              <Text style={styles.sourceTerms}>
+                Terms reviewed: {record.termsReviewedUtc ?? "not reviewed"} · Rate limit:{" "}
+                {record.rateLimit.note}
+              </Text>
+            </View>
+          ))}
         </Section>
 
         {/* Per-source status */}
