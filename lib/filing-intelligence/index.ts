@@ -22,6 +22,7 @@ export * from "./from-announcement";
 export * from "./company-search";
 export * from "./connectors/policy";
 export * from "./connectors/types";
+export * from "./ingestion";
 export * from "./sources/types";
 export * from "./sources/state";
 export * from "./sources/catalog";
