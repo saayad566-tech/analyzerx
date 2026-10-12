@@ -255,3 +255,81 @@ describe("Indian company search", () => {
     expect(industries[0].count).toBeGreaterThanOrEqual(industries[4].count);
   });
 });
+
+describe("all four Indian sources are registered and connected", () => {
+  it("registers NSE, BSE, SEBI and data.gov.in", async () => {
+    const { CONNECTORS } = await import("../lib/filing-intelligence");
+    const ids = CONNECTORS.map((c) => c.terms.sourceId).sort();
+    expect(ids).toEqual([
+      "bse_corporate_announcements",
+      "datagovin_open_data",
+      "nse_corporate_announcements",
+      "sebi_regulatory_filings",
+    ]);
+  });
+
+  it("treats the three exchange/regulator feeds as published syndication feeds", async () => {
+    const { CONNECTORS } = await import("../lib/filing-intelligence");
+    for (const id of ["nse_corporate_announcements", "bse_corporate_announcements", "sebi_regulatory_filings"]) {
+      const connector = CONNECTORS.find((c) => c.terms.sourceId === id)!;
+      expect(connector.terms.accessBasis).toBe("published_feed");
+      expect(connector.verifiedEndToEnd).toBe(true);
+      // Conservative on automatic polling, permitted on request.
+      expect(connector.terms.automaticAccessAllowed).toBe(false);
+      expect(connector.terms.userInitiatedAccessAllowed).toBe(true);
+    }
+  });
+
+  it("treats data.gov.in as an open-licence source usable automatically", async () => {
+    const { CONNECTORS } = await import("../lib/filing-intelligence");
+    const connector = CONNECTORS.find((c) => c.terms.sourceId === "datagovin_open_data")!;
+    expect(connector.terms.accessBasis).toBe("open_licence");
+    expect(connector.terms.automaticAccessAllowed).toBe(true);
+  });
+});
+
+describe("feed parsing across the three formats", () => {
+  it("parses the BSE date format and its scrip code", async () => {
+    const { parseRssItems, toIso, stripScripCode } = await import("../lib/filing-intelligence");
+    const xml = `<rss><channel><item><title>Coral Newsprints Ltd (530755)</title><link>https://www.bseindia.com/xml-data/corpfiling/AttachLive/2e7f.pdf</link><scripcode>530755</scripcode><description>pcs certificate under reg. 40(10)</description><pubDate>12-Oct-2026 20:46:58</pubDate></item></channel></rss>`;
+    const items = parseRssItems(xml);
+    expect(items[0].scripCode).toBe("530755");
+    expect(toIso(items[0].pubDate)).toBe("2026-10-12T20:46:58.000Z");
+    expect(stripScripCode(items[0].title)).toBe("Coral Newsprints Ltd");
+  });
+
+  it("parses the SEBI date format", async () => {
+    const { toIso } = await import("../lib/filing-intelligence");
+    expect(toIso("12 Oct, 2026 +0530")).toBe("2026-10-12T12:00:00.000Z");
+  });
+
+  it("never substitutes a date when the feed omits one", async () => {
+    const { toIso } = await import("../lib/filing-intelligence");
+    expect(toIso(null)).toBeNull();
+    expect(toIso("not a date")).toBeNull();
+  });
+
+  it("un-doubles a SEBI link that carries the site root twice", async () => {
+    const { sanitizeLink } = await import("../lib/filing-intelligence");
+    const doubled = "https://www.sebi.gov.in/https://www.sebi.gov.in/sebi_data/attachdocs/sep-2026/eo.pdf";
+    expect(sanitizeLink(doubled)).toBe("https://www.sebi.gov.in/sebi_data/attachdocs/sep-2026/eo.pdf");
+    expect(sanitizeLink("https://www.sebi.gov.in/legal/x.html")).toBe("https://www.sebi.gov.in/legal/x.html");
+  });
+
+  it("keys a BSE filing by its scrip code and document, not its title", async () => {
+    const { filingsFromFeed } = await import("../lib/filing-intelligence");
+    const xml = `<rss><channel><item><title>Acme Ltd (500001)</title><link>https://www.bseindia.com/xml-data/corpfiling/AttachLive/aaa.pdf</link><scripcode>500001</scripcode><pubDate>12-Oct-2026 10:00:00</pubDate></item><item><title>Acme Ltd (500001)</title><link>https://www.bseindia.com/xml-data/corpfiling/AttachLive/bbb.pdf</link><scripcode>500001</scripcode><pubDate>12-Oct-2026 11:00:00</pubDate></item></channel></rss>`;
+    const filings = filingsFromFeed(xml, { limit: 10, category: "corporate_announcement" });
+    expect(filings).toHaveLength(2);
+    expect(filings[0].externalId).not.toBe(filings[1].externalId);
+    expect(filings[0].symbol).toBe("500001");
+  });
+
+  it("filters a feed by company name", async () => {
+    const { filingsFromFeed } = await import("../lib/filing-intelligence");
+    const xml = `<rss><channel><item><title>Acme Ltd (500001)</title><link>https://x/1.pdf</link><pubDate>12-Oct-2026 10:00:00</pubDate></item><item><title>Beta Corp (500002)</title><link>https://x/2.pdf</link><pubDate>12-Oct-2026 10:00:00</pubDate></item></channel></rss>`;
+    const filings = filingsFromFeed(xml, { limit: 10, companyFilter: "beta", category: "c" });
+    expect(filings).toHaveLength(1);
+    expect(filings[0].companyName).toBe("Beta Corp");
+  });
+});

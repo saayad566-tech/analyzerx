@@ -27,6 +27,7 @@ import type { CoverageStatus } from "../types";
 /** How the source's terms characterise access to the content. */
 export type AccessBasis =
   | "open_licence" // published under an open government licence
+  | "published_feed" // an RSS/Atom feed the source publishes for syndication
   | "public_regulatory" // a public regulatory information source
   | "public_archive" // a public archive page whose automated use is restricted
   | "authorized_feed" // a documented API or feed whose terms permit the use
@@ -141,6 +142,8 @@ export function accessBasisLabel(basis: AccessBasis): string {
   switch (basis) {
     case "open_licence":
       return "Open government licence";
+    case "published_feed":
+      return "Published syndication feed";
     case "public_regulatory":
       return "Public regulatory source";
     case "public_archive":

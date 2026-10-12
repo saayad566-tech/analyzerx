@@ -189,9 +189,10 @@ export default function FilingsScreen() {
         <Text style={styles.eyebrow}>FILING INTELLIGENCE</Text>
         <Text style={styles.title}>Evidence-linked filing report</Text>
         <Text style={styles.intro}>
-          Search an Indian listed company, refresh its filings from approved sources, and read a report in which every
-          claim carries its evidence. A source is never polled automatically where its terms forbid it, and a check that
-          could not be run is reported as not checked rather than as a pass.
+          Search an Indian listed company, refresh its filings from the connected sources — NSE, BSE, SEBI and
+          data.gov.in — and read a report in which every claim carries its evidence. A source is never polled
+          automatically where its terms forbid it, and a check that could not be run is reported as not checked rather
+          than as a pass.
         </Text>
 
         {/* Company search */}
@@ -240,8 +241,9 @@ export default function FilingsScreen() {
         {/* Refresh */}
         <Section title="Refresh filings">
           <Text style={styles.note}>
-            A refresh reads the public announcements archive on request. Background polling of the same source is
-            blocked, because its terms prohibit systematic automated collection — the button below is the permitted path.
+            A refresh reads the published feeds on request. Background polling of NSE, BSE and SEBI is blocked,
+            because their terms prohibit systematic automated collection — the button below is the permitted path.
+            data.gov.in is open-licence data and may be read automatically.
           </Text>
           <View style={styles.buttonRow}>
             <Pressable

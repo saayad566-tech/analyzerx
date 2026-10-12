@@ -1,14 +1,24 @@
 /**
  * The source registry: one adapter per source, with the terms that govern it.
  *
- * `verifiedEndToEnd` is true only where an end-to-end run has actually
- * retrieved a genuine document from the source. The NSE announcements archive
- * has been retrieved and parsed for real; the others declare their boundary and
- * say plainly that they are not implemented, rather than pretending to work.
+ * All four Indian sources are connected. Three of them - NSE, BSE and SEBI -
+ * publish an RSS feed for syndication, so the adapter reads a feed the source
+ * itself publishes rather than scraping pages. Each feed has been retrieved and
+ * parsed for real. data.gov.in exposes an open catalogue API.
+ *
+ * Access basis, stated precisely rather than loosely:
+ *   - NSE, BSE, SEBI publish syndication feeds, but their terms are cautious
+ *     about systematic automated collection, so they are read only on a
+ *     user-initiated refresh, with attribution, and never polled in the
+ *     background.
+ *   - data.gov.in publishes open government data under an open licence, so it
+ *     may be read automatically.
  */
 
 import { isApprovedUrl, type SourceTerms } from "./policy";
-import { notImplementedConnector, type Connector, type ConnectorHealth, type ConnectorResult, type FetchedFiling } from "./types";
+import { fetchFeedText, filingsFromFeed } from "./rss";
+import type { Connector, ConnectorHealth, ConnectorResult } from "./types";
+
 
 /* ------------------------------------------------------------------ *
  * Terms
@@ -19,54 +29,52 @@ export const NSE_TERMS: SourceTerms = {
   label: "NSE India corporate announcements",
   market: "India",
   homepage: "https://www.nseindia.com/companies-listing/corporate-filings-announcements",
-  accessBasis: "public_archive",
-  // NSE's terms prohibit systematic or automated data collection, so the app
-  // must not poll this source in the background. A user-initiated read of the
-  // public announcements archive, with attribution, is the permitted path.
+  accessBasis: "published_feed",
   automaticAccessAllowed: false,
   userInitiatedAccessAllowed: true,
   redistributionAllowed: false,
   attributionRequired: true,
   termsNote:
-    "NSE's website terms prohibit systematic or automated data collection. Background polling is blocked; the public announcements archive is read only when the user refreshes, with attribution, and its content is not redistributed.",
+    "NSE publishes this announcements feed for syndication, but its website terms prohibit systematic or automated data collection. Background polling is blocked; the feed is read only when the user refreshes, with attribution, and its content is not redistributed.",
   approvedDomains: ["nsearchives.nseindia.com", "nseindia.com"],
   filingTypes: ["corporate_announcement", "board_meeting", "prior_intimation"],
 };
 
-export const SEBI_TERMS: SourceTerms = {
-  sourceId: "sebi_corporate_filings",
-  label: "SEBI corporate filings",
+export const BSE_TERMS: SourceTerms = {
+  sourceId: "bse_corporate_announcements",
+  label: "BSE India corporate announcements",
   market: "India",
-  homepage: "https://www.sebi.gov.in/curation/corporate_filings.html",
-  accessBasis: "public_regulatory",
+  homepage: "https://www.bseindia.com/corporates/ann.html",
+  accessBasis: "published_feed",
   automaticAccessAllowed: false,
   userInitiatedAccessAllowed: true,
   redistributionAllowed: false,
   attributionRequired: true,
   termsNote:
-    "SEBI is a public regulatory information source, but its website policy discusses permission and attribution for reproducing content. No automated adapter is implemented, so it is not fetched.",
-  approvedDomains: ["sebi.gov.in"],
-  filingTypes: ["regulatory_circular", "order", "public_disclosure"],
+    "BSE publishes this corporate-announcements feed for syndication, and each item links the filed document directly. Its server rejects some client identities outright, so the app identifies itself plainly and reads the feed only on request, with attribution; the content is not redistributed.",
+  approvedDomains: ["bseindia.com", "www.bseindia.com"],
+  filingTypes: ["corporate_announcement", "financial_results", "compliance_filing"],
 };
 
-export const BSE_TERMS: SourceTerms = {
-  sourceId: "bse_corporate_filings",
-  label: "BSE India corporate filings",
+export const SEBI_TERMS: SourceTerms = {
+  sourceId: "sebi_regulatory_filings",
+  label: "SEBI regulatory orders and circulars",
   market: "India",
-  homepage: "https://www.bseindia.com/",
-  accessBasis: "public_archive",
+  homepage: "https://www.sebi.gov.in/",
+  accessBasis: "published_feed",
   automaticAccessAllowed: false,
   userInitiatedAccessAllowed: true,
   redistributionAllowed: false,
   attributionRequired: true,
-  termsNote: "Public corporate filings and financial results. No automated adapter is implemented, so it is not fetched.",
-  approvedDomains: ["bseindia.com"],
-  filingTypes: ["corporate_filing", "financial_results"],
+  termsNote:
+    "SEBI publishes this regulatory feed for syndication. Its website policy discusses permission and attribution for reproducing content, so background polling is blocked and the feed is read only on request, with attribution.",
+  approvedDomains: ["sebi.gov.in", "www.sebi.gov.in"],
+  filingTypes: ["regulatory_circular", "order", "enforcement_action", "recovery_proceeding"],
 };
 
 export const DATAGOVIN_TERMS: SourceTerms = {
-  sourceId: "datagovin_company_master",
-  label: "data.gov.in company master",
+  sourceId: "datagovin_open_data",
+  label: "data.gov.in open government data",
   market: "India",
   homepage: "https://www.data.gov.in/",
   accessBasis: "open_licence",
@@ -75,11 +83,16 @@ export const DATAGOVIN_TERMS: SourceTerms = {
   redistributionAllowed: true,
   attributionRequired: true,
   termsNote:
-    "Open government datasets published under an open licence. The licence and update frequency must be checked per dataset. Requires an API key that is not configured, so no adapter is active.",
-  approvedDomains: ["data.gov.in", "api.data.gov.in"],
-  filingTypes: ["company_master"],
+    "Open government datasets published under an open licence. The catalogue is readable without a key; reading an individual dataset requires an api-key that this build does not configure, so the dependency is the key rather than the code. Check each dataset's licence and update frequency before use.",
+  approvedDomains: ["api.data.gov.in", "data.gov.in", "www.data.gov.in"],
+  filingTypes: ["company_master", "dataset"],
 };
 
+/**
+ * SEC EDGAR is declared as a boundary but is not part of the active Indian
+ * registry. It is kept here so the coverage matrix can show it honestly as an
+ * authorized feed that is not yet implemented.
+ */
 export const SEC_TERMS: SourceTerms = {
   sourceId: "sec_edgar_submissions",
   label: "SEC EDGAR company submissions",
@@ -97,123 +110,142 @@ export const SEC_TERMS: SourceTerms = {
 };
 
 /* ------------------------------------------------------------------ *
- * NSE adapter (implemented and verified end-to-end)
+ * Feed adapters
  * ------------------------------------------------------------------ */
 
-const NSE_ANNOUNCEMENTS_URL = "https://nsearchives.nseindia.com/content/RSS/Online_announcements.xml";
+const NSE_FEED_URL = "https://nsearchives.nseindia.com/content/RSS/Online_announcements.xml";
+const BSE_FEED_URL = "https://www.bseindia.com/data/xml/announcements.xml";
+const SEBI_FEED_URL = "https://www.sebi.gov.in/sebirss.xml";
 
-/** Decode the handful of XML entities that appear in RSS titles. */
-function decodeXml(value: string): string {
-  return value
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&")
-    .trim();
+function feedConnector(options: {
+  terms: SourceTerms;
+  url: string;
+  category: string;
+  /** BSE links the filed document; the others link a landing page. */
+  linkPattern?: RegExp;
+  /** The BSE feed is several megabytes and carries thousands of items. */
+  maxBytes?: number;
+  verifiedEndToEnd: boolean;
+}): Connector {
+  return {
+    terms: options.terms,
+    verifiedEndToEnd: options.verifiedEndToEnd,
+    async fetchFilings(query): Promise<ConnectorResult> {
+      const approved = isApprovedUrl(options.terms, options.url);
+      if (!approved.allowed) {
+        return { sourceId: options.terms.sourceId, status: "blocked", filings: [], message: approved.reason };
+      }
+      const fetched = await fetchFeedText(options.terms.label, options.url, { maxBytes: options.maxBytes });
+      if (!fetched.ok) {
+        // A refusal is reported as blocked, so the UI never shows a source as
+        // merely "degraded" when it has actually declined access.
+        return { sourceId: options.terms.sourceId, status: fetched.refused ? "blocked" : "error", filings: [], message: fetched.error };
+      }
+      const filings = filingsFromFeed(fetched.text, {
+        limit: query.limit ?? 40,
+        companyFilter: query.companyName,
+        category: options.category,
+        linkPattern: options.linkPattern,
+      });
+      return {
+        sourceId: options.terms.sourceId,
+        status: filings.length ? "ok" : "empty",
+        filings,
+        message: filings.length
+          ? `Read ${filings.length} item${filings.length === 1 ? "" : "s"} from ${options.terms.label}.`
+          : `${options.terms.label} returned no items matching the query.`,
+      };
+    },
+    async health(): Promise<ConnectorHealth> {
+      try {
+        const response = await fetch(options.url, { method: "HEAD", headers: { "User-Agent": "AnalyzerX/1.0 (filing-intelligence)" } });
+        return { lastSuccessfulCheckUtc: response.ok ? new Date().toISOString() : null, lastError: response.ok ? null : `HTTP ${response.status}` };
+      } catch (error) {
+        return { lastSuccessfulCheckUtc: null, lastError: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  };
 }
 
-function tag(item: string, name: string): string | null {
-  const match = item.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, "i"));
-  return match ? decodeXml(match[1]) : null;
-}
-
-/** Parse an RSS document into raw items. Kept separate so it can be tested. */
-export function parseRssItems(xml: string): { title: string; link: string; pubDate: string | null; description: string | null }[] {
-  const items: { title: string; link: string; pubDate: string | null; description: string | null }[] = [];
-  const matches = xml.match(/<item[\s>][\s\S]*?<\/item>/gi) ?? [];
-  for (const raw of matches) {
-    const title = tag(raw, "title");
-    const link = tag(raw, "link");
-    if (!title || !link) continue;
-    items.push({ title, link, pubDate: tag(raw, "pubDate"), description: tag(raw, "description") });
-  }
-  return items;
-}
-
-/** A stable, source-scoped id from the filing link, when one is present. */
-export function externalIdFromLink(link: string): string | null {
-  try {
-    const path = new URL(link).pathname;
-    const file = path.split("/").filter(Boolean).pop() ?? "";
-    const stem = file.replace(/\.[a-z0-9]+$/i, "");
-    return stem || null;
-  } catch {
-    return null;
-  }
-}
-
-function toIso(value: string | null): string | null {
-  if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-}
-
-export const nseAnnouncementsConnector: Connector = {
+export const nseAnnouncementsConnector = feedConnector({
   terms: NSE_TERMS,
-  // Retrieved and parsed for real: the archive returns ~500 KB of live items.
+  url: NSE_FEED_URL,
+  category: "corporate_announcement",
   verifiedEndToEnd: true,
-  async fetchFilings(query): Promise<ConnectorResult> {
-    const approved = isApprovedUrl(NSE_TERMS, NSE_ANNOUNCEMENTS_URL);
+});
+
+export const bseAnnouncementsConnector = feedConnector({
+  terms: BSE_TERMS,
+  url: BSE_FEED_URL,
+  category: "corporate_announcement",
+  // Only the items that link an actual filed document.
+  linkPattern: /corpfiling|AttachLive|AttachHis/i,
+  maxBytes: 16_000_000,
+  verifiedEndToEnd: true,
+});
+
+export const sebiFilingsConnector = feedConnector({
+  terms: SEBI_TERMS,
+  url: SEBI_FEED_URL,
+  category: "regulatory_filing",
+  verifiedEndToEnd: true,
+});
+
+/* ------------------------------------------------------------------ *
+ * data.gov.in adapter
+ * ------------------------------------------------------------------ */
+
+const DATAGOVIN_LISTS_URL = "https://api.data.gov.in/lists?format=json&limit=5";
+
+/**
+ * data.gov.in exposes an open catalogue API and per-dataset resource API.
+ *
+ * The catalogue is readable without a key, so it is genuinely connected. A
+ * specific dataset needs an api-key; when one is supplied through configuration
+ * the adapter reads the resource, and when it is absent the adapter says so
+ * rather than pretending the dataset was read.
+ */
+export const dataGovInConnector: Connector = {
+  terms: DATAGOVIN_TERMS,
+  verifiedEndToEnd: true, // the catalogue endpoint has been read for real
+  async fetchFilings(): Promise<ConnectorResult> {
+    const approved = isApprovedUrl(DATAGOVIN_TERMS, DATAGOVIN_LISTS_URL);
     if (!approved.allowed) {
-      return { sourceId: NSE_TERMS.sourceId, status: "blocked", filings: [], message: approved.reason };
+      return { sourceId: DATAGOVIN_TERMS.sourceId, status: "blocked", filings: [], message: approved.reason };
     }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15_000);
     try {
-      const response = await fetch(NSE_ANNOUNCEMENTS_URL, {
+      const response = await fetch(DATAGOVIN_LISTS_URL, {
         signal: controller.signal,
-        headers: { Accept: "application/xml,text/xml,*/*", "User-Agent": "AnalyzerX/1.0 (filing-intelligence)" },
+        headers: { Accept: "application/json", "User-Agent": "AnalyzerX/1.0 (filing-intelligence)" },
       });
       if (!response.ok) {
-        return { sourceId: NSE_TERMS.sourceId, status: "error", filings: [], message: `HTTP ${response.status} from ${NSE_TERMS.label}.` };
+        return { sourceId: DATAGOVIN_TERMS.sourceId, status: "error", filings: [], message: `HTTP ${response.status} from the data.gov.in catalogue.` };
       }
-      const xml = await response.text();
-      const limit = query.limit ?? 40;
-      const wanted = query.companyName?.trim().toLowerCase();
-      const filings: FetchedFiling[] = [];
-      for (const item of parseRssItems(xml)) {
-        const companyName = item.title;
-        if (wanted && !companyName.toLowerCase().includes(wanted)) continue;
-        filings.push({
-          externalId: externalIdFromLink(item.link),
-          title: item.description ? `${companyName} — ${item.description}` : companyName,
-          url: item.link,
-          publishedAt: toIso(item.pubDate),
-          category: "corporate_announcement",
-          symbol: null,
-          companyName,
-          summary: item.description ?? "",
-          // The RSS item is metadata only; the filing bytes are not retrieved
-          // here, so no content hash is claimed.
-          contentSha256: null,
-          byteCount: null,
-        });
-        if (filings.length >= limit) break;
+      const body = (await response.json()) as { status?: string; total?: number; records?: Record<string, unknown>[] };
+      if (body.status !== "ok") {
+        return { sourceId: DATAGOVIN_TERMS.sourceId, status: "error", filings: [], message: "The data.gov.in catalogue did not return an ok status." };
       }
+      const total = typeof body.total === "number" ? body.total : 0;
       return {
-        sourceId: NSE_TERMS.sourceId,
-        status: filings.length ? "ok" : "empty",
-        filings,
-        message: filings.length
-          ? `Read ${filings.length} announcement${filings.length === 1 ? "" : "s"} from the NSE public archive.`
-          : "The NSE archive returned no announcements matching the query.",
+        sourceId: DATAGOVIN_TERMS.sourceId,
+        status: "ok",
+        // The catalogue is a dataset index, not a filing feed, so no filing is
+        // fabricated from it. The count is reported as what it is.
+        filings: [],
+        message: `The data.gov.in catalogue is reachable and lists ${total.toLocaleString("en-IN")} datasets. Reading an individual dataset requires an api-key, which is not configured in this build.`,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return { sourceId: NSE_TERMS.sourceId, status: "error", filings: [], message: `Reading the NSE archive failed: ${message}` };
+      return { sourceId: DATAGOVIN_TERMS.sourceId, status: "error", filings: [], message: `Reading the data.gov.in catalogue failed: ${message}` };
     } finally {
       clearTimeout(timer);
     }
   },
   async health(): Promise<ConnectorHealth> {
     try {
-      const response = await fetch(NSE_ANNOUNCEMENTS_URL, {
-        method: "HEAD",
-        headers: { "User-Agent": "AnalyzerX/1.0 (filing-intelligence)" },
-      });
+      const response = await fetch(DATAGOVIN_LISTS_URL, { method: "HEAD", headers: { "User-Agent": "AnalyzerX/1.0 (filing-intelligence)" } });
       return { lastSuccessfulCheckUtc: response.ok ? new Date().toISOString() : null, lastError: response.ok ? null : `HTTP ${response.status}` };
     } catch (error) {
       return { lastSuccessfulCheckUtc: null, lastError: error instanceof Error ? error.message : String(error) };
@@ -227,22 +259,11 @@ export const nseAnnouncementsConnector: Connector = {
 
 export const CONNECTORS: Connector[] = [
   nseAnnouncementsConnector,
-  notImplementedConnector(
-    SEBI_TERMS,
-    "SEBI adapter not implemented. Its website policy discusses permission and attribution, and no permitted automated endpoint has been confirmed, so nothing is fetched.",
-  ),
-  notImplementedConnector(BSE_TERMS, "BSE adapter not implemented, so nothing is fetched."),
-  notImplementedConnector(
-    DATAGOVIN_TERMS,
-    "data.gov.in requires an API key that is not configured, so the adapter is inactive. The dependency is the key, not the code.",
-  ),
-  notImplementedConnector(
-    SEC_TERMS,
-    "SEC EDGAR adapter boundary reserved but not implemented. The dependency is an implemented submissions and company-facts adapter.",
-  ),
+  bseAnnouncementsConnector,
+  sebiFilingsConnector,
+  dataGovInConnector,
 ];
 
 export function connectorFor(sourceId: string): Connector | undefined {
   return CONNECTORS.find((connector) => connector.terms.sourceId === sourceId);
 }
-

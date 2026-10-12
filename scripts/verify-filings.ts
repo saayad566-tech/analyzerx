@@ -8,33 +8,32 @@ import { searchIndianCompanies, COMPANY_UNIVERSE_SIZE } from "../lib/filing-inte
 
 async function main() {
   console.log("universe size:", COMPANY_UNIVERSE_SIZE);
-  const hits = searchIndianCompanies("tata", 5);
-  console.log("search 'tata':", hits.map((h) => `${h.symbol} (${h.matchKind})`).join(", "));
+  const hits = searchIndianCompanies("reliance", 3);
+  console.log("search 'reliance':", hits.map((h) => `${h.symbol} (${h.matchKind})`).join(", "));
 
-  // 1. A user-initiated refresh: NSE should be allowed and return real items.
-  const userRun = await refreshFilings({ cache: [], mode: "user_initiated", query: { limit: 15 } });
-  console.log("\n=== user_initiated ===");
-  console.log("message:", userRun.message);
-  for (const o of userRun.outcomes) {
-    console.log(` - ${o.sourceId} [${o.status}] allowed=${o.allowed} added=${o.added} :: ${o.message.slice(0, 90)}`);
+  console.log("\n=== user_initiated refresh across all four sources ===");
+  const run = await refreshFilings({ cache: [], mode: "user_initiated", query: { limit: 12 } });
+  console.log("summary:", run.message);
+  for (const o of run.outcomes) {
+    console.log(` - ${o.sourceId} [${o.status}] basis=${o.accessBasis} added=${o.added} verified=${o.verifiedEndToEnd}`);
+    console.log(`     ${o.message}`);
   }
 
-  // 2. An automatic background run: NSE must come back blocked by its terms.
-  const autoRun = await refreshFilings({ cache: userRun.cache, mode: "automatic" });
-  console.log("\n=== automatic ===");
-  console.log("message:", autoRun.message);
-  for (const o of autoRun.outcomes) {
-    console.log(` - ${o.sourceId} [${o.status}] allowed=${o.allowed} :: ${o.message.slice(0, 80)}`);
-  }
+  console.log("\n=== automatic (background) run ===");
+  const auto = await refreshFilings({ cache: run.cache, mode: "automatic" });
+  console.log("summary:", auto.message);
+  for (const o of auto.outcomes) console.log(` - ${o.sourceId} [${o.status}] allowed=${o.allowed}`);
 
-  // 3. Idempotency: a repeat fetch must add nothing.
-  const repeat = await refreshFilings({ cache: userRun.cache, mode: "user_initiated", query: { limit: 15 } });
-  console.log("\nrepeat refresh added:", repeat.totalAdded, "| cache:", cacheSummary(repeat.cache));
+  console.log("\n=== idempotency ===");
+  const repeat = await refreshFilings({ cache: run.cache, mode: "user_initiated", query: { limit: 12 } });
+  console.log("repeat added:", repeat.totalAdded, "| cache:", cacheSummary(repeat.cache));
 
-  // 4. Show a couple of real cached filings.
-  console.log("\nsample cached filings:");
-  for (const f of repeat.cache.slice(0, 3)) {
-    console.log(` - ${f.companyName} | ${f.publishedAt ?? "no date"} | ext=${f.externalId ?? "none"} | ${f.url.slice(0, 70)}`);
+  console.log("\n=== real cached filings by source ===");
+  const bySource = new Map<string, number>();
+  for (const f of repeat.cache) bySource.set(f.sourceId, (bySource.get(f.sourceId) ?? 0) + 1);
+  for (const [source, count] of bySource) console.log(` - ${source}: ${count}`);
+  for (const f of repeat.cache.slice(0, 4)) {
+    console.log(`   * ${f.companyName} | ${f.publishedAt ?? "no date"} | ${f.sourceId} | ${f.url.slice(0, 62)}`);
   }
 }
 
