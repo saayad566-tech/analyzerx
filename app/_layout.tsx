@@ -1,6 +1,7 @@
 import "@/global.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, usePathname, router } from "expo-router";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -157,11 +158,15 @@ export default function RootLayout() {
           {/* Default to hiding native headers so raw route segments don't appear (e.g. "(tabs)", "products/[id]"). */}
           {/* If a screen needs the native header, explicitly enable it and set a human title via Stack.Screen options. */}
           {/* in order for ios apps tab switching to work properly, use presentation: "fullScreenModal" for login page, whenever you decide to use presentation: "modal*/}
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="news/[id]" options={{ title: "Story" }} />
-            <Stack.Screen name="oauth/callback" />
-          </Stack>
+          {/* A render error in any screen is caught here and turned into a
+              recoverable screen instead of closing the app. */}
+          <ErrorBoundary>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="news/[id]" options={{ title: "Story" }} />
+              <Stack.Screen name="oauth/callback" />
+            </Stack>
+          </ErrorBoundary>
           <StatusBar style="auto" />
           </MarketProvider>
         </QueryClientProvider>

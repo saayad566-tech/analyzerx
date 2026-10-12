@@ -20,6 +20,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { events, filters, type MarketEvent } from "@/lib/market-data";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
+import { scanDeepResearch } from "@/lib/deep-research";
 import { getDeviceTrackerAvailability } from "@/lib/device-tracker-policy";
 import {
   filterAndSortArchiveArticles,
@@ -1441,6 +1442,61 @@ export default function LiveEventsScreen() {
                 items in the local archive, and raises high-impact alerts when
                 eligible. Nothing is sent to a server.
               </Text>
+              {(() => {
+                // Deep-research watch: the stories that carry a real catalyst -
+                // an expansion, an order, a discovery, a capital or ownership
+                // action - rather than only the loudest headlines. The exact
+                // matched phrase is shown so the classification is auditable.
+                const signals = scanDeepResearch(
+                  ((newsArchive.data?.articles ?? []) as Array<Record<string, unknown>>).map((article) => ({
+                    id: String(article.id ?? ""),
+                    symbol: String(article.symbol ?? ""),
+                    headline: String(article.headline ?? ""),
+                    summary: String(article.summary ?? ""),
+                    source: String(article.source ?? ""),
+                    url: String(article.url ?? ""),
+                    published_at: String(article.published_at ?? ""),
+                    impact_score: typeof article.impact_score === "number" ? article.impact_score : 0,
+                  })),
+                  8,
+                );
+                if (!signals.length) return null;
+                return (
+                  <View style={styles.deepResearchCard}>
+                    <View style={styles.deepResearchHeader}>
+                      <Text style={styles.deepResearchEyebrow}>DEEP RESEARCH WATCH</Text>
+                      <Text style={styles.deepResearchCount}>{signals.length}</Text>
+                    </View>
+                    <Text style={styles.deepResearchNote}>
+                      Expansion, order, discovery, capital and ownership signals found in the
+                      stories this device has collected. Each row shows the phrase that matched,
+                      so you can verify it against the source.
+                    </Text>
+                    {signals.map((signal) => (
+                      <Pressable
+                        key={signal.id}
+                        onPress={() =>
+                          router.push({ pathname: "/news/[id]", params: { id: signal.id.split(":")[0] } })
+                        }
+                        style={({ pressed }) => [styles.deepResearchRow, pressed && styles.newsItemPressed]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Open deep research signal: ${signal.headline}`}
+                      >
+                        <View style={styles.deepResearchTop}>
+                          <Text style={styles.deepResearchLabel}>{signal.label}</Text>
+                          <Text style={styles.deepResearchSymbol}>{signal.symbol}</Text>
+                        </View>
+                        <Text style={styles.deepResearchHeadline} numberOfLines={2}>
+                          {signal.headline}
+                        </Text>
+                        <Text style={styles.deepResearchMatch}>
+                          Matched “{signal.matchedPhrase}” · {signal.source}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                );
+              })()}
               <Pressable
                 onPress={() => router.push("/held-review")}
                 style={({ pressed }) => [
@@ -2345,6 +2401,17 @@ export default function LiveEventsScreen() {
 }
 
 const styles = StyleSheet.create({
+  deepResearchCard: { marginTop: 14, borderTopWidth: 1, borderTopColor: "#26364D", paddingTop: 12 },
+  deepResearchHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  deepResearchEyebrow: { color: "#F4B860", fontSize: 10, fontWeight: "900", letterSpacing: 1.3 },
+  deepResearchCount: { color: "#F4B860", fontSize: 15, fontWeight: "900" },
+  deepResearchNote: { color: "#91A2B8", fontSize: 10, lineHeight: 15, marginTop: 6, marginBottom: 4 },
+  deepResearchRow: { backgroundColor: "#17253A", borderWidth: 1, borderColor: "#26364D", borderRadius: 11, padding: 10, marginTop: 8 },
+  deepResearchTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  deepResearchLabel: { color: "#4FD1C5", fontSize: 10, fontWeight: "800", flex: 1 },
+  deepResearchSymbol: { color: "#F4B860", fontSize: 10, fontWeight: "900" },
+  deepResearchHeadline: { color: "#F4F7FB", fontSize: 12, lineHeight: 17, marginTop: 5 },
+  deepResearchMatch: { color: "#6E7D92", fontSize: 9, marginTop: 5 },
   listContent: { paddingBottom: 44 },
   headerRow: {
     flexDirection: "row",

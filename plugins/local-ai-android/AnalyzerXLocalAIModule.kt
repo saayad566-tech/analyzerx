@@ -194,8 +194,15 @@ class AnalyzerXLocalAIModule(private val context: ReactApplicationContext) : Rea
 
   private fun callbackFor(promise: Promise, target: com.google.ai.edge.litertlm.Conversation): MessageCallback = object : MessageCallback {
     override fun onMessage(message: com.google.ai.edge.litertlm.Message) {
+      // The reply text lives in the message contents, not in toString().
+      // Emitting toString() sent a data-class dump to JS, so the model looked
+      // like it was streaming while never producing readable text.
+      val text = message.contents.contents
+        .filterIsInstance<Content.Text>()
+        .joinToString("") { it.text }
+      if (text.isEmpty()) return
       val payload = Arguments.createMap().apply {
-        putString("text", message.toString())
+        putString("text", text)
       }
       context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java).emit("AnalyzerXLocalAIToken", payload)
     }
