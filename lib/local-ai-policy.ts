@@ -28,6 +28,14 @@ export interface LocalAIModelManifest {
   sizeLabel: string;
   requiredFreeStorageBytes: number | null;
   recommendedRamBytes: number | null;
+  /**
+   * The model's real input context window in tokens. Prompt trimming is driven
+   * by this rather than one global assumption, so a 0.6B model is not given the
+   * same (small) budget as an 8K-context multimodal model.
+   */
+  contextTokens: number;
+  /** Set when the model is catalogued but cannot be installed in this build. */
+  unavailableReason?: string;
   supportedPlatforms: readonly ["android"];
   license: string;
   capabilities: readonly LocalAICapability[];
@@ -73,6 +81,7 @@ export const LOCAL_AI_MODELS: readonly LocalAIModelManifest[] = [
     sizeLabel: "498 MB",
     requiredFreeStorageBytes: 700_000_000,
     recommendedRamBytes: 3_000_000_000,
+    contextTokens: 2048,
     supportedPlatforms: ["android"],
     license: "Apache-2.0",
     capabilities: ["text", "thinking", "fast", "efficient"],
@@ -94,6 +103,7 @@ export const LOCAL_AI_MODELS: readonly LocalAIModelManifest[] = [
     sizeLabel: "584 MB",
     requiredFreeStorageBytes: 800_000_000,
     recommendedRamBytes: 2_000_000_000,
+    contextTokens: 8192,
     supportedPlatforms: ["android"],
     license: "Gemma Terms of Use",
     capabilities: ["text", "vision", "multilingual", "fast", "efficient"],
@@ -114,6 +124,7 @@ export const LOCAL_AI_MODELS: readonly LocalAIModelManifest[] = [
     sizeLabel: "2.59 GB",
     requiredFreeStorageBytes: 3_000_000_000,
     recommendedRamBytes: 6_000_000_000,
+    contextTokens: 8192,
     supportedPlatforms: ["android"],
     license: "Apache-2.0",
     capabilities: ["text", "vision", "audio", "thinking", "fast"],
@@ -134,6 +145,7 @@ export const LOCAL_AI_MODELS: readonly LocalAIModelManifest[] = [
     sizeLabel: "3.66 GB",
     requiredFreeStorageBytes: 4_500_000_000,
     recommendedRamBytes: 8_000_000_000,
+    contextTokens: 8192,
     supportedPlatforms: ["android"],
     license: "Apache-2.0",
     capabilities: ["text", "vision", "audio", "thinking"],
@@ -146,6 +158,7 @@ export const LOCAL_AI_MODELS: readonly LocalAIModelManifest[] = [
     upstreamRepo: "LiquidAI/LFM2.5-1.2B-Instruct-GGUF",
     artifactFile: "LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
     artifactUrl: `${HUGGING_FACE_BASE}/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/resolve/76022b8bfa64af5862d6bce90a676c3cc9b17b52/LFM2.5-1.2B-Instruct-Q4_K_M.gguf?download=true`,
+    artifactChecksum: { algorithm: "sha256", value: "b1b3de114215d9507409a662a501a631095a479a419584e8a2ded6304b19b4f5" },
     format: "gguf",
     runtime: "llama-cpp-android",
     installability: "runtime_pending",
@@ -154,10 +167,10 @@ export const LOCAL_AI_MODELS: readonly LocalAIModelManifest[] = [
     sizeLabel: "731 MB",
     requiredFreeStorageBytes: 900_000_000,
     recommendedRamBytes: 2_500_000_000,
+    contextTokens: 32768,
     supportedPlatforms: ["android"],
     license: "LFM1.0",
     capabilities: ["text", "fast", "agentic"],
-    artifactChecksum: { algorithm: "sha256", value: "93e807019ab026414a5c8def0d7815957049512ecd3d629060573d108634cbbb" },
     sourceNote: "Official Liquid AI GGUF artifact; checksum pinned, but AnalyzerX llama.cpp Android JNI and device validation remain pending.",
   },
   {
@@ -167,6 +180,7 @@ export const LOCAL_AI_MODELS: readonly LocalAIModelManifest[] = [
     upstreamRepo: "unsloth/Qwen3.5-0.8B-GGUF",
     artifactFile: "Qwen3.5-0.8B-Q4_K_M.gguf",
     artifactUrl: `${HUGGING_FACE_BASE}/unsloth/Qwen3.5-0.8B-GGUF/resolve/6ab461498e2023f6e3c1baea90a8f0fe38ab64d0/Qwen3.5-0.8B-Q4_K_M.gguf?download=true`,
+    artifactChecksum: { algorithm: "sha256", value: "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517" },
     format: "gguf",
     runtime: "llama-cpp-android",
     installability: "runtime_pending",
@@ -175,10 +189,10 @@ export const LOCAL_AI_MODELS: readonly LocalAIModelManifest[] = [
     sizeLabel: "533 MB",
     requiredFreeStorageBytes: 800_000_000,
     recommendedRamBytes: 3_000_000_000,
+    contextTokens: 32768,
     supportedPlatforms: ["android"],
     license: "Apache-2.0",
     capabilities: ["text", "vision", "fast", "thinking"],
-    artifactChecksum: { algorithm: "sha256", value: "de9bcb3f1b16e6e33ab42b3851e80945d4153631418c8494a77bfa46b3ac70ec" },
     sourceNote: "Checksum-pinned GGUF artifact; AnalyzerX still needs a verified Android llama.cpp/VLM bridge and device verification.",
   },
   {
@@ -194,8 +208,10 @@ export const LOCAL_AI_MODELS: readonly LocalAIModelManifest[] = [
     revision: null,
     sizeBytes: null,
     sizeLabel: "Published primary weights are not an Android artifact",
+    unavailableReason: "SmolLM3 publishes Safetensors weights only. There is no Android runtime or installable artifact for it in this build, so it cannot be downloaded or executed.",
     requiredFreeStorageBytes: null,
     recommendedRamBytes: null,
+    contextTokens: 8192,
     supportedPlatforms: ["android"],
     license: "Apache-2.0",
     capabilities: ["text", "thinking", "multilingual"],
@@ -214,8 +230,10 @@ export const LOCAL_AI_MODELS: readonly LocalAIModelManifest[] = [
     revision: null,
     sizeBytes: null,
     sizeLabel: "Varies by Bonsai artifact",
+    unavailableReason: "No verified Android artifact URL is recorded for Bonsai, and its redistribution terms are unconfirmed. It stays catalogued for transparency but cannot be installed.",
     requiredFreeStorageBytes: null,
     recommendedRamBytes: null,
+    contextTokens: 8192,
     supportedPlatforms: ["android"],
     license: "Verify upstream Bonsai artifact terms",
     capabilities: ["text", "fast", "thinking", "efficient" as LocalAICapability],

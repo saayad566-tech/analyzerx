@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildBoundedLocalPrompt, buildLocalGroundedPrompt, estimatePromptTokens, isGeneralChatQuestion, resolveMarketChatEngine, sanitizeLocalOutput, trimLocalHistory } from "../lib/market-chat-runtime";
+import { buildBoundedLocalPrompt, buildLocalGroundedPrompt, estimatePromptTokens, isCurrentDataQuestion, isGeneralChatQuestion, localInputBudget, resolveMarketChatEngine, sanitizeLocalOutput, trimLocalHistory } from "../lib/market-chat-runtime";
 
 describe("market chat runtime routing", () => {
   it("uses local inference only with a selected model, native runtime, and no attachments", () => {
@@ -20,9 +20,47 @@ describe("market chat runtime routing", () => {
   it("builds a bounded anti-fabrication prompt for local inference", () => {
     const prompt = buildLocalGroundedPrompt("What is the latest news?", '{"news":[]}', "Gemma 4 E2B IT");
     expect(prompt).toContain("Gemma 4 E2B IT");
-    expect(prompt).toContain("ONLY the verified context");
-    expect(prompt).toContain("Never invent current prices");
+    // The grounded prompt must bind current facts to the verified context...
+    expect(prompt).toContain("VERIFIED CONTEXT");
+    expect(prompt).toContain("Use the VERIFIED CONTEXT below for any current prices");
+    // ...while still forbidding fabrication.
+    expect(prompt).toContain("Never invent prices");
     expect(prompt).toContain("What is the latest news?");
+  });
+
+  it("derives the input budget from each model's real context window", () => {
+    const small = localInputBudget(2048);
+    const large = localInputBudget(32768);
+    // A bigger-context model must not be trimmed to a 0.6B model's budget.
+    expect(large.tokens).toBeGreaterThan(small.tokens * 4);
+    // An unknown window falls back to the smallest model rather than failing.
+    expect(localInputBudget(null).tokens).toBe(small.tokens);
+    // Bounds hold at both extremes.
+    expect(localInputBudget(1).tokens).toBeGreaterThanOrEqual(512);
+    expect(localInputBudget(1_000_000).tokens).toBeLessThanOrEqual(32768);
+  });
+
+  it("answers definitional questions without demanding live data", () => {
+    for (const question of [
+      "What is a P/E ratio?",
+      "Explain how compound interest works",
+      "Tell me a joke about the market",
+      "How do I improve my sleep routine?",
+    ]) {
+      expect(isGeneralChatQuestion(question)).toBe(true);
+      expect(isCurrentDataQuestion(question)).toBe(false);
+    }
+  });
+
+  it("still routes genuine live-data questions to grounding", () => {
+    for (const question of [
+      "What is the latest news on RELIANCE?",
+      "Show me the current price of TCS",
+      "What are today's FII flows?",
+    ]) {
+      expect(isCurrentDataQuestion(question)).toBe(true);
+      expect(isGeneralChatQuestion(question)).toBe(false);
+    }
   });
 
   it("compacts oversized local context below the hard LiteRT ceiling", () => {

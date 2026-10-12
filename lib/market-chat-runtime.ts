@@ -2,9 +2,30 @@ import type { MarketChatRuntimeMode } from "./local-preferences";
 
 export type MarketChatEngine = "local" | "connected" | "blocked";
 
-// Qwen3 0.6B LiteRT rejects inputs at 2048 tokens. Keep a conservative margin.
+/**
+ * Fallback context window when a model's real window is unknown. This is the
+ * Qwen3 0.6B LiteRT limit, which is the smallest model in the catalogue.
+ */
+export const DEFAULT_LOCAL_CONTEXT_TOKENS = 2048;
+
+// Retained for callers that predate per-model budgets.
 export const LOCAL_MODEL_INPUT_TOKEN_BUDGET = 1400;
 export const LOCAL_MODEL_INPUT_CHAR_BUDGET = 5600;
+
+/**
+ * Input budget for a model, derived from its real context window instead of one
+ * global assumption. The previous code trimmed every model to ~1,400 tokens, so
+ * an 8K-context multimodal model was given a 0.6B model's budget. The reserve
+ * leaves room for the chat template, the instruction and the reply.
+ */
+export function localInputBudget(contextTokens?: number | null): { tokens: number; chars: number } {
+  const requested = typeof contextTokens === "number" && Number.isFinite(contextTokens) && contextTokens > 0
+    ? contextTokens
+    : DEFAULT_LOCAL_CONTEXT_TOKENS;
+  const window = Math.max(1024, Math.min(32768, Math.floor(requested)));
+  const tokens = Math.max(512, Math.floor(window * 0.55));
+  return { tokens, chars: tokens * 4 };
+}
 
 export function estimatePromptTokens(text: string): number {
   return Math.ceil(text.length / 4);
@@ -14,34 +35,73 @@ function compactText(text: string, maxChars: number): string {
   return text.replace(/\s+/g, " ").trim().slice(0, maxChars);
 }
 
-export function compactLocalContext(context: string, maxChars = LOCAL_MODEL_INPUT_CHAR_BUDGET): { context: string; wasTrimmed: boolean } {
+export function compactLocalContext(context: string, maxChars = LOCAL_MODEL_INPUT_CHAR_BUDGET, maxTokens = LOCAL_MODEL_INPUT_TOKEN_BUDGET): { context: string; wasTrimmed: boolean } {
   const source = compactText(context, context.length);
-  if (source.length <= maxChars && estimatePromptTokens(source) <= LOCAL_MODEL_INPUT_TOKEN_BUDGET) return { context: source, wasTrimmed: false };
+  if (source.length <= maxChars && estimatePromptTokens(source) <= maxTokens) return { context: source, wasTrimmed: false };
   const head = Math.floor(maxChars * 0.68);
   const tail = maxChars - head;
   return { context: `${source.slice(0, head)} … [context shortened for local model] … ${source.slice(-tail)}`, wasTrimmed: true };
 }
 
-export function buildLocalGeneralPrompt(question: string, modelName: string): { prompt: string; wasTrimmed: boolean; estimatedTokens: number } {
-  const prompt = `You are the private AnalyzerX local assistant running as ${compactText(modelName, 80)}. Answer the user briefly and helpfully. This is general conversation without verified live market context. Do not invent current prices, news, filings, or forecasts. If live data is requested, explain that connected evidence is required. Do not output JSON, actions, or markdown fences.\n\nUSER QUESTION:\n${compactText(question || "Please ask a question.", 800)}`;
+export function buildLocalGeneralPrompt(
+  question: string,
+  modelName: string,
+  contextTokens?: number | null,
+): { prompt: string; wasTrimmed: boolean; estimatedTokens: number } {
+  const budget = localInputBudget(contextTokens);
+  const prompt = [
+    `You are AnalyzerX Assistant, a helpful, knowledgeable AI assistant running privately on this device as ${compactText(modelName, 80)}.`,
+    "Answer whatever the user asks, the way a good general assistant would: accurate, direct, and complete.",
+    "Write in clear prose with short paragraphs. Use a short bulleted list only when a list genuinely helps.",
+    "You have no live market feed in this mode. Never state current prices, live news, filings, or future outcomes as fact. If the user asks for those, say plainly that verified connected data is required, then help with everything else you can.",
+    "If you are unsure, say so rather than guessing. Do not output JSON or code fences.",
+    "",
+    "USER:",
+    compactText(question || "Please ask a question.", Math.max(400, budget.chars - 1200)),
+  ].join("\n");
   return { prompt, wasTrimmed: false, estimatedTokens: estimatePromptTokens(prompt) };
 }
 
-export function buildBoundedLocalPrompt(question: string, context: string, modelName: string, grounded: boolean): { prompt: string; wasTrimmed: boolean; estimatedTokens: number } {
-  if (!grounded) return buildLocalGeneralPrompt(question, modelName);
-  const compact = compactLocalContext(context);
-  const prompt = `You are the private AnalyzerX local assistant running as ${compactText(modelName, 80)}. Answer clearly and briefly using ONLY the verified context for current prices, news, filings, or forecasts. Never invent current prices, news, filings, government announcements, or future outcomes. If evidence is absent, say so. Do not output JSON, actions, or markdown fences.\n\nUSER QUESTION:\n${compactText(question || "Summarize the supplied context.", 800)}\n\nVERIFIED CONTEXT:\n${compact.context}`;
+export function buildBoundedLocalPrompt(
+  question: string,
+  context: string,
+  modelName: string,
+  grounded: boolean,
+  contextTokens?: number | null,
+): { prompt: string; wasTrimmed: boolean; estimatedTokens: number } {
+  if (!grounded) return buildLocalGeneralPrompt(question, modelName, contextTokens);
+  const budget = localInputBudget(contextTokens);
+  const compact = compactLocalContext(context, budget.chars, budget.tokens);
+  const prompt = [
+    `You are AnalyzerX Assistant running privately on this device as ${compactText(modelName, 80)}.`,
+    "Use the VERIFIED CONTEXT below for any current prices, news, filings, or forecasts, and use the figures exactly as given.",
+    "Answer the user's actual question directly and completely. If part of the question is general knowledge rather than current data, answer that part normally.",
+    "If the context does not contain what is needed, say so plainly instead of guessing.",
+    "Never invent prices, news, filings, government announcements, or future outcomes. Do not output JSON or code fences.",
+    "",
+    "USER QUESTION:",
+    compactText(question || "Summarize the supplied context.", Math.max(400, Math.floor(budget.chars * 0.25))),
+    "",
+    "VERIFIED CONTEXT:",
+    compact.context,
+  ].join("\n");
   const estimatedTokens = estimatePromptTokens(prompt);
-  if (estimatedTokens >= 1900) {
-    const tighterContext = compactLocalContext(compact.context, 4200).context;
-    const tighterPrompt = prompt.replace(compact.context, tighterContext);
+  if (estimatedTokens >= budget.tokens) {
+    const tighter = compactLocalContext(compact.context, Math.floor(budget.chars * 0.7), Math.floor(budget.tokens * 0.7)).context;
+    const tighterPrompt = prompt.replace(compact.context, tighter);
     return { prompt: tighterPrompt, wasTrimmed: true, estimatedTokens: estimatePromptTokens(tighterPrompt) };
   }
   return { prompt, wasTrimmed: compact.wasTrimmed, estimatedTokens };
 }
 
+/**
+ * A question is "general" unless it is actually asking for live state. The
+ * previous version treated any question containing a market word as needing
+ * verified data, so "What is a P/E ratio?" or "Tell me a joke about the market"
+ * were pushed to the data path and answered with an empty context.
+ */
 export function isGeneralChatQuestion(question: string): boolean {
-  return !/(price|quote|stock|share|ticker|market|news|headline|filing|earnings|result|dividend|valuation|p\/?e|crypto|bitcoin|gold|forex|fii|dii|chart|technical|fundamental|company|latest|today|current|recent)/i.test(question);
+  return !isCurrentDataQuestion(question);
 }
 
 export function classifyAssistantFailure(error: unknown): "CONTEXT_LIMIT" | "NETWORK" | "TIMEOUT" | "AUTH" | "RATE_LIMIT" | "BAD_RESPONSE" | "NATIVE_RUNTIME" | "UNKNOWN" {
@@ -108,14 +168,22 @@ export function resolveMarketChatEngine(input: {
   return "connected";
 }
 
-export function buildLocalGroundedPrompt(question: string, groundedContext: string, modelName: string): string {
-  return buildBoundedLocalPrompt(question, groundedContext, modelName, true).prompt;
+export function buildLocalGroundedPrompt(question: string, groundedContext: string, modelName: string, contextTokens?: number | null): string {
+  return buildBoundedLocalPrompt(question, groundedContext, modelName, true, contextTokens).prompt;
 }
 
 export function isCurrentDataQuestion(question: string): boolean {
-  return /(latest|today|current|recent|now|price|news|headline|filing|earnings|quote|forecast)/i.test(question);
+  const q = question.toLowerCase();
+  // Explicit "right now" framing.
+  if (/\b(latest|today|current|currently|right now|recent|recently|live|as of|this (?:week|month|quarter|year)|now|yesterday)\b/.test(q)) return true;
+  // A request for a specific live value, rather than a definition or explanation.
+  const liveNoun = /\b(price|quote|news|headline|filing|earnings|results?|dividend yield|valuation|forecast|chart|fii|dii|holdings?|stake|market cap)\b/.test(q);
+  const asksForValue = /\b(what(?:'s| is| are)|how much|how many|tell me|show me|give me|list|report)\b/.test(q);
+  const explains = /\b(what is a|what are|explain|meaning of|define|how do i|how does|why does|difference between)\b/.test(q);
+  return liveNoun && asksForValue && !explains;
 }
 
-export function localPromptNotice(wasTrimmed: boolean): string | undefined {
-  return wasTrimmed ? "Local mode shortened older context to stay within the model's 2048-token limit." : undefined;
+export function localPromptNotice(wasTrimmed: boolean, contextTokens?: number | null): string | undefined {
+  if (!wasTrimmed) return undefined;
+  return `Local mode shortened the context to stay within this model's ${localInputBudget(contextTokens).tokens.toLocaleString("en-IN")}-token input budget.`;
 }
