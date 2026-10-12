@@ -41,8 +41,10 @@ export async function setSessionToken(token: string): Promise<void> {
       return;
     }
 
-    // Use SecureStore for native
-    console.log("[Auth] Setting session token...", token.substring(0, 20) + "...");
+    // Use SecureStore for native.
+    // The token is never logged, not even a prefix: a partial credential in a
+    // log is still credential material.
+    console.log("[Auth] Storing the session token in SecureStore...");
     await SecureStore.setItemAsync(SESSION_TOKEN_KEY, token);
     console.log("[Auth] Session token stored in SecureStore successfully");
   } catch (error) {

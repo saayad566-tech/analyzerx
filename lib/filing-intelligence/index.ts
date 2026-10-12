@@ -22,6 +22,8 @@ export * from "./from-announcement";
 export * from "./company-search";
 export * from "./connectors/policy";
 export * from "./connectors/types";
+export * from "./i18n";
+export * from "./security";
 export * from "./jobs";
 export * from "./markets";
 export * from "./verification";

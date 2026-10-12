@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
 export type RunnerStatus = "disconnected" | "pairing" | "paired" | "starting" | "idle" | "running" | "paused" | "degraded" | "offline" | "error";
@@ -37,16 +38,20 @@ const DEFAULT_URL = "http://127.0.0.1:8765";
 const DISCOVERY_PORT = 37020;
 
 export async function getRunnerConnection() {
-  const [url, token] = await Promise.all([AsyncStorage.getItem(URL_KEY), AsyncStorage.getItem(TOKEN_KEY)]);
+  // The URL is not sensitive and stays in AsyncStorage; the token is a
+  // credential and is held in the platform secure store, like the session token.
+  const [url, token] = await Promise.all([AsyncStorage.getItem(URL_KEY), SecureStore.getItemAsync(TOKEN_KEY)]);
   return { url: url || DEFAULT_URL, token };
 }
 
 export async function saveRunnerConnection(url: string, token: string) {
-  await AsyncStorage.multiSet([[URL_KEY, url.replace(/\/$/, "")], [TOKEN_KEY, token]]);
+  await AsyncStorage.setItem(URL_KEY, url.replace(/\/$/, ""));
+  await SecureStore.setItemAsync(TOKEN_KEY, token);
 }
 
 export async function clearRunnerConnection() {
-  await AsyncStorage.multiRemove([URL_KEY, TOKEN_KEY]);
+  await AsyncStorage.removeItem(URL_KEY);
+  await SecureStore.deleteItemAsync(TOKEN_KEY);
 }
 
 async function request<T>(path: string, init: RequestInit = {}) {
@@ -60,13 +65,13 @@ async function request<T>(path: string, init: RequestInit = {}) {
 }
 
 export async function discoverRunners(timeoutMs = 900) {
-  const empty: Array<{ service: string; version: string; url: string; hardware: RunnerHardware }> = [];
+  const empty: { service: string; version: string; url: string; hardware: RunnerHardware }[] = [];
   if (Platform.OS === "web") return empty;
   try {
     const module = await import("react-native-udp");
     const dgram = module.default ?? module;
     const socket = dgram.createSocket({ type: "udp4", reuseAddress: true });
-    const found: Array<{ service: string; version: string; url: string; hardware: RunnerHardware }> = [];
+    const found: { service: string; version: string; url: string; hardware: RunnerHardware }[] = [];
     await new Promise<void>((resolve) => {
       let settled = false;
       const finish = () => { if (!settled) { settled = true; try { socket.close(); } catch {} resolve(); } };
