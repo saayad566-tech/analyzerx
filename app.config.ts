@@ -31,8 +31,8 @@ const schemeFromBundleId = `manus${timestamp}`;
 // lightweight web/preview build when the Android native toolchain is unavailable.
 const enableNativeLocalAI =
   process.env.ANALYZERX_ENABLE_NATIVE_LOCAL_AI !== "false";
-const releaseVersion = "2.0.0";
-const releaseAndroidVersionCode = 2000;
+const releaseVersion = "2.1.0";
+const releaseAndroidVersionCode = 2100;
 const releaseIosBuildNumber = "1400";
 
 const env = {

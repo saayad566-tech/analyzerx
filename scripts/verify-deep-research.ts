@@ -3,7 +3,7 @@ const px = process.env.https_proxy ?? process.env.HTTPS_PROXY ?? process.env.htt
 if (px) setGlobalDispatcher(new ProxyAgent(px));
 
 import { resolveLocal } from "../lib/open-data/link";
-import { scanDeepResearch, summariseSignals } from "../lib/deep-research";
+import { scanDeepResearchDetailed, summariseSignals } from "../lib/deep-research";
 
 async function main() {
   const arch = (await resolveLocal("news.archive", {
@@ -16,7 +16,7 @@ async function main() {
   const articles = arch.articles ?? [];
   console.log("articles scanned:", articles.length);
 
-  const signals = scanDeepResearch(
+  const result = scanDeepResearchDetailed(
     articles.map((a) => ({
       id: String(a.id ?? ""),
       symbol: String(a.symbol ?? ""),
@@ -27,13 +27,20 @@ async function main() {
       published_at: String(a.published_at ?? ""),
       impact_score: typeof a.impact_score === "number" ? a.impact_score : 0,
     })),
-    10,
+    { limit: 10, windowDays: 30 },
   );
+  const signals = result.signals;
 
+  console.log("window:", `${result.windowDays} days from ${result.windowStart}`);
+  console.log("excluded out-of-window:", result.excludedOutOfWindow);
   console.log("signals found:", signals.length);
   console.log("by category:", JSON.stringify(summariseSignals(signals)));
   for (const s of signals.slice(0, 6)) {
-    console.log(` - ${s.category} | ${s.symbol} | matched "${s.matchedPhrase}" | ${s.headline.slice(0, 72)}`);
+    const t = s.temporal;
+    console.log(
+      ` - ${s.category} | ${s.symbol} | announced ${t.eventDateLabel ?? t.eventDate} (${t.eventDateBasis}) | doc ${t.documentDate} | impact ${t.executionTimeline ?? "not stated"}`,
+    );
+    console.log(`     matched "${s.matchedPhrase}" | ${s.headline.slice(0, 66)}`);
   }
 }
 main().catch((e) => {

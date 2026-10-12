@@ -20,7 +20,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { events, filters, type MarketEvent } from "@/lib/market-data";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
-import { scanDeepResearch } from "@/lib/deep-research";
+import { scanDeepResearchDetailed } from "@/lib/deep-research";
 import { getDeviceTrackerAvailability } from "@/lib/device-tracker-policy";
 import {
   filterAndSortArchiveArticles,
@@ -1443,11 +1443,10 @@ export default function LiveEventsScreen() {
                 eligible. Nothing is sent to a server.
               </Text>
               {(() => {
-                // Deep-research watch: the stories that carry a real catalyst -
-                // an expansion, an order, a discovery, a capital or ownership
-                // action - rather than only the loudest headlines. The exact
-                // matched phrase is shown so the classification is auditable.
-                const signals = scanDeepResearch(
+                // Deep-research watch (Rule 6). Every catalyst carries its three
+                // time markers, and events outside the selected window are
+                // dropped unless the text marks them as a live update.
+                const result = scanDeepResearchDetailed(
                   ((newsArchive.data?.articles ?? []) as Array<Record<string, unknown>>).map((article) => ({
                     id: String(article.id ?? ""),
                     symbol: String(article.symbol ?? ""),
@@ -1458,8 +1457,9 @@ export default function LiveEventsScreen() {
                     published_at: String(article.published_at ?? ""),
                     impact_score: typeof article.impact_score === "number" ? article.impact_score : 0,
                   })),
-                  8,
+                  { limit: 8, windowDays: archiveDays },
                 );
+                const signals = result.signals;
                 if (!signals.length) return null;
                 return (
                   <View style={styles.deepResearchCard}>
@@ -1468,10 +1468,18 @@ export default function LiveEventsScreen() {
                       <Text style={styles.deepResearchCount}>{signals.length}</Text>
                     </View>
                     <Text style={styles.deepResearchNote}>
-                      Expansion, order, discovery, capital and ownership signals found in the
-                      stories this device has collected. Each row shows the phrase that matched,
-                      so you can verify it against the source.
+                      Expansion, order, discovery, capital, regulatory and ownership signals in the
+                      stories collected over the last {result.windowDays} days. Each row shows the
+                      matched phrase and its three time markers, so you can verify it at source.
                     </Text>
+                    {result.excludedOutOfWindow > 0 ? (
+                      <Text style={styles.deepResearchExcluded}>
+                        {result.excludedOutOfWindow} older event
+                        {result.excludedOutOfWindow === 1 ? "" : "s"} left out — outside the{" "}
+                        {result.windowDays}-day window and not flagged as an update to an earlier
+                        agreement.
+                      </Text>
+                    ) : null}
                     {signals.map((signal) => (
                       <Pressable
                         key={signal.id}
@@ -1492,6 +1500,24 @@ export default function LiveEventsScreen() {
                         <Text style={styles.deepResearchMatch}>
                           Matched “{signal.matchedPhrase}” · {signal.source}
                         </Text>
+                        <View style={styles.deepResearchTimes}>
+                          <Text style={styles.deepResearchTime}>
+                            Announced ·{" "}
+                            {signal.temporal.eventDateLabel ?? signal.temporal.eventDate ?? "not stated"}
+                            {signal.temporal.eventDateBasis === "document_date" ? " (from filing date)" : ""}
+                          </Text>
+                          <Text style={styles.deepResearchTime}>
+                            Document · {signal.temporal.documentDate}
+                          </Text>
+                          <Text style={styles.deepResearchTime}>
+                            Impact · {signal.temporal.executionTimeline ?? "not stated"}
+                          </Text>
+                          {signal.isHistoricalUpdate ? (
+                            <Text style={styles.deepResearchUpdate}>
+                              Current update to an earlier agreement
+                            </Text>
+                          ) : null}
+                        </View>
                       </Pressable>
                     ))}
                   </View>
@@ -2412,6 +2438,10 @@ const styles = StyleSheet.create({
   deepResearchSymbol: { color: "#F4B860", fontSize: 10, fontWeight: "900" },
   deepResearchHeadline: { color: "#F4F7FB", fontSize: 12, lineHeight: 17, marginTop: 5 },
   deepResearchMatch: { color: "#6E7D92", fontSize: 9, marginTop: 5 },
+  deepResearchTimes: { marginTop: 7, borderTopWidth: 1, borderTopColor: "#26364D", paddingTop: 6 },
+  deepResearchTime: { color: "#B8C6D6", fontSize: 9, lineHeight: 14 },
+  deepResearchUpdate: { color: "#F4B860", fontSize: 9, fontWeight: "800", marginTop: 3 },
+  deepResearchExcluded: { color: "#6E7D92", fontSize: 9, lineHeight: 14, marginTop: 4, fontStyle: "italic" },
   listContent: { paddingBottom: 44 },
   headerRow: {
     flexDirection: "row",
