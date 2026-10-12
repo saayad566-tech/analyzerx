@@ -22,10 +22,34 @@ describe("market chat runtime routing", () => {
     expect(prompt).toContain("Gemma 4 E2B IT");
     // The grounded prompt must bind current facts to the verified context...
     expect(prompt).toContain("VERIFIED CONTEXT");
-    expect(prompt).toContain("Use the VERIFIED CONTEXT below for any current prices");
+    expect(prompt).toContain("Use the VERIFIED CONTEXT supplied with each question for any current prices");
     // ...while still forbidding fabrication.
     expect(prompt).toContain("Never invent prices");
     expect(prompt).toContain("What is the latest news?");
+  });
+
+  it("separates the system instruction from the user turn", () => {
+    // The runtime attaches the instruction to the conversation and requires each
+    // turn's rendered template to extend the previous one. Repeating the
+    // instruction inside every turn is what broke the second message, so the two
+    // must be delivered separately.
+    const general = buildBoundedLocalPrompt("Hi", "", "Qwen3 0.6B LiteRT", false);
+    expect(general.system).toContain("You are AnalyzerX Assistant");
+    expect(general.turn).not.toContain("You are AnalyzerX Assistant");
+    expect(general.turn).toContain("Hi");
+    expect(general.prompt).toContain(general.system);
+    expect(general.prompt).toContain(general.turn);
+
+    const grounded = buildBoundedLocalPrompt("What is the latest news?", '{"news":[]}', "Gemma 4 E2B IT", true);
+    // The instruction may reference the context, but the context data itself
+    // must travel in the turn, not be baked into the instruction.
+    expect(grounded.system).not.toContain('{"news":[]}');
+    expect(grounded.turn).toContain("VERIFIED CONTEXT");
+    expect(grounded.turn).toContain('{"news":[]}');
+    // Two turns of a session must differ only in the turn text.
+    const second = buildBoundedLocalPrompt("And now?", '{"news":[]}', "Gemma 4 E2B IT", true);
+    expect(second.system).toBe(grounded.system);
+    expect(second.turn).not.toBe(grounded.turn);
   });
 
   it("derives the input budget from each model's real context window", () => {

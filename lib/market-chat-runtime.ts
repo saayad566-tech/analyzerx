@@ -43,23 +43,37 @@ export function compactLocalContext(context: string, maxChars = LOCAL_MODEL_INPU
   return { context: `${source.slice(0, head)} … [context shortened for local model] … ${source.slice(-tail)}`, wasTrimmed: true };
 }
 
+export interface LocalPrompt {
+  /** The full prompt. Kept for logging and tests; not what is sent as the turn. */
+  prompt: string;
+  /**
+   * The instruction attached to the conversation itself. It must NOT be
+   * repeated inside the turn: LiteRT requires each turn's rendered template to
+   * extend the previous one, so a repeated preamble breaks the second turn.
+   */
+  system: string;
+  /** The single user turn to send. */
+  turn: string;
+  wasTrimmed: boolean;
+  estimatedTokens: number;
+}
+
 export function buildLocalGeneralPrompt(
   question: string,
   modelName: string,
   contextTokens?: number | null,
-): { prompt: string; wasTrimmed: boolean; estimatedTokens: number } {
+): LocalPrompt {
   const budget = localInputBudget(contextTokens);
-  const prompt = [
+  const system = [
     `You are AnalyzerX Assistant, a helpful, knowledgeable AI assistant running privately on this device as ${compactText(modelName, 80)}.`,
     "Answer whatever the user asks, the way a good general assistant would: accurate, direct, and complete.",
     "Write in clear prose with short paragraphs. Use a short bulleted list only when a list genuinely helps.",
     "You have no live market feed in this mode. Never state current prices, live news, filings, or future outcomes as fact. If the user asks for those, say plainly that verified connected data is required, then help with everything else you can.",
     "If you are unsure, say so rather than guessing. Do not output JSON or code fences.",
-    "",
-    "USER:",
-    compactText(question || "Please ask a question.", Math.max(400, budget.chars - 1200)),
   ].join("\n");
-  return { prompt, wasTrimmed: false, estimatedTokens: estimatePromptTokens(prompt) };
+  const turn = compactText(question || "Please ask a question.", Math.max(400, budget.chars - 1200));
+  const prompt = `${system}\n\nUSER:\n${turn}`;
+  return { prompt, system, turn, wasTrimmed: false, estimatedTokens: estimatePromptTokens(prompt) };
 }
 
 export function buildBoundedLocalPrompt(
@@ -68,30 +82,28 @@ export function buildBoundedLocalPrompt(
   modelName: string,
   grounded: boolean,
   contextTokens?: number | null,
-): { prompt: string; wasTrimmed: boolean; estimatedTokens: number } {
+): LocalPrompt {
   if (!grounded) return buildLocalGeneralPrompt(question, modelName, contextTokens);
   const budget = localInputBudget(contextTokens);
   const compact = compactLocalContext(context, budget.chars, budget.tokens);
-  const prompt = [
+  const system = [
     `You are AnalyzerX Assistant running privately on this device as ${compactText(modelName, 80)}.`,
-    "Use the VERIFIED CONTEXT below for any current prices, news, filings, or forecasts, and use the figures exactly as given.",
+    "Use the VERIFIED CONTEXT supplied with each question for any current prices, news, filings, or forecasts, and use the figures exactly as given.",
     "Answer the user's actual question directly and completely. If part of the question is general knowledge rather than current data, answer that part normally.",
     "If the context does not contain what is needed, say so plainly instead of guessing.",
     "Never invent prices, news, filings, government announcements, or future outcomes. Do not output JSON or code fences.",
-    "",
-    "USER QUESTION:",
-    compactText(question || "Summarize the supplied context.", Math.max(400, Math.floor(budget.chars * 0.25))),
-    "",
-    "VERIFIED CONTEXT:",
-    compact.context,
   ].join("\n");
+  const questionText = compactText(question || "Summarize the supplied context.", Math.max(400, Math.floor(budget.chars * 0.25)));
+  const turn = `USER QUESTION:\n${questionText}\n\nVERIFIED CONTEXT:\n${compact.context}`;
+  const prompt = `${system}\n\n${turn}`;
   const estimatedTokens = estimatePromptTokens(prompt);
   if (estimatedTokens >= budget.tokens) {
     const tighter = compactLocalContext(compact.context, Math.floor(budget.chars * 0.7), Math.floor(budget.tokens * 0.7)).context;
-    const tighterPrompt = prompt.replace(compact.context, tighter);
-    return { prompt: tighterPrompt, wasTrimmed: true, estimatedTokens: estimatePromptTokens(tighterPrompt) };
+    const tighterTurn = `USER QUESTION:\n${questionText}\n\nVERIFIED CONTEXT:\n${tighter}`;
+    const tighterPrompt = `${system}\n\n${tighterTurn}`;
+    return { prompt: tighterPrompt, system, turn: tighterTurn, wasTrimmed: true, estimatedTokens: estimatePromptTokens(tighterPrompt) };
   }
-  return { prompt, wasTrimmed: compact.wasTrimmed, estimatedTokens };
+  return { prompt, system, turn, wasTrimmed: compact.wasTrimmed, estimatedTokens };
 }
 
 /**
@@ -169,6 +181,7 @@ export function resolveMarketChatEngine(input: {
 }
 
 export function buildLocalGroundedPrompt(question: string, groundedContext: string, modelName: string, contextTokens?: number | null): string {
+  // Full prompt (instruction + turn), for callers that send a single message.
   return buildBoundedLocalPrompt(question, groundedContext, modelName, true, contextTokens).prompt;
 }
 

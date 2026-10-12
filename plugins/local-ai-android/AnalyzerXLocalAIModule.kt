@@ -17,6 +17,7 @@ import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.MessageCallback
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -124,7 +125,7 @@ class AnalyzerXLocalAIModule(private val context: ReactApplicationContext) : Rea
   }
 
   @ReactMethod
-  fun stream(prompt: String, imagePath: String?, audioPath: String?, promise: Promise) {
+  fun stream(systemInstruction: String?, prompt: String, imagePath: String?, audioPath: String?, promise: Promise) {
     val activeEngine = engine
     if (activeEngine == null) {
       promise.reject("LOCAL_AI_NOT_LOADED", "Load a verified .litertlm model before generating.")
@@ -135,8 +136,22 @@ class AnalyzerXLocalAIModule(private val context: ReactApplicationContext) : Rea
       // One conversation per request. The prompt already carries the system
       // preamble, the question and the verified context, so each turn must be
       // independent of the last.
+      // The system instruction is attached to the conversation itself rather
+      // than repeated inside every user message. LiteRT renders each turn
+      // against the conversation template and requires that rendered template
+      // to strictly extend the previous one, so a repeated preamble made the
+      // second turn of a session fail with:
+      //   INTERNAL: The new rendered template string does not start with the
+      //   previous rendered template string.
       val requestConversation = try {
-        activeEngine.createConversation()
+        val instruction = systemInstruction?.takeIf { it.isNotBlank() }
+        if (instruction != null) {
+          activeEngine.createConversation(
+            ConversationConfig(systemInstruction = Contents.of(Content.Text(instruction))),
+          )
+        } else {
+          activeEngine.createConversation()
+        }
       } catch (error: Throwable) {
         promise.reject("LOCAL_AI_GENERATION_FAILED", error.message, error)
         null

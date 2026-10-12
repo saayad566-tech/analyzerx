@@ -99,21 +99,68 @@ function classifyEvent(headline: string): EventKind {
   return "Market news";
 }
 
+/**
+ * Event projection, shaped to the contract in server/event-projections.ts.
+ *
+ * The screens read `eventAt`, `confidenceScore` and `sourceKey`. This function
+ * previously emitted `publishedAt`/`detectedAt` instead, so every consumer that
+ * did `new Date(event.eventAt)` rendered "Invalid Date", and the company
+ * timeline's Confirmed/Inferred badge never fired because `confidenceScore` was
+ * undefined. `storylineKey` also used a bare entity rather than the server's
+ * `storyline:SYMBOL:TYPE` form, so unrelated stories were grouped together.
+ */
 function projectionFromArticle(article: NewsArticle) {
+  const type = classifyEvent(article.headline);
+  const parsed = article.publishedAt ? new Date(article.publishedAt) : null;
+  // Never emit an invalid date: fall back to now, exactly as the server does.
+  const eventAt = parsed && !Number.isNaN(parsed.getTime()) ? parsed : new Date();
+  const symbol = (article.symbol || "MARKET").toUpperCase();
   return {
     id: article.id,
     symbol: article.symbol || null,
-    title: article.headline,
-    summary: article.summary,
-    eventType: classifyEvent(article.headline),
+    title: article.headline.slice(0, 500),
+    summary: article.summary.slice(0, 2000),
+    eventType: type,
     sentiment: article.sentiment,
-    impactScore: article.impactScore,
-    storylineKey: article.keyEntities[0] ?? null,
+    impactScore: Math.max(0, Math.min(100, article.impactScore)),
+    // 70 when the article carries resolvable entities, 45 when it does not.
+    confidenceScore: article.keyEntities.length > 0 ? 70 : 45,
+    storylineKey: `storyline:${symbol}:${type}`,
     source: article.source,
+    sourceKey: article.source.slice(0, 64),
     sourceUrl: article.url,
+    eventAt: eventAt.toISOString(),
     publishedAt: article.publishedAt,
-    detectedAt: article.publishedAt ?? nowIso(),
+    detectedAt: eventAt.toISOString(),
     status: "source-backed",
+  };
+}
+
+/**
+ * The archive article contract is defined by lib/news-archive.ts (ArchiveArticle)
+ * plus the fields the router adds: snake_case `impact_score`, `published_at`,
+ * `key_entities`, `actionable_impact` and `high_impact`. The screens read it in
+ * that shape, so the on-device layer must emit exactly it. Emitting camelCase
+ * here left `impact_score` and `published_at` undefined on the news tracker.
+ */
+function toArchiveArticle(article: NewsArticle & { collectedAt?: string | null }) {
+  const published = article.publishedAt ?? article.collectedAt ?? nowIso();
+  return {
+    id: article.id,
+    marketId: "IN" as const,
+    symbol: article.symbol,
+    headline: article.headline,
+    summary: article.summary,
+    source: article.source,
+    url: article.url,
+    sentiment: article.sentiment,
+    // The on-device summary is the impact explanation, which is what the archive
+    // contract calls actionable_impact.
+    actionable_impact: article.summary,
+    impact_score: Math.max(0, Math.min(100, article.impactScore)),
+    high_impact: article.impactScore >= 70,
+    published_at: published,
+    key_entities: article.keyEntities,
   };
 }
 
@@ -521,6 +568,19 @@ const HANDLERS: Record<string, Handler> = {
     const payload = await stockNews(symbol, Number(input?.limit ?? 40) || 40);
     return { available: payload.articles.length > 0, symbol: payload.symbol, marketId, providerFailures: payload.providerFailures, freshArticleCount: payload.freshArticleCount, stale: payload.stale, fetchedAt: payload.fetchedAt, articles: payload.articles, sources: payload.sources, error: null };
   },
+  // Single article lookup for the news detail screen. Reads the phone's own
+  // archive first, then falls back to a live pass so a freshly opened article
+  // is never missing.
+  "news.article": async (input) => {
+    const id = str(input, "id");
+    if (!id) return null;
+    const archived = await queryArchive({ limit: 2000 });
+    const found = archived.articles.find((article) => article.id === id);
+    if (found) return toArchiveArticle(found);
+    const live = await marketNews(200).catch(() => ({ articles: [] as NewsArticle[] }));
+    const liveMatch = live.articles.find((article) => article.id === id);
+    return liveMatch ? toArchiveArticle(liveMatch) : null;
+  },
   "news.archive": async (input) => {
     const days = Number(input?.days ?? 30) || 30;
     const symbol = str(input, "symbol");
@@ -536,7 +596,7 @@ const HANDLERS: Record<string, Handler> = {
 
     // Stored history first: this is the phone's own archive, so it reaches back
     // to the day collection started rather than a live window.
-    let result = await queryArchive({
+    const stored = await queryArchive({
       symbol: symbol || undefined,
       days,
       sentiment,
@@ -545,35 +605,47 @@ const HANDLERS: Record<string, Handler> = {
       offset: (Number(input?.page ?? 0) || 0) * (Math.min(500, Number(input?.limit ?? 200) || 200)),
     });
 
+    let articles = stored.articles.map(toArchiveArticle);
+    let total = stored.total;
+    let returned = stored.returned;
+    let hasMore = stored.hasMore;
+    let offset = stored.offset;
+    let sources = stored.sources;
+    let coverage = stored.coverage;
+
     // First run on a fresh install: top the archive up with a live pass so the
     // screen is never empty while history builds.
-    if (!result.articles.length) {
+    if (articles.length === 0) {
       const payload = await marketNews(200);
-      const live = symbol ? payload.articles.filter((a) => a.symbol === symbol || a.headline.toUpperCase().includes(symbol.toUpperCase())) : payload.articles;
-      result = {
-        ...result,
-        articles: live.map((a) => ({ ...a, collectedAt: nowIso(), sourceKey: "live", sourceName: a.source, kind: "news" })),
-        total: live.length,
-        returned: live.length,
-        coverage: { from: live[0]?.publishedAt ?? null, to: live[0]?.publishedAt ?? null, months: 0, stored: 0 },
-        sources: [...new Set(live.map((a) => a.source))].map((source) => ({ source, count: live.filter((a) => a.source === source).length })),
-      };
+      const live = symbol
+        ? payload.articles.filter((a) => a.symbol === symbol || a.headline.toUpperCase().includes(symbol.toUpperCase()))
+        : payload.articles;
+      articles = live.map((a) => toArchiveArticle({ ...a, collectedAt: nowIso() }));
+      total = live.length;
+      returned = live.length;
+      hasMore = false;
+      offset = 0;
+      sources = [...new Set(live.map((a) => a.source))].map((source) => ({
+        source,
+        count: live.filter((a) => a.source === source).length,
+      }));
+      coverage = { from: live[0]?.publishedAt ?? null, to: live[0]?.publishedAt ?? null, months: 0, stored: 0 };
     }
 
     return {
-      coverage: result.articles.length ? "available" : "empty",
+      coverage: articles.length ? "available" : "empty",
       missingCoverage: [],
       days,
       startDate: new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10),
       endDate: new Date().toISOString().slice(0, 10),
-      sourceCoverage: result.sources,
-      coverageWindow: result.coverage,
-      total: result.total,
-      returned: result.returned,
-      hasMore: result.hasMore,
-      offset: result.offset,
+      sourceCoverage: sources,
+      coverageWindow: coverage,
+      total,
+      returned,
+      hasMore,
+      offset,
       order,
-      articles: result.articles,
+      articles,
     };
   },
   "news.status": async () => {

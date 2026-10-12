@@ -36,7 +36,13 @@ export interface LocalAIRuntime {
   load(modelPath: string, backend: LocalAIBackend): Promise<void>;
   unload(): Promise<void>;
   cancel(): Promise<void>;
-  stream(prompt: string, onToken: (token: string) => void, inputs?: LocalAIInputFiles): Promise<void>;
+  /**
+   * `systemInstruction` is attached to the conversation itself and must NOT be
+   * repeated inside `prompt`: the runtime requires each turn's rendered
+   * template to extend the previous one, so a repeated preamble fails the
+   * second turn of a session.
+   */
+  stream(prompt: string, onToken: (token: string) => void, inputs?: LocalAIInputFiles & { systemInstruction?: string }): Promise<void>;
 }
 
 const RESUME_KEY_PREFIX = "analyzerx.local-ai.resume.";
@@ -224,7 +230,7 @@ export function getLocalAIRuntime(): LocalAIRuntime {
     load: (modelPath: string, backend: LocalAIBackend) => Promise<boolean>;
     unload: () => Promise<boolean>;
     cancel: () => Promise<boolean>;
-    stream: (prompt: string, imagePath?: string | null, audioPath?: string | null) => Promise<boolean>;
+    stream: (systemInstruction: string | null, prompt: string, imagePath?: string | null, audioPath?: string | null) => Promise<boolean>;
   };
   return {
     kind: "litert-lm-android",
@@ -235,7 +241,7 @@ export function getLocalAIRuntime(): LocalAIRuntime {
     async stream(prompt, onToken, inputs) {
       const emitter = new NativeEventEmitter(NativeModules.AnalyzerXLocalAI);
       const subscription = emitter.addListener("AnalyzerXLocalAIToken", (payload: { text?: string }) => { if (payload.text) onToken(payload.text); });
-      try { await nativeModule.stream(prompt, inputs?.imagePath ?? null, inputs?.audioPath ?? null); } finally { subscription.remove(); }
+      try { await nativeModule.stream(inputs?.systemInstruction ?? null, prompt, inputs?.imagePath ?? null, inputs?.audioPath ?? null); } finally { subscription.remove(); }
     },
   };
 }

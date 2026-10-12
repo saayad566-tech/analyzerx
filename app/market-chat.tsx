@@ -180,7 +180,7 @@ export default function MarketChatScreen() {
         const localInputs = attachmentSnapshot.length ? { imagePath: attachmentSnapshot.find((item) => item.kind === "image")?.sourceUri, audioPath: attachmentSnapshot.find((item) => item.kind === "audio")?.sourceUri } : undefined;
         const localPrompt = buildBoundedLocalPrompt(question, grounded?.context ?? "", activeLocalModel ?? "the selected local model", !generalQuestion, selectedManifest?.contextTokens ?? null);
         try {
-          await selectedRuntime.stream(localPrompt.prompt, (token) => { answer += token; tokenCount += token.trim().split(/\\s+/).filter(Boolean).length; }, localInputs);
+          await selectedRuntime.stream(localPrompt.turn, (token) => { answer += token; tokenCount += token.trim().split(/\\s+/).filter(Boolean).length; }, { ...localInputs, systemInstruction: localPrompt.system });
           await recordLocalAIInference({ modelId: activeLocalModelId ?? "unknown", startedAt: new Date(startedAt).toISOString(), durationMs: Date.now() - startedAt, tokenCount, backend: selectedRuntime.kind, success: true, ...telemetrySnapshot });
         } catch (localError) {
           await recordLocalAIInference({ modelId: activeLocalModelId ?? "unknown", startedAt: new Date(startedAt).toISOString(), durationMs: Date.now() - startedAt, tokenCount, backend: selectedRuntime.kind, success: false, errorCode: localError instanceof Error ? localError.name : "LOCAL_AI_ERROR", ...telemetrySnapshot });
