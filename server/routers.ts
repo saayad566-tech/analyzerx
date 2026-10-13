@@ -10,6 +10,7 @@ import { runProviderNow } from "./provider-actions";
 import { answerMarketChat, collectGroundedMarketContext, type MarketChatAttachment, type MarketChatMessage } from "./market-chat";
 import { answerGeneralChat, type GeneralChatMessage } from "./general-chat";
 import { buildDeepScore } from "./scoring";
+import { describeMarketCoverage, searchCountries } from "../lib/market-registry";
 import { analyzeSentiment, getSentimentAvailability } from "./sentiment";
 import { fetchNseInstitutionalFlows, type FlowRange } from "./nse-flows";
 import { getLatestSourceRecords, getSourceRecordsForSymbol, getUserMarketPreference, upsertUserMarketPreference, saveNewsRelevanceFeedback, undoNewsRelevanceFeedback, listUserNewsRelevanceFeedback, listHeldNewsArticles, getHeldNewsArticle, reviewHeldNewsArticle, saveNewsEvent } from "./db";
@@ -359,6 +360,16 @@ export const appRouter = router({
         })).max(12),
       }))
       .mutation(({ input }) => analyzeSentiment(input.articles)),
+  }),
+  marketRegistry: router({
+    // Known-vs-supported market identity. A country present in the registry but
+    // without an adapter is reported as Not Implemented, never as supported.
+    search: publicProcedure
+      .input(z.object({ query: z.string().trim().max(60), limit: z.number().int().min(1).max(20).default(8) }))
+      .query(({ input }) => searchCountries(input.query, input.limit)),
+    coverage: publicProcedure
+      .input(z.object({ marketId: z.string().trim().min(2).max(3) }))
+      .query(({ input }) => describeMarketCoverage(input.marketId)),
   }),
   researchDesk: router({
     run: publicProcedure.input(z.object({ message: z.string().trim().min(1).max(2_000), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN"), depth: z.enum(["quick", "standard", "deep"]).default("standard"), includeAgents: z.array(z.enum(RESEARCH_AGENT_TYPES as unknown as [ResearchAgentType, ...ResearchAgentType[]])).max(8).optional() })).mutation(({ input }) => runResearchDesk(input)),
