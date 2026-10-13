@@ -210,7 +210,7 @@ function buildHtml(report: FundamentalAnalysis, newsHeadlines: string[], history
   <h2>8 · Method, sources and disclaimer</h2>
   <p class="muted">${report.sources.map((s) => `${esc(s.name)} (${esc(s.status)})`).join("; ") || "Unavailable"}.</p>
   <p>This report is analytical research, not investment advice, a solicitation, or a buy/sell/hold instruction. It is not a guaranteed forecast. Verify every decision-relevant figure against the latest official filings, company disclosures, exchange records, and licensed market-data sources.</p>
-  <div class="footer">AnalyzerX 3.14.0 · generated on-device at ${esc(nowIso())} · scores are rule-based and evidence-gated.</div>
+  <div class="footer">AnalyzerX 3.15.0 · generated on-device at ${esc(nowIso())} · scores are rule-based and evidence-gated.</div>
 </body>
 </html>`;
 }
@@ -225,7 +225,7 @@ export async function exportResearchPdf(symbol: string, marketId: MarketId = "IN
     stockNews(symbol, 10).catch(() => ({ articles: [] as Array<{ headline: string }> })),
   ]);
   const html = buildHtml(report, news.articles.map((a) => a.headline), history.points, report.market.country);
-  const fileName = `AnalyzerX-${report.resolvedSymbol}-3.14.0.pdf`;
+  const fileName = `AnalyzerX-${report.resolvedSymbol}-3.15.0.pdf`;
   const { uri } = await Print.printToFileAsync({ html, base64: false });
   let shared = false;
   if (options.share !== false) {
