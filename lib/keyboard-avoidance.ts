@@ -45,3 +45,27 @@ export function keyboardAvoidingBehavior(platform: string, edgeToEdge: boolean =
 export function keyboardVerticalOffset(topInset: number, extraOffset = 0): number {
   return Math.max(0, extraOffset) + Math.max(0, topInset);
 }
+
+/**
+ * Bottom padding to lift a composer above the soft keyboard.
+ *
+ * `KeyboardAvoidingView` is unreliable on Android, and enabling edge-to-edge made
+ * it worse: the window no longer resizes and KAV's Android padding path does not
+ * reliably receive the keyboard height, so the composer stayed underneath the
+ * keyboard. The durable fix is to read the real keyboard height from the `Keyboard`
+ * API and apply padding explicitly.
+ *
+ * The safe-area bottom inset is already applied by the container, so it is
+ * subtracted to avoid double padding. The result is never negative.
+ */
+export function computeKeyboardPadding(keyboardHeight: number, bottomInset: number, platform: string = "android"): number {
+  if (platform === "ios") return 0; // iOS uses KeyboardAvoidingView's padding behaviour.
+  if (!Number.isFinite(keyboardHeight) || keyboardHeight <= 0) return 0;
+  const inset = Number.isFinite(bottomInset) && bottomInset > 0 ? bottomInset : 0;
+  return Math.max(0, keyboardHeight - inset);
+}
+
+/** Whether the composer must be lifted for this platform/keyboard state. */
+export function shouldLiftComposer(keyboardHeight: number, platform: string = "android"): boolean {
+  return platform === "android" && Number.isFinite(keyboardHeight) && keyboardHeight > 0;
+}
