@@ -55,28 +55,42 @@ jobs:
           CI: "1"
       - name: Sign APK with v2 and v3 schemes
         shell: bash
+        env:
+          # A stable signing key is mandatory for in-place upgrades. Android
+          # refuses to update an app whose signing certificate changed, failing
+          # with INSTALL_FAILED_UPDATE_INCOMPATIBLE (-7), "Conflicting app
+          # signatures". This step previously ran `keytool -genkeypair` on every
+          # build, so EVERY release was signed with a brand-new key and no build
+          # could ever upgrade another.
+          #
+          # With ANDROID_KEYSTORE_BASE64 set, that stable release key is used.
+          # Without it, the APK keeps the signature Gradle already applied from
+          # the committed android/app/debug.keystore — also stable across builds.
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           apk=$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)
           test -n "$apk"
-          keytool -genkeypair -v \
-            -keystore /tmp/analyzerx-release.keystore \
-            -storepass analyzerx-build-password \
-            -keypass analyzerx-build-password \
-            -alias analyzerx \
-            -keyalg RSA -keysize 4096 -validity 10000 \
-            -dname "CN=AnalyzerX Release, OU=Mobile, O=AnalyzerX, L=Local, ST=Local, C=IN"
-          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$apk" "$apk.aligned"
-          mv "$apk.aligned" "$apk"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
-            --ks /tmp/analyzerx-release.keystore \
-            --ks-pass pass:analyzerx-build-password \
-            --key-pass pass:analyzerx-build-password \
-            --v2-signing-enabled true \
-            --v3-signing-enabled true \
-            "$apk"
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > /tmp/analyzerx-release.keystore
+            "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$apk" "$apk.aligned"
+            mv "$apk.aligned" "$apk"
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+              --ks /tmp/analyzerx-release.keystore \
+              --ks-pass "pass:${ANDROID_KEYSTORE_PASSWORD:?ANDROID_KEYSTORE_PASSWORD is required when ANDROID_KEYSTORE_BASE64 is set}" \
+              --key-pass "pass:${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}" \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              "$apk"
+            rm -f /tmp/analyzerx-release.keystore
+          else
+            echo "No ANDROID_KEYSTORE_BASE64 secret set: keeping Gradle's stable signature from android/app/debug.keystore."
+          fi
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
-          rm -f /tmp/analyzerx-release.keystore
+          # Print the signer certificate so key stability across builds is auditable.
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" | head -6
       - name: Generate artifact checksum
         shell: bash
         run: |
