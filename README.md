@@ -1,2 +1,2 @@
 # analyzerx
-AnalyzerX 3.13.0 — market event intelligence (Expo/React Native) with full data pipeline. CI-built APK.
+AnalyzerX 3.14.0 — market event intelligence (Expo/React Native) with full data pipeline. CI-built APK.
