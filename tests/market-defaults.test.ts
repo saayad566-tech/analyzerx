@@ -8,6 +8,7 @@ import {
   knownMarketIds,
   marketExampleSymbols,
   marketScopedPeers,
+  starterPromptsForMarket,
   resolveMarketScopedSymbol,
 } from "../lib/market-defaults";
 
@@ -118,4 +119,35 @@ describe("provider symbol mapping (screenshot regression)", () => {
   });
 });
 
+});
+
+describe("market-scoped assistant prompts (screenshot regression)", () => {
+  it("never offers Indian instruments while a non-Indian market is active", () => {
+    // The assistant showed "Analyze TCS fundamentals" and "latest risks for
+    // RELIANCE" under a United States scope.
+    for (const marketId of ["US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]) {
+      const prompts = starterPromptsForMarket(marketId).join(" ");
+      expect(prompts).not.toMatch(/\bTCS\b|\bRELIANCE\b/);
+      expect(prompts).not.toMatch(/FII vs DII/);
+    }
+  });
+
+  it("uses the active market's own instruments", () => {
+    expect(starterPromptsForMarket("US")[0]).toBe("Analyze AAPL fundamentals");
+    expect(starterPromptsForMarket("FR")[0]).toBe("Analyze MC.PA fundamentals");
+    expect(starterPromptsForMarket("JP")[0]).toBe("Analyze 7203.T fundamentals");
+  });
+
+  it("keeps the India-only FII/DII prompt only for India", () => {
+    expect(starterPromptsForMarket("IN").join(" ")).toMatch(/FII vs DII/);
+    expect(starterPromptsForMarket("US").join(" ")).not.toMatch(/FII vs DII/);
+  });
+
+  it("always returns usable prompts, even for an unknown market", () => {
+    for (const marketId of ["ZZ", ""]) {
+      const prompts = starterPromptsForMarket(marketId);
+      expect(prompts.length).toBeGreaterThan(0);
+      expect(prompts.every((prompt) => prompt.trim().length > 0)).toBe(true);
+    }
+  });
 });
