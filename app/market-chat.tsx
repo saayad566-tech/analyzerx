@@ -16,6 +16,7 @@ import { getActiveLocalAIModelId, getLocalAIModel, getLocalAIRuntime, type Local
 import { buildBoundedLocalPrompt, formatAssistantFailure, isConnectedEngineConfigured, isGeneralChatQuestion, isCurrentDataQuestion, localPromptNotice, resolveMarketChatEngine, trimLocalHistory } from "@/lib/market-chat-runtime";
 import { createStreamingSanitizer, sanitizeAssistantOutput } from "@/lib/assistant-output";
 import { humanize } from "@/lib/safe-text";
+import { keyboardAvoidingBehavior } from "@/lib/keyboard-avoidance";
 import { LocalAIModelError, localAISession } from "@/lib/local-ai-session";
 import { getLocalAIDeviceTelemetrySnapshot, recordLocalAIInference } from "@/lib/local-ai-telemetry";
 import { MarketScopeChip } from "@/components/market-scope-chip";
@@ -262,7 +263,7 @@ export default function MarketChatScreen() {
 
   return (
     <ScreenContainer edges={["top", "left", "right"]} containerClassName="bg-background" className="px-4" keyboardAware={false}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}>
+      <KeyboardAvoidingView style={styles.flex} behavior={keyboardAvoidingBehavior()} keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}>
                   <View style={styles.header}>
 
           <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]} accessibilityLabel="Go back"><Ionicons name="chevron-back" size={20} color={ink} /></Pressable>

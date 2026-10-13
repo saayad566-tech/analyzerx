@@ -1,4 +1,5 @@
 import { Keyboard, KeyboardAvoidingView, Platform, Pressable, View, type ViewProps } from "react-native";
+import { keyboardAvoidingBehavior } from "@/lib/keyboard-avoidance";
 import { SafeAreaView, useSafeAreaInsets, type Edge } from "react-native-safe-area-context";
 
 import { cn } from "@/lib/utils";
@@ -85,7 +86,7 @@ export function ScreenContainer({
         {keyboardAware ? (
           <KeyboardAvoidingView
             style={FILL}
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            behavior={keyboardAvoidingBehavior()}
             keyboardVerticalOffset={offset}
           >
             {dismissKeyboardOnTap ? (
