@@ -10,11 +10,17 @@
  * These helpers make the safe behaviour the default and are unit-tested.
  */
 
-/** Humanise an enum-like token: `"strong_buy"` -> `"strong buy"`. Never throws. */
-export function humanize(value: unknown, separator: "_" | "-" = "_"): string {
+/**
+ * Humanise an enum-like token: `"strong_buy"` -> `"strong buy"`. Never throws.
+ * Handles both `_` and `-` by default, since provider enums use both; pass an
+ * explicit separator to narrow it. Uses a regex rather than `replaceAll`, which
+ * is what crashed the Screener when the receiver was undefined.
+ */
+export function humanize(value: unknown, separator: "_" | "-" | "both" = "both"): string {
   if (typeof value !== "string") return "Unavailable";
   const trimmed = value.trim();
   if (!trimmed) return "Unavailable";
+  if (separator === "both") return trimmed.replace(/[_-]+/g, " ");
   return trimmed.split(separator).join(" ");
 }
 
