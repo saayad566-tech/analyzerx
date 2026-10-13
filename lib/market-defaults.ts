@@ -100,6 +100,38 @@ export function marketScopedPeers(marketId: string, excludeSymbol: string | null
 
 /** Market ids this module knows about (declared profiles only). */
 /**
+ * The suffix a provider expects for each market's primary listing.
+ *
+ * This replaces the blanket `${symbol}.NS` that the home screen applied to every
+ * search result: a US ticker must stay bare, a UK ticker takes `.L`, and so on.
+ */
+export const MARKET_PRIMARY_SUFFIX: Record<string, string> = {
+  IN: ".NS",
+  US: "",
+  GB: ".L",
+  CA: ".TO",
+  AU: ".AX",
+  JP: ".T",
+  SG: ".SI",
+  HK: ".HK",
+  DE: ".DE",
+  FR: ".PA",
+};
+
+/**
+ * Convert a bare ticker into the symbol the active market's provider expects.
+ * An already-suffixed symbol is returned unchanged (never double-suffixed), and an
+ * unknown market is left alone rather than given a guessed suffix.
+ */
+export function providerSymbolForMarket(symbol: string | null | undefined, marketId: string): string | null {
+  const clean = (symbol ?? "").trim().toUpperCase();
+  if (!clean) return null;
+  if (clean.includes(".")) return clean;
+  if (!(marketId in MARKET_PRIMARY_SUFFIX)) return clean;
+  return `${clean}${MARKET_PRIMARY_SUFFIX[marketId]}`;
+}
+
+/**
  * Infer the market an instrument belongs to from its exchange suffix.
  *
  * A bare ticker is genuinely ambiguous (both US and IN commonly use one), so the

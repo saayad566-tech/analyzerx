@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   defaultSymbolForMarket,
+  providerSymbolForMarket,
   defaultSymbolsForMarket,
   isSymbolPlausibleForMarket,
   knownMarketIds,
@@ -76,4 +77,45 @@ describe("market-scoped defaults (master mandate Phase 3)", () => {
     expect(knownMarketIds().sort()).toEqual(["AU", "CA", "DE", "FR", "GB", "HK", "IN", "JP", "SG", "US"]);
     for (const marketId of knownMarketIds()) expect(marketExampleSymbols(marketId).length).toBeGreaterThan(0);
   });
+describe("provider symbol mapping (screenshot regression)", () => {
+  it("no longer forces an Indian suffix onto every search result", () => {
+    // The home screen used `${symbol}.NS` for every selection, so picking a US
+    // ticker produced AAPL.NS and the snapshot rendered Indian data.
+    expect(providerSymbolForMarket("AAPL", "US")).toBe("AAPL");
+    expect(providerSymbolForMarket("MSFT", "US")).toBe("MSFT");
+    expect(providerSymbolForMarket("AAPL", "US")).not.toContain(".NS");
+  });
+
+  it("applies each market's own primary suffix", () => {
+    expect(providerSymbolForMarket("RELIANCE", "IN")).toBe("RELIANCE.NS");
+    expect(providerSymbolForMarket("SHEL", "GB")).toBe("SHEL.L");
+    expect(providerSymbolForMarket("MC", "FR")).toBe("MC.PA");
+    expect(providerSymbolForMarket("7203", "JP")).toBe("7203.T");
+    expect(providerSymbolForMarket("SAP", "DE")).toBe("SAP.DE");
+    expect(providerSymbolForMarket("RY", "CA")).toBe("RY.TO");
+    expect(providerSymbolForMarket("BHP", "AU")).toBe("BHP.AX");
+    expect(providerSymbolForMarket("D05", "SG")).toBe("D05.SI");
+    expect(providerSymbolForMarket("0700", "HK")).toBe("0700.HK");
+  });
+
+  it("never double-suffixes and leaves unknown markets alone", () => {
+    expect(providerSymbolForMarket("RELIANCE.NS", "IN")).toBe("RELIANCE.NS");
+    expect(providerSymbolForMarket("MC.PA", "US")).toBe("MC.PA");
+    expect(providerSymbolForMarket("X", "ZZ")).toBe("X");
+  });
+
+  it("returns null for an empty symbol rather than inventing one", () => {
+    expect(providerSymbolForMarket("", "US")).toBeNull();
+    expect(providerSymbolForMarket(null, "US")).toBeNull();
+    expect(providerSymbolForMarket("   ", "IN")).toBeNull();
+  });
+
+  it("produces a market-scoped default that is plausible for that market", () => {
+    for (const marketId of ["US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]) {
+      const symbol = defaultSymbolForMarket(marketId)!;
+      expect(isSymbolPlausibleForMarket(symbol, marketId)).toBe(true);
+    }
+  });
+});
+
 });

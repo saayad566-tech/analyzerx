@@ -33,6 +33,7 @@ import {
   type ResearchUsageSummary,
 } from "@/lib/research-analytics";
 import { useMarketContext } from "@/lib/market-context";
+import { defaultSymbolForMarket, providerSymbolForMarket } from "@/lib/market-defaults";
 import type { MarketId } from "@/lib/market-regions";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -353,7 +354,10 @@ export default function LiveEventsScreen() {
   const [selectedNewsArticle, setSelectedNewsArticle] =
     useState<TrackedNewsArticle | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [featuredSymbol, setFeaturedSymbol] = useState("RELIANCE.NS");
+  // The Live Market Snapshot is scoped to the ACTIVE market. It used to be seeded
+  // with a hardcoded Indian ticker and never re-derived, so selecting the US left
+  // RELIANCE.NS, an INR quote and an NSE source badge on screen.
+  const [featuredSymbol, setFeaturedSymbol] = useState(() => defaultSymbolForMarket(market.id) ?? "");
   const [usageSummary, setUsageSummary] = useState<ResearchUsageSummary | null>(
     null,
   );
@@ -392,9 +396,15 @@ export default function LiveEventsScreen() {
     [liveSearch.data?.results],
   );
   const finnhubSnapshot = trpc.market.snapshot.useQuery(
-    { symbol: featuredSymbol },
+    { symbol: featuredSymbol, marketId: market.id },
     { staleTime: 60_000, retry: 1 },
   );
+  // Market switching must refresh every dependent view. Without this the featured
+  // instrument stayed on the previous market's ticker after a switch, which is how
+  // a US scope ended up rendering RELIANCE.NS with an INR quote and an NSE badge.
+  useEffect(() => {
+    setFeaturedSymbol(defaultSymbolForMarket(market.id) ?? "");
+  }, [market.id]);
   const newsTrackerStatus = trpc.news.status.useQuery(undefined, {
     refetchInterval: 1_000,
     retry: false,
@@ -978,7 +988,7 @@ export default function LiveEventsScreen() {
                       symbol: liveSuggestions[0].symbol,
                       route: "live-events",
                     });
-                    setFeaturedSymbol(`${liveSuggestions[0].symbol}.NS`);
+                    setFeaturedSymbol(providerSymbolForMarket(liveSuggestions[0].symbol, market.id) ?? "");
                     setQuery(liveSuggestions[0].symbol);
                   }
                 }}
@@ -995,7 +1005,7 @@ export default function LiveEventsScreen() {
               <View style={styles.liveSearchSuggestions}>
                 {liveSearch.isFetching ? (
                   <Text style={styles.liveSearchHint}>
-                    Searching NSE/BSE, Finnhub, and open Indian API…
+                    Searching the selected market and configured providers…
                   </Text>
                 ) : liveSuggestions.length ? (
                   liveSuggestions.map((item) => (
@@ -1007,7 +1017,7 @@ export default function LiveEventsScreen() {
                           symbol: item.symbol,
                           route: "live-events",
                         });
-                        setFeaturedSymbol(`${item.symbol}.NS`);
+                        setFeaturedSymbol(providerSymbolForMarket(item.symbol, market.id) ?? "");
                         setQuery(item.symbol);
                       }}
                       style={styles.liveSearchSuggestion}

@@ -50,6 +50,8 @@ import { getRuntimeHealth } from "./runtime-health";
 
 const symbolInput = z.object({
   symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/).transform((value) => value.toUpperCase()),
+  // Explicit market scope. Without it a caller silently defaulted to India.
+  marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).optional(),
 });
 
 type FinnhubQuote = {
@@ -230,16 +232,21 @@ function normalizeNews(items: FinnhubNewsItem[]) {
     }));
 }
 
-async function fetchMarketSnapshot(symbol: string) {
+async function fetchMarketSnapshot(symbol: string, requestedMarketId?: string) {
   const now = new Date();
-  const snapshotMarketId = /\.(NS|BO)$/i.test(symbol) ? "IN" as const : undefined;
+  // Honour the caller's explicit market. The suffix is only a fallback for
+  // callers that supply none, and a bare international ticker must never be
+  // assumed to be Indian.
+  const snapshotMarketId = (requestedMarketId ?? (/(\.NS|\.BO)$/i.test(symbol) ? "IN" : undefined)) as
+    | "IN" | "US" | "GB" | "CA" | "AU" | "JP" | "SG" | "HK" | "DE" | "FR" | undefined;
+  const isIndianMarket = snapshotMarketId === "IN" || snapshotMarketId === undefined;
   const to = now.toISOString().slice(0, 10);
   const fromDate = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
   const from = fromDate.toISOString().slice(0, 10);
   const [quoteResult, newsResult, indianOpenResult, trackedNewsResult] = await Promise.allSettled([
     fetchFinnhub<FinnhubQuote>("quote", { symbol }),
     fetchFinnhub<FinnhubNewsItem[]>("company-news", { symbol, from, to }),
-    fetchIndianOpenStock(symbol),
+    isIndianMarket ? fetchIndianOpenStock(symbol) : Promise.resolve(null),
     getLatestTrackedNews(10, symbol, snapshotMarketId),
   ]);
   const indianOpen = indianOpenResult.status === "fulfilled" ? normalizeIndianOpenQuote(indianOpenResult.value) : null;
@@ -554,7 +561,7 @@ export const appRouter = router({
       void persistProfileObservations(input.symbol, { market: profile.market, fundamentals: profile.fundamentals }).catch(() => undefined);
       return profile;
     }),
-    snapshot: publicProcedure.input(symbolInput).query(({ input }) => fetchMarketSnapshot(input.symbol)),
+    snapshot: publicProcedure.input(symbolInput).query(({ input }) => fetchMarketSnapshot(input.symbol, input.marketId)),
     observations: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol, limit: z.number().int().min(1).max(500).default(100) })).query(async ({ input }) => ({ symbol: input.symbol, market: await getMarketObservationsForSymbol(input.symbol, input.limit), fundamentals: await getFundamentalObservationsForSymbol(input.symbol, input.limit) })),
     watchlistEvidence: publicProcedure.input(z.object({ symbols: z.array(symbolInput.shape.symbol).min(1).max(50) })).query(async ({ input }) => { const rows = await getLatestEventProjections(500); return input.symbols.map((symbol) => ({ symbol, events: rows.filter((row) => row.symbol === symbol).slice(0, 20) })); }),
     universe: publicProcedure.query(async () => fetchNseUniverse()),
