@@ -397,7 +397,8 @@ export default function LiveEventsScreen() {
   );
   const finnhubSnapshot = trpc.market.snapshot.useQuery(
     { symbol: featuredSymbol, marketId: market.id },
-    { staleTime: 60_000, retry: 1 },
+    // Keep the snapshot current without a manual pull; bounded, not a tight loop.
+    { staleTime: 60_000, retry: 1, refetchInterval: 90_000, refetchIntervalInBackground: false },
   );
   // Market switching must refresh every dependent view. Without this the featured
   // instrument stayed on the previous market's ticker after a switch, which is how
