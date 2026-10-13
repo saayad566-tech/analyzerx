@@ -209,8 +209,8 @@ export default function ScreenerScreen() {
   );
   const analyzedMarketCapBand = classifyMarketCap(marketId, fundamentalAnalysis.data?.marketCap.value);
   const derivatives = trpc.market.derivatives.useQuery({ symbol: selectedSymbol ?? "RELIANCE" }, { enabled: Boolean(selectedSymbol), retry: false, staleTime: 30_000 });
-  const multibaggerSignals = trpc.market.multibaggerSignals.useQuery({ strategyId: selectedStrategyId }, { retry: false, staleTime: 900_000 });
-  const multiAssetTiming = trpc.market.multiAssetTiming.useQuery(undefined, { retry: false, staleTime: 120_000 });
+  const multibaggerSignals = trpc.market.multibaggerSignals.useQuery({ strategyId: selectedStrategyId }, { retry: false, staleTime: 900_000, refetchInterval: 300_000, refetchIntervalInBackground: false });
+  const multiAssetTiming = trpc.market.multiAssetTiming.useQuery(undefined, { retry: false, staleTime: 120_000, refetchInterval: 180_000, refetchIntervalInBackground: false });
   const reportExport = trpc.market.report.useQuery({ symbol: selectedSymbol ?? "RELIANCE", marketId }, { enabled: false, retry: false });
   const { width: viewportWidth } = useWindowDimensions();
   const peerComparison = trpc.market.peerComparison.useQuery({ symbol: selectedSymbol ?? "RELIANCE" }, { enabled: Boolean(selectedSymbol), retry: false, staleTime: 300_000 });
