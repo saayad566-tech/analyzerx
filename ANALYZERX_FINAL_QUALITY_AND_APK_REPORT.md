@@ -141,18 +141,28 @@ These were not modified by this work.
 | Field | Value |
 | --- | --- |
 | Variant | release |
-| Package | `com.app.marketeventintelligence` |
-| Version | see §6.1 (the artifact accompanying this report) |
+| Package | `com.app.marketeventintelligence` (read from the APK's manifest) |
+| Version name | `3.9.0` (read from the APK's manifest) |
+| Version code | 3900 |
 | Signing | v2 + v3, stable certificate `fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c` |
-| Build route | `.github/workflows/android-apk.yml`, run 61 |
+| Build route | `.github/workflows/android-apk.yml`, run 63 — every step green |
 | Install/launch test | **NOT RUN** (no device/emulator) |
 
 ### 6.1 Artifact
 
-- File: `analyzerx-3.9.0-<run>.apk`
-- Size, SHA-256, and the release URL are recorded in the delivery message and in the
-  commit that accompanies the build. The checksum is computed from the exact
-  delivered file.
+- File: `analyzerx-3.9.0-63.apk`
+- Size: 64,254,256 bytes
+- SHA-256: `8a75ba991006195a66d0b7554a05c739a827a938d75258d0906b5a98e2aa6a66`
+  (computed from the exact delivered file)
+- Release: https://github.com/saayad566-tech/analyzerx/releases/tag/apk-3.9.0-63
+- Application code commit: `19d171af4e29d9c9b1a76979dc9c6c90724059e9`
+- Verified from inside the APK: package id, version name `3.9.0`, `INTERNET`
+  permission present, and **no** `usesCleartextTraffic` flag.
+
+**Post-build change disclosure.** After the build, this Markdown report was updated
+with the artifact details above. That commit touches only this `.md` file, which is
+not compiled into the APK, so no rebuild was required. No application source changed
+after the build.
 
 **Upgrade note.** Builds 57, 59, 61 and later share one signing certificate, so they
 install over one another. Any build **before** 57 (including the older 1.4.0 on the
