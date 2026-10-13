@@ -48,7 +48,7 @@ export default function MarketFlowsScreen() {
   const [sortDescending, setSortDescending] = useState(true);
   const [sortKey, setSortKey] = useState<FlowSort>("net");
   const [selectedFlow, setSelectedFlow] = useState<MarketFlow | null>(null);
-  const institutionalQuery = trpc.market.institutionalFlows.useQuery({ range: rangeApiValue[dateRange] }, { retry: false, staleTime: 60_000 });
+  const institutionalQuery = trpc.market.institutionalFlows.useQuery({ range: rangeApiValue[dateRange] }, { retry: false, staleTime: 60_000, refetchInterval: 120_000, refetchIntervalInBackground: false });
   const institutionalRows = useMemo(() => institutionalQuery.data?.rows ?? [], [institutionalQuery.data?.rows]);
   const liveFii = institutionalRows.find((row) => row.participant === "FII/FPI")?.net ?? null;
   const liveDii = institutionalRows.find((row) => row.participant === "DII")?.net ?? null;
