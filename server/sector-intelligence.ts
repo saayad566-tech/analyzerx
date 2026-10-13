@@ -4,6 +4,7 @@ import { fetchNseInstitutionalFlows, type FlowRange } from "./nse-flows";
 import { verifiedResearchUniverse } from "./research-signals";
 import { fetchSecurityWiseFlows, securityWiseFlowForSymbol } from "./security-wise-flows";
 import { percentOf } from "../lib/precision";
+import { resolveSector } from "../lib/sector-registry";
 
 export type SectorSort = "score" | "fii" | "dii" | "marketCap" | "changePercent" | "pe";
 
@@ -80,9 +81,21 @@ export async function getSectorConstituents(sector: string, options: { sort?: Se
   const direction = options.direction === "asc" ? 1 : -1;
   const value = (row: SectorConstituent) => ({ score: row.score, fii: row.fiiNet, dii: row.diiNet, marketCap: row.marketCap, changePercent: row.changePercent, pe: row.pe }[sort] ?? null) ?? Number.NEGATIVE_INFINITY;
   rows.sort((left, right) => (value(left) - value(right)) * direction || left.symbol.localeCompare(right.symbol));
+  // Coverage status is stated explicitly so the UI can distinguish "this sector
+  // has no official index / no mapped constituents" from a failed request,
+  // instead of inferring it from an error string (FIX 05).
+  const resolution = resolveSector(sector);
+  const status: "supported" | "unsupported" | "error" = rows.length > 0 ? "supported" : "unsupported";
+  const reason = rows.length > 0
+    ? null
+    : resolution.status === "unsupported"
+      ? resolution.reason
+      : `${sector} is not covered by the accepted AnalyzerX research universe, and no verified constituent list is mapped to it.`;
   return {
     sector,
     asOf: new Date().toISOString(),
+    status,
+    reason,
     availableUniverse: true,
     coverageLabel: `Verified AnalyzerX research universe · ${rows.length} mapped constituent${rows.length === 1 ? "" : "s"}`,
     totalMapped: rows.length,
