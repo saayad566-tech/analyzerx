@@ -14,8 +14,6 @@
  * keyboard avoidance cannot drift apart again.
  */
 
-import { Platform } from "react-native";
-
 export type KeyboardAvoidingBehavior = "padding" | "height" | "position" | undefined;
 
 /**
@@ -33,7 +31,7 @@ export const EDGE_TO_EDGE_ENABLED = true;
  * - Android without edge-to-edge: undefined, because adjustResize already
  *   resizes the window and adding behaviour would double-shift the content.
  */
-export function keyboardAvoidingBehavior(platform: string = Platform.OS, edgeToEdge: boolean = EDGE_TO_EDGE_ENABLED): KeyboardAvoidingBehavior {
+export function keyboardAvoidingBehavior(platform: string, edgeToEdge: boolean = EDGE_TO_EDGE_ENABLED): KeyboardAvoidingBehavior {
   if (platform === "ios") return "padding";
   if (platform === "android") return edgeToEdge ? "padding" : undefined;
   return undefined;
