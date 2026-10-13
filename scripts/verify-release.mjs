@@ -3,8 +3,12 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 const root = process.cwd();
-const version = "1.4.0";
-const versionCode = 1400;
+// package.json is the single authoritative version source; everything else is
+// derived from it so the identity can never drift.
+const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+const version = String(pkg.version);
+const [major = 0, minor = 0, patch = 0] = version.split(".").map((part) => Number.parseInt(part, 10) || 0);
+const versionCode = major * 1000 + minor * 100 + patch;
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "release-manifest.json"), "utf8"));
 const missing = [];
 const files = Object.values(manifest.requiredFeatures).flat();

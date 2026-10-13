@@ -12,8 +12,13 @@ import {
   type AppLifecycleModel,
   type AppVisibility,
 } from "@/lib/app-state";
+import { probeApiReachability, type ConnectivityProbe, type ConnectivityState } from "@/lib/connectivity";
 
 const LIFECYCLE_STORAGE_KEY = "analyzerx.app-lifecycle.v1";
+/** Bump when the persisted envelope shape changes; migration lives in reviveModel. */
+const LIFECYCLE_SCHEMA_VERSION = 2;
+/** How often to re-probe reachability while the app is active. */
+const CONNECTIVITY_POLL_MS = 30_000;
 
 /** A best-effort async task (a disk flush or a cache trim). */
 export type LifecycleTask = () => void | Promise<void>;
@@ -46,6 +51,12 @@ export type AppLifecycleContextValue = {
   registerTrim: (task: LifecycleTask) => () => void;
   /** Force every registered writer to flush now. */
   flushNow: () => Promise<void>;
+  /** Latest known reachability of the configured API origin. */
+  connectivity: ConnectivityState;
+  /** Probe reachability now and reconcile the lifecycle state. */
+  checkConnectivity: () => Promise<ConnectivityState>;
+  /** Replace the reachability probe (e.g. a NetInfo adapter or a test double). */
+  setConnectivityProbe: (probe: ConnectivityProbe) => void;
 };
 
 const AppLifecycleContext = createContext<AppLifecycleContextValue | null>(null);
@@ -71,8 +82,13 @@ function toVisibility(status: AppStateStatus): AppVisibility {
 function reviveModel(raw: string | null): AppLifecycleModel | null {
   if (!raw) return null;
   try {
-    const saved = JSON.parse(raw) as Partial<AppLifecycleModel>;
-    if (typeof saved.state !== "string" || !VALID_STATES.includes(saved.state as AppLifecycleModel["state"])) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    // Envelope v2+ stores { schema, model }; v1 stored the bare model. Both are
+    // accepted so an upgrade never loses the restored state.
+    const envelope = parsed as { schema?: unknown; model?: unknown };
+    const candidate = envelope && typeof envelope === "object" && typeof envelope.schema === "number" ? envelope.model : parsed;
+    const saved = candidate as Partial<AppLifecycleModel>;
+    if (!saved || typeof saved.state !== "string" || !VALID_STATES.includes(saved.state as AppLifecycleModel["state"])) return null;
     const state = saved.state === "loading" || saved.state === "reconnecting" || saved.state === "uninitialized"
       ? "ready"
       : (saved.state as AppLifecycleModel["state"]);
@@ -95,6 +111,8 @@ export function AppLifecycleProvider({ children }: { children: React.ReactNode }
   const trimTasks = useRef(new Set<LifecycleTask>());
   const modelRef = useRef(model);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectivityProbe = useRef<ConnectivityProbe>(probeApiReachability);
+  const [connectivity, setConnectivity] = useState<ConnectivityState>("unknown");
   modelRef.current = model;
 
   const dispatch = useCallback((event: AppLifecycleEvent) => {
@@ -137,10 +155,12 @@ export function AppLifecycleProvider({ children }: { children: React.ReactNode }
     if (modelRef.current.state === "uninitialized") dispatch({ type: "BOOTSTRAP_START" });
   }, [dispatch, hydrated]);
 
-  // Persist on every significant transition (post-rehydration only).
+  // Persist on every significant transition (post-rehydration only), inside a
+  // versioned envelope so future shape changes can migrate safely.
   useEffect(() => {
     if (!hydrated) return;
-    void AsyncStorage.setItem(LIFECYCLE_STORAGE_KEY, JSON.stringify(model)).catch(() => undefined);
+    const envelope = { schema: LIFECYCLE_SCHEMA_VERSION, model };
+    void AsyncStorage.setItem(LIFECYCLE_STORAGE_KEY, JSON.stringify(envelope)).catch(() => undefined);
   }, [hydrated, model]);
 
   // OS lifecycle: background flushes, foreground reconnect, memory-pressure trims.
@@ -168,6 +188,33 @@ export function AppLifecycleProvider({ children }: { children: React.ReactNode }
       memorySubscription.remove();
     };
   }, [dispatch, flushNow, runTasks]);
+
+  // Explicit connectivity: probe on startup and while active, and reconcile the
+  // lifecycle so the UI shows cached content the moment the network drops.
+  const checkConnectivity = useCallback(async (): Promise<ConnectivityState> => {
+    const result = await connectivityProbe.current().catch(() => "unknown" as ConnectivityState);
+    setConnectivity(result);
+    const current = modelRef.current.state;
+    if (result === "offline" && current !== "uninitialized") dispatch({ type: "CONNECTIVITY_LOST" });
+    else if (result === "online" && (current === "offline" || current === "reconnecting")) dispatch({ type: "RECONNECT_SUCCESS", hasData: true });
+    return result;
+  }, [dispatch]);
+
+  const setConnectivityProbe = useCallback((probe: ConnectivityProbe) => {
+    connectivityProbe.current = probe;
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    void checkConnectivity();
+  }, [checkConnectivity, hydrated]);
+
+  useEffect(() => {
+    if (visibility !== "active") return;
+    void checkConnectivity();
+    const interval = setInterval(() => { void checkConnectivity(); }, CONNECTIVITY_POLL_MS);
+    return () => clearInterval(interval);
+  }, [checkConnectivity, visibility]);
 
   useEffect(() => () => {
     if (retryTimer.current) clearTimeout(retryTimer.current);
@@ -224,7 +271,10 @@ export function AppLifecycleProvider({ children }: { children: React.ReactNode }
     registerFlush,
     registerTrim,
     flushNow,
-  }), [beginLoading, flushNow, model, registerFlush, registerTrim, reportEmpty, reportError, reportOffline, reportReady, retry, visibility]);
+    connectivity,
+    checkConnectivity,
+    setConnectivityProbe,
+  }), [beginLoading, checkConnectivity, connectivity, flushNow, model, registerFlush, registerTrim, reportEmpty, reportError, reportOffline, reportReady, retry, setConnectivityProbe, visibility]);
 
   return <AppLifecycleContext.Provider value={value}>{children}</AppLifecycleContext.Provider>;
 }
