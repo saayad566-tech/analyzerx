@@ -87,7 +87,6 @@ export function ScreenContainer({
       >
         {keyboardAware ? (
           <KeyboardAvoidingView
-            style={FILL}
             style={[FILL, keyboardInset > 0 && { paddingBottom: keyboardInset }]}
             behavior={keyboardAvoidingBehavior(Platform.OS)}
             keyboardVerticalOffset={offset}
