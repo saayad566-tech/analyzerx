@@ -9,8 +9,9 @@ import { ModelSwitcher } from "@/components/model-switcher";
 import { trpc } from "@/lib/trpc";
 import { useMarketContext } from "@/lib/market-context";
 import { clearGeneralChatHistory, loadGeneralChatHistory, loadMarketChatRuntimeMode, saveGeneralChatHistory, type LocalChatMessage, type MarketChatRuntimeMode } from "@/lib/local-preferences";
-import { buildBoundedLocalPrompt, formatAssistantFailure, isCurrentDataQuestion, resolveMarketChatEngine, trimLocalHistory } from "@/lib/market-chat-runtime";
+import { buildBoundedLocalPrompt, formatAssistantFailure, isConnectedEngineConfigured, isCurrentDataQuestion, resolveMarketChatEngine, trimLocalHistory } from "@/lib/market-chat-runtime";
 import { createStreamingSanitizer, sanitizeAssistantOutput } from "@/lib/assistant-output";
+import { LocalAIModelError, localAISession } from "@/lib/local-ai-session";
 import { getActiveLocalAIModelId, getLocalAIModel, getLocalAIRuntime, type LocalAIModelId } from "@/lib/local-ai";
 
 const colors = { background: "#07101F", panel: "#111C2D", border: "#26364D", text: "#F4F7FB", muted: "#91A2B8", amber: "#F4B860", teal: "#4FD1C5", coral: "#FB7185" };
@@ -50,7 +51,11 @@ export default function GeneralChatScreen() {
     try {
       const useLocal = engine === "local";
       if (useLocal) {
-        if (!runtime.isAvailable) throw new Error("The native Local AI bridge is unavailable in this build.");
+        const modelId = activeModelId;
+        if (!modelId) throw new LocalAIModelError("No on-device model is selected.", "Choose a model in the switcher above, or use Connected mode.");
+        // Load (or confirm) the model before inference. The UI must never claim
+        // a model is ready until the native runtime has actually loaded it.
+        await localAISession.ensureModelLoaded(modelId);
         // One assistant that answers anything: live-data questions are grounded
         // with verified context, everything else is answered generally.
         const needsLiveData = isCurrentDataQuestion(question);
@@ -65,6 +70,7 @@ export default function GeneralChatScreen() {
         const guard = createStreamingSanitizer({ systemInstruction: prompt.system, maxChars: 8000 });
         const assistantId = `assistant-${Date.now()}`;
         let answer = "";
+        localAISession.markGenerating(true);
         setMessages((current) => [...current, { id: assistantId, role: "assistant", content: "" }]);
         // The system instruction is attached to the conversation ONCE and only
         // the user turn is sent. Sending the whole prompt as the user message
@@ -92,10 +98,12 @@ export default function GeneralChatScreen() {
         const completed = [...next, assistant]; setMessages(completed); await saveGeneralChatHistory(completed);
       }
     } catch (error) {
-      // Never surface a raw native error or stack trace in the chat.
-      const failure: GeneralItem = { id: `error-${Date.now()}`, role: "assistant", content: formatAssistantFailure(error), error: true };
+      // Never surface a raw native error or stack trace in the chat. A model
+      // lifecycle failure carries its own safe, specific message and next step.
+      const content = error instanceof LocalAIModelError ? `${error.userMessage} ${error.nextAction}` : formatAssistantFailure(error);
+      const failure: GeneralItem = { id: `error-${Date.now()}`, role: "assistant", content, error: true };
       const completed = [...next, failure]; setMessages(completed); await saveGeneralChatHistory(completed);
-    } finally { setLoading(false); }
+    } finally { localAISession.markGenerating(false); setLoading(false); }
   }
 
   async function clearHistory() { await clearGeneralChatHistory(); setMessages([]); }
@@ -119,7 +127,7 @@ export default function GeneralChatScreen() {
             }}
           />
         </View>
-        <View style={styles.banner}><Text style={styles.bannerTitle}>Ask anything</Text><Text style={styles.bannerText}>Stocks, news, coding, writing, explanations, planning, and everyday questions — like a general assistant, with live market facts grounded in verified evidence. Switch models from the chip above.</Text><Text style={[styles.engine, { color: engine === "local" ? colors.teal : colors.amber }]}>{engine === "local" ? `Local · ${activeModel ?? "model ready"}` : "Connected · hosted AI"}</Text></View>
+        <View style={styles.banner}><Text style={styles.bannerTitle}>Ask anything</Text><Text style={styles.bannerText}>Stocks, news, coding, writing, explanations, planning, and everyday questions — like a general assistant, with live market facts grounded in verified evidence. Switch models from the chip above.</Text><Text style={[styles.engine, { color: engine === "local" ? colors.teal : isConnectedEngineConfigured() ? colors.amber : colors.coral }]}>{engine === "local" ? `Local · ${activeModel ?? "model ready"}` : isConnectedEngineConfigured() ? "Connected · hosted AI" : "Connected · no provider configured"}</Text></View>
         <FlatList data={messages} keyExtractor={(item) => item.id} contentContainerStyle={styles.list} initialNumToRender={12} maxToRenderPerBatch={8} windowSize={7} updateCellsBatchingPeriod={50} removeClippedSubviews keyboardShouldPersistTaps="handled" renderItem={({ item }) => <View style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.assistantBubble]}><Text style={styles.role}>{item.role === "user" ? "YOU" : "ANALYZERX"}</Text><Text style={[styles.message, item.error && { color: colors.coral }]}>{item.content}</Text></View>} ListEmptyComponent={<Text style={styles.empty}>Start with any question. AnalyzerX will keep this conversation separate from your market research history.</Text>} />
         {loading && <View style={styles.loading}><Skeleton width={20} height={20} radius={10} /><Text style={styles.loadingText}>Thinking with {engine === "local" ? "Local AI" : "Connected AI"}…</Text></View>}
         <View style={styles.composer}><TextInput value={draft} onChangeText={setDraft} placeholder="Ask about coding, writing, ideas, or anything else…" placeholderTextColor={colors.muted} style={styles.input} multiline maxLength={2_000} editable={!loading} onSubmitEditing={() => void sendMessage()} returnKeyType="send" /><AnimatedPressable haptic="medium" onPress={() => void sendMessage()} disabled={!draft.trim() || loading} style={[styles.send, (!draft.trim() || loading) && styles.disabled]}><Ionicons name="arrow-up" size={22} color={colors.background} /></AnimatedPressable></View>

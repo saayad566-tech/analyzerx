@@ -13,8 +13,9 @@ import { trpc } from "@/lib/trpc";
 import { clearMarketChatHistory, loadMarketChatHistory, loadMarketChatRuntimeMode, saveMarketChatHistory, saveMarketChatRuntimeMode, type LocalChatMessage, type MarketChatRuntimeMode } from "@/lib/local-preferences";
 import type { AnalyzerXAction, MarketChatAttachment } from "@/server/market-chat";
 import { getActiveLocalAIModelId, getLocalAIModel, getLocalAIRuntime, type LocalAIModelId } from "@/lib/local-ai";
-import { buildBoundedLocalPrompt, formatAssistantFailure, isGeneralChatQuestion, isCurrentDataQuestion, localPromptNotice, resolveMarketChatEngine, trimLocalHistory } from "@/lib/market-chat-runtime";
+import { buildBoundedLocalPrompt, formatAssistantFailure, isConnectedEngineConfigured, isGeneralChatQuestion, isCurrentDataQuestion, localPromptNotice, resolveMarketChatEngine, trimLocalHistory } from "@/lib/market-chat-runtime";
 import { createStreamingSanitizer, sanitizeAssistantOutput } from "@/lib/assistant-output";
+import { LocalAIModelError, localAISession } from "@/lib/local-ai-session";
 import { getLocalAIDeviceTelemetrySnapshot, recordLocalAIInference } from "@/lib/local-ai-telemetry";
 import { MarketScopeChip } from "@/components/market-scope-chip";
 import { useMarketContext } from "@/lib/market-context";
@@ -79,7 +80,13 @@ export default function MarketChatScreen() {
 
   const nativeRuntimeAvailable = getLocalAIRuntime().isAvailable;
   const effectiveEngine = resolveMarketChatEngine({ mode: runtimeMode, activeModelId: activeLocalModelId, nativeRuntimeAvailable, hasAttachments: false });
-  const runtimeStatus = effectiveEngine === "local" ? { label: "Local AI", detail: activeLocalModel ?? "verified local model", color: teal, icon: "hardware-chip-outline" as const } : effectiveEngine === "connected" ? { label: runtimeMode === "local" || runtimeMode === "auto" ? "Connected fallback" : "Connected", detail: runtimeMode === "local" && !nativeRuntimeAvailable ? "native bridge unavailable · safe fallback" : "hosted evidence engine", color: amber, icon: "cloud-outline" as const } : { label: "Unavailable", detail: "choose Connected or load Local AI", color: coral, icon: "warning-outline" as const };
+  const runtimeStatus = effectiveEngine === "local"
+    ? { label: "Local AI", detail: activeLocalModel ?? "verified local model", color: teal, icon: "hardware-chip-outline" as const }
+    : effectiveEngine === "connected"
+      ? (isConnectedEngineConfigured()
+        ? { label: runtimeMode === "local" || runtimeMode === "auto" ? "Connected fallback" : "Connected", detail: "hosted evidence engine", color: amber, icon: "cloud-outline" as const }
+        : { label: "Connected · no provider", detail: "no hosted provider is configured", color: coral, icon: "cloud-outline" as const })
+      : { label: "Unavailable", detail: "choose Connected or load Local AI", color: coral, icon: "warning-outline" as const };
   const runtimeOpacity = useRef(new Animated.Value(1)).current;
   const previousEngine = useRef(effectiveEngine);
 
@@ -175,7 +182,12 @@ export default function MarketChatScreen() {
       if (useLocal) {
         const generalQuestion = isGeneralChatQuestion(question);
         const grounded = generalQuestion ? null : await ground.mutateAsync({ message: question || "Summarize the supplied market context.", marketId });
-        if (!selectedRuntime?.isAvailable) throw new Error("The native Local AI bridge is unavailable in this build.");
+        const modelId = activeLocalModelId;
+        if (!modelId) throw new LocalAIModelError("No on-device model is selected.", "Choose a model in the switcher, or use Connected mode.");
+        // Load (or confirm) the model before inference so the UI never claims a
+        // model is ready while the native engine is empty.
+        await localAISession.ensureModelLoaded(modelId);
+        localAISession.markGenerating(true);
         setLocalStreaming(true);
         const startedAt = Date.now();
         const telemetrySnapshot = await getLocalAIDeviceTelemetrySnapshot();
@@ -211,9 +223,10 @@ export default function MarketChatScreen() {
       // The failure text is a classified, user-facing message. Raw runtime errors can
       // embed the entire prompt (including chat-template tokens), so the message is
       // never taken verbatim from the thrown error.
-      const failure: ChatItem = { id: `error-${Date.now()}`, role: "assistant", content: formatAssistantFailure(error), confidence: "low", limitations: [useLocal ? `The local model (${activeLocalModel ?? "the selected model"}) could not complete this request. Your conversation is preserved; retry, or switch to Connected mode.` : "Connected mode could not complete this request. Your conversation is preserved."], retryQuestion: question, retryAttachments: attachmentSnapshot };
+      const failure: ChatItem = { id: `error-${Date.now()}`, role: "assistant", content: error instanceof LocalAIModelError ? `${error.userMessage} ${error.nextAction}` : formatAssistantFailure(error), confidence: "low", limitations: [useLocal ? `The local model (${activeLocalModel ?? "the selected model"}) could not complete this request. Your conversation is preserved; retry, or switch to Connected mode.` : "Connected mode could not complete this request. Your conversation is preserved."], retryQuestion: question, retryAttachments: attachmentSnapshot };
       const completed = [...next, failure]; setMessages(completed); await saveMarketChatHistory(completed);
     } finally {
+      localAISession.markGenerating(false);
       setLocalStreaming(false);
     }
   }
