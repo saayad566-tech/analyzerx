@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/skeleton";
 import { KeyboardAwareScrollView } from "@/components/keyboard-aware-scroll-view";
 import { MarketScopeChip } from "@/components/market-scope-chip";
 import { useMarketContext } from "@/lib/market-context";
+import { defaultSymbolForMarket } from "@/lib/market-defaults";
 import { trpc } from "@/lib/trpc";
 import { getResearchEvidenceNavigation } from "@/lib/research-evidence-navigation";
 import { useAuth } from "@/hooks/use-auth";
@@ -34,7 +35,9 @@ const agentLabels: Record<string, string> = {
 export default function ResearchDeskScreen() {
   const { marketId, market } = useMarketContext();
   const { isAuthenticated } = useAuth();
-  const [symbol, setSymbol] = useState("RELIANCE");
+  // Default to the ACTIVE market's own example instrument, not a hardcoded Indian
+  // ticker. Switching to the US/UK/FR/etc. market must not pre-fill an NSE symbol.
+  const [symbol, setSymbol] = useState(() => defaultSymbolForMarket(marketId) ?? "");
   const [question, setQuestion] = useState("Run a deep research desk review");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [activeRunIsPersisted, setActiveRunIsPersisted] = useState(false);

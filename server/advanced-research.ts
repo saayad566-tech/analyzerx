@@ -1,4 +1,5 @@
 import { analyzeFundamentals } from "./fundamental-analysis";
+import { inferMarketFromSymbol, marketScopedPeers } from "../lib/market-defaults";
 
 const peerMap: Record<string, string[]> = {
   RELIANCE: ["TCS", "INFY", "LT"],
@@ -18,7 +19,9 @@ export type PeerComparison = {
 
 export async function comparePeers(symbol: string): Promise<PeerComparison> {
   const normalized = symbol.trim().toUpperCase();
-  const peerSymbols = peerMap[normalized] ?? ["RELIANCE", "TCS", "HDFCBANK"].filter((item) => item !== normalized);
+  // Peers follow the instrument's own market. The previous fallback always used
+  // Indian peers, which is the cross-market leak the mandate forbids.
+  const peerSymbols = peerMap[normalized] ?? marketScopedPeers(inferMarketFromSymbol(normalized) ?? "US", normalized);
   const results = await Promise.all(peerSymbols.slice(0, 3).map(async (peer) => {
     try {
       const analysis = await analyzeFundamentals(peer);

@@ -20,6 +20,7 @@ import { MarketScopeChip } from "@/components/market-scope-chip";
 import { OperationProgressCard } from "@/components/operation-progress-card";
 import { useMarketContext } from "@/lib/market-context";
 import { classifyMarketCap, marketCapBandLabel, type MarketCapBand } from "@/lib/market-cap";
+import { resolveMarketScopedSymbol } from "@/lib/market-defaults";
 
 const quantitativeFilterLabels: Partial<Record<FilterKey, string>> = {
   quality: "ROCE / ROE",
@@ -201,7 +202,7 @@ export default function ScreenerScreen() {
   const handleSearchChange = (value: string) => { setAnalysisQuery(value); setSelectedSymbol(null); setSelectedStock(null); };
   const analysisTarget = selectedSymbol ? researchCandidates.find((candidate) => candidate.symbol === selectedSymbol) ?? { symbol: selectedSymbol, name: selectedStock?.name ?? "Requested company", sector: selectedStock?.sector ?? "Indian equities", metricsAvailable: false, redFlags: [], evidence: [], expansionSignal: false, triggerKeys: [] } : null;
   const legacyAnalysisTarget = analysisTarget as NonNullable<typeof analysisTarget>;
-  const indianSnapshot = trpc.market.indianSnapshot.useQuery({ symbol: selectedSymbol ?? "RELIANCE" }, { enabled: Boolean(selectedSymbol), retry: false });
+  const indianSnapshot = trpc.market.indianSnapshot.useQuery({ symbol: resolveMarketScopedSymbol(selectedSymbol, marketId) ?? "" }, { enabled: Boolean(selectedSymbol), retry: false });
   const fundamentalAnalysis = trpc.market.fundamentals.useQuery(
     { symbol: selectedSymbol ?? "RELIANCE" },
     { enabled: Boolean(selectedSymbol), retry: 1, retryDelay: 1_200, staleTime: 60_000 },

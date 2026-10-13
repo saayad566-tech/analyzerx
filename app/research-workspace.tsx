@@ -4,6 +4,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { router } from "expo-router";
 import { trpc } from "@/lib/trpc";
 import { metricBasis } from "@/lib/safe-access";
+import { useMarketContext } from "@/lib/market-context";
+import { resolveMarketScopedSymbol } from "@/lib/market-defaults";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ScreenContainer } from "@/components/screen-container";
@@ -18,6 +20,7 @@ function Action({ icon, label, route }: { icon: keyof typeof Ionicons.glyphMap; 
 }
 
 export default function ResearchWorkspaceScreen() {
+  const { marketId } = useMarketContext();
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [watchlist, setWatchlist] = useState<string[]>([]);
   const [savedScreens, setSavedScreens] = useState<SavedScreen[]>([]);
@@ -28,8 +31,8 @@ export default function ResearchWorkspaceScreen() {
   const effectiveWatchlist = isAuthenticated && ownedWatchlist.data ? serverWatchlist : watchlist;
   const effectiveSavedScreens = isAuthenticated && ownedScreens.data ? ownedScreens.data : savedScreens;
   const latestSymbol = recentSearches[0] ?? effectiveWatchlist[0] ?? null;
-  const financialAnalysis = trpc.market.fundamentals.useQuery({ symbol: latestSymbol ?? "RELIANCE" }, { enabled: Boolean(latestSymbol), retry: false, staleTime: 60_000 });
-  const watchlistEvidence = trpc.market.watchlistEvidence.useQuery({ symbols: effectiveWatchlist.length ? effectiveWatchlist : ["RELIANCE"] }, { enabled: effectiveWatchlist.length > 0, retry: false, staleTime: 60_000 });
+  const financialAnalysis = trpc.market.fundamentals.useQuery({ symbol: resolveMarketScopedSymbol(latestSymbol, marketId) ?? "" }, { enabled: Boolean(latestSymbol), retry: false, staleTime: 60_000 });
+  const watchlistEvidence = trpc.market.watchlistEvidence.useQuery({ symbols: effectiveWatchlist.length ? effectiveWatchlist : (resolveMarketScopedSymbol(null, marketId) ? [resolveMarketScopedSymbol(null, marketId)!] : []) }, { enabled: effectiveWatchlist.length > 0, retry: false, staleTime: 60_000 });
   const watchlistEventCounts = useMemo(() => new Map((watchlistEvidence.data ?? []).map((item) => [item.symbol, item.events.length])), [watchlistEvidence.data]);
   const openFinancialAnalysis = (symbol: string) => router.push({ pathname: "/screener", params: { symbol } });
 

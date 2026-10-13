@@ -16,7 +16,11 @@ export type ProviderRunResult = {
 };
 
 function asSymbol(symbol: string | undefined) {
-  return (symbol?.trim() || "RELIANCE").toUpperCase();
+  // No default instrument is assumed. Falling back to an Indian ticker for an
+  // unspecified run is the cross-market substitution the mandate forbids.
+  const clean = (symbol ?? "").trim();
+  if (!clean) throw new Error("A symbol is required to run a provider; no default instrument is assumed.");
+  return clean.toUpperCase();
 }
 
 function persistHealth(providerId: string) {
