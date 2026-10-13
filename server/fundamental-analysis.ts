@@ -6,6 +6,7 @@ import { calculateQuantitativeMetrics, type QuantitativeMetric } from "./quantit
 import { buildMultibaggerThesis, type MultibaggerThesis } from "./multibagger-thesis";
 import { extractFilingEvidence, type FilingEvidence } from "./filing-evidence";
 import { classifyMarketCap, getMarketCapConvention, marketCapBandLabel, type MarketCapBand } from "../lib/market-cap";
+import { difference, percentChange, percentOf, product, quotient, ratio, sumValid } from "../lib/precision";
 
 type Basis = "reported" | "derived" | "estimated" | "unavailable";
 
@@ -362,7 +363,10 @@ function growthCagr(series: TrendPoint[], years: number) {
   const start = series.at(-(years + 1))?.value;
   const end = series.at(-1)?.value;
   if (start === undefined || end === undefined || start <= 0 || end <= 0) return undefined;
-  return ((end / start) ** (1 / years) - 1) * 100;
+  // Ratio is computed exactly; only the fractional-year root uses a float power.
+  const growthRatio = ratio(end, start);
+  if (growthRatio === null || growthRatio <= 0) return undefined;
+  return (growthRatio ** (1 / years) - 1) * 100;
 }
 
 function extractShareholdingLatest(section: string, label: string) {
@@ -422,8 +426,8 @@ async function fetchScreenerFallback(symbol: string): Promise<RawFundamentals> {
   // Screener market cap is commonly expressed in INR crore units; do not derive shares outstanding from it without an explicit unit contract.
   const sharesOutstanding = undefined;
   const eps = latest(epsHistory);
-  const pe = currentPrice !== undefined && eps !== undefined && eps > 0 ? currentPrice / eps : pagePe;
-  const roe = netIncome !== undefined && equity ? (netIncome / equity) * 100 : pageRoe;
+  const pe = currentPrice !== undefined && eps !== undefined && eps > 0 ? quotient(currentPrice, eps) ?? pagePe : pagePe;
+  const roe = netIncome !== undefined && equity ? percentOf(netIncome, equity) ?? pageRoe : pageRoe;
   const website = html.match(/<a[^>]+href=["'](https?:\/\/(?:www\.)?adani\.com[^"']*)["']/i)?.[1] ?? undefined;
   const about = html.match(/id=["']company-info["'][\s\S]{0,5000}?<p[^>]*>([\s\S]*?)<\/p>/i)?.[1];
   const history = { revenue: revenueHistory, eps: epsHistory, cashFlow: cfoHistory };
@@ -431,18 +435,18 @@ async function fetchScreenerFallback(symbol: string): Promise<RawFundamentals> {
     price: currentPrice,
     marketCap,
     pe,
-    priceToBook: currentPrice && bookValue ? currentPrice / bookValue : undefined,
+    priceToBook: currentPrice && bookValue ? quotient(currentPrice, bookValue) ?? undefined : undefined,
     roe,
     roce,
-    roa: netIncome !== undefined && totalAssets ? (netIncome / totalAssets) * 100 : undefined,
-    debtToEquity: totalDebt !== undefined && equity ? totalDebt / equity : undefined,
-    profitMargin: netIncome !== undefined && revenue ? (netIncome / revenue) * 100 : undefined,
-    operatingMargin: operatingProfit !== undefined && revenue ? (operatingProfit / revenue) * 100 : undefined,
+    roa: netIncome !== undefined && totalAssets ? percentOf(netIncome, totalAssets) ?? undefined : undefined,
+    debtToEquity: totalDebt !== undefined && equity ? quotient(totalDebt, equity) ?? undefined : undefined,
+    profitMargin: netIncome !== undefined && revenue ? percentOf(netIncome, revenue) ?? undefined : undefined,
+    operatingMargin: operatingProfit !== undefined && revenue ? percentOf(operatingProfit, revenue) ?? undefined : undefined,
     revenueGrowth: growthCagr(revenueHistory, 3) ?? growthCagr(revenueHistory, 5),
     earningsGrowth: growthCagr(netIncomeHistory, 3) ?? growthCagr(epsHistory, 3),
     operatingCashFlow,
     freeCashFlow,
-    capitalExpenditures: operatingCashFlow !== undefined && freeCashFlow !== undefined ? Math.max(0, operatingCashFlow - freeCashFlow) : undefined,
+    capitalExpenditures: operatingCashFlow !== undefined && freeCashFlow !== undefined ? Math.max(0, difference(operatingCashFlow, freeCashFlow) ?? 0) : undefined,
     netIncome,
     eps,
     sharesOutstanding,
@@ -450,7 +454,7 @@ async function fetchScreenerFallback(symbol: string): Promise<RawFundamentals> {
     totalAssets,
     totalEquity: equity,
     interestExpense,
-    interestCoverage: operatingProfit !== undefined && interestExpense && interestExpense > 0 ? operatingProfit / interestExpense : undefined,
+    interestCoverage: operatingProfit !== undefined && interestExpense && interestExpense > 0 ? quotient(operatingProfit, interestExpense) ?? undefined : undefined,
     promoterHolding,
     bookValue,
     companyName: html.match(/<h1[^>]*>([^<]+)<\/h1>/i)?.[1]?.trim(),
@@ -593,7 +597,7 @@ async function fetchSecCompanyFacts(symbol: string): Promise<RawFundamentals> {
     revenue: revenue.at(-1)?.value,
     eps: eps.at(-1)?.value,
     operatingCashFlow: latestCfo,
-    freeCashFlow: latestCfo !== undefined && latestCapex !== undefined ? latestCfo - Math.abs(latestCapex) : undefined,
+    freeCashFlow: latestCfo !== undefined && latestCapex !== undefined ? difference(latestCfo, Math.abs(latestCapex)) ?? undefined : undefined,
     capitalExpenditures: latestCapex,
     netIncome: netIncome.at(-1)?.value,
     totalAssets: assets.at(-1)?.value,
@@ -680,8 +684,18 @@ function addMetric(metrics: Record<string, Metric>, key: string, value: number |
 }
 
 function clamp(value: number, min = 0, max = 100) { return Math.max(min, Math.min(max, value)); }
-function scoreHigher(value: number, low: number, high: number) { return clamp(((value - low) / (high - low)) * 100); }
-function scoreLower(value: number, good: number, bad: number) { return clamp(((bad - value) / (bad - good)) * 100); }
+// Both scorers guard the degenerate zero-width band explicitly instead of
+// producing Infinity/NaN from a divide-by-zero, and treat non-finite inputs as 0.
+function scoreHigher(value: number, low: number, high: number) {
+  if (!Number.isFinite(value)) return 0;
+  if (high === low) return value >= high ? 100 : 0;
+  return clamp(percentOf(value - low, high - low) ?? 0);
+}
+function scoreLower(value: number, good: number, bad: number) {
+  if (!Number.isFinite(value)) return 0;
+  if (bad === good) return value <= good ? 100 : 0;
+  return clamp(percentOf(bad - value, bad - good) ?? 0);
+}
 
 export function buildAnalysis(requestedSymbol: string, resolvedSymbol: string, redirect: FundamentalAnalysis["redirect"], raw: RawFundamentals, sources: FundamentalAnalysis["sources"]): FundamentalAnalysis {
   const inferredIndian = resolvedSymbol.endsWith(".NS") || resolvedSymbol.endsWith(".BO") || ["RELIANCE", "TCS", "INFY", "TATAMOTORS", "TMCV", "TMPV", "TATAPOWER", "ADANIENT", "ADANIPORTS", "JIOFIN", "HDFCBANK", "APOLLOHOSP", "LT"].includes(resolvedSymbol);
@@ -693,7 +707,7 @@ export function buildAnalysis(requestedSymbol: string, resolvedSymbol: string, r
   const country = raw.country ?? exchangeCountry[exchange] ?? (exchange === "NSE" || exchange === "BSE" ? "India" : "Country unavailable");
   const marketKey = country === "India" ? "IN" : Object.entries({ "United States": "US", "United Kingdom": "GB", Canada: "CA", Australia: "AU", Japan: "JP", Singapore: "SG", "Hong Kong": "HK", Germany: "DE", France: "FR" }).find(([label]) => label === country)?.[1] ?? "UNKNOWN";
   const marketCapConvention = getMarketCapConvention(marketKey);
-  const marketCapValue = raw.marketCap === undefined ? null : country === "India" && raw.marketCap > 1_000_000 ? raw.marketCap / 10_000_000 : raw.marketCap;
+  const marketCapValue = raw.marketCap === undefined ? null : country === "India" && raw.marketCap > 1_000_000 ? quotient(raw.marketCap, 10_000_000) ?? raw.marketCap : raw.marketCap;
   const marketCapBand = classifyMarketCap(marketKey, marketCapValue);
   const metrics: Record<string, Metric> = {};
   const history = raw.history ?? emptyHistoricalTrends();
@@ -725,11 +739,11 @@ export function buildAnalysis(requestedSymbol: string, resolvedSymbol: string, r
     history,
   });
   const latestReportedCfo = history.cashFlow.at(-1)?.value;
-  const cfo = raw.operatingCashFlow ?? latestReportedCfo ?? (raw.netIncome !== undefined ? raw.netIncome * 0.9 : undefined);
+  const cfo = raw.operatingCashFlow ?? latestReportedCfo ?? (raw.netIncome !== undefined ? product(raw.netIncome, 0.9) ?? undefined : undefined);
   const cfoBasis: Exclude<Basis, "unavailable"> = raw.operatingCashFlow !== undefined ? "reported" : latestReportedCfo !== undefined ? "reported" : raw.netIncome !== undefined ? "derived" : "estimated";
-  const fcf = raw.freeCashFlow ?? (cfo !== undefined && raw.capitalExpenditures !== undefined ? cfo - Math.abs(raw.capitalExpenditures) : undefined);
+  const fcf = raw.freeCashFlow ?? (cfo !== undefined && raw.capitalExpenditures !== undefined ? difference(cfo, Math.abs(raw.capitalExpenditures)) ?? undefined : undefined);
   const fcfBasis: Exclude<Basis, "unavailable"> = raw.freeCashFlow !== undefined ? "reported" : fcf !== undefined ? "derived" : "estimated";
-  const cashConversion = cfo !== undefined && raw.netIncome !== undefined && raw.netIncome !== 0 ? cfo / raw.netIncome : undefined;
+  const cashConversion = cfo !== undefined && raw.netIncome !== undefined && raw.netIncome !== 0 ? quotient(cfo, raw.netIncome) ?? undefined : undefined;
   addMetric(metrics, "roe", raw.roe, baseline.roe!, "Primary/secondary/web sources");
   addMetric(metrics, "roa", raw.roa, baseline.roa!, "Primary/secondary/web sources");
   addMetric(metrics, "debtToEquity", raw.debtToEquity, baseline.debtToEquity!, "Primary/secondary/web sources");
@@ -871,8 +885,8 @@ export function buildAnalysis(requestedSymbol: string, resolvedSymbol: string, r
   const sma20 = sma(20);
   const sma50 = sma(50);
   const currentPrice = price;
-  const oneYearChangePct = priceSeries.length >= 2 && priceSeries[0] !== 0 ? ((priceSeries.at(-1)! - priceSeries[0]) / priceSeries[0]) * 100 : null;
-  const rsi14 = priceSeries.length >= 15 ? (() => { const changes = priceSeries.slice(-15).map((value, index, values) => index === 0 ? 0 : value - values[index - 1]); const gains = changes.slice(1).filter((change) => change > 0); const losses = changes.slice(1).filter((change) => change < 0).map((change) => Math.abs(change)); const avgGain = gains.reduce((sum, value) => sum + value, 0) / 14; const avgLoss = losses.reduce((sum, value) => sum + value, 0) / 14; return avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss)); })() : null;
+  const oneYearChangePct = priceSeries.length >= 2 ? percentChange(priceSeries[0], priceSeries.at(-1)!) : null;
+  const rsi14 = priceSeries.length >= 15 ? (() => { const changes = priceSeries.slice(-15).map((value, index, values) => index === 0 ? 0 : difference(value, values[index - 1]) ?? 0); const gains = changes.slice(1).filter((change) => change > 0); const losses = changes.slice(1).filter((change) => change < 0).map((change) => Math.abs(change)); const avgGain = (sumValid(gains) ?? 0) / 14; const avgLoss = (sumValid(losses) ?? 0) / 14; if (avgLoss === 0) return 100; const relativeStrength = quotient(avgGain, avgLoss); if (relativeStrength === null) return 100; return difference(100, quotient(100, 1 + relativeStrength) ?? 0) ?? 100; })() : null;
   const technicalTrend: FundamentalAnalysis["stockAnalysis"]["technical"]["trend"] = currentPrice === null || sma20 === null ? "Unavailable" : currentPrice > sma20 && (sma50 === null || currentPrice > sma50) ? "Bullish" : currentPrice < sma20 && (sma50 === null || currentPrice < sma50) ? "Bearish" : "Neutral";
   const technicalBasis: Basis = priceSeries.length >= 2 ? "reported" : "unavailable";
   const stockAnalysis: FundamentalAnalysis["stockAnalysis"] = {

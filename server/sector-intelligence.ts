@@ -3,6 +3,7 @@ import { fetchIndianOpenStock, normalizeIndianOpenQuote } from "./indian-open-ap
 import { fetchNseInstitutionalFlows, type FlowRange } from "./nse-flows";
 import { verifiedResearchUniverse } from "./research-signals";
 import { fetchSecurityWiseFlows, securityWiseFlowForSymbol } from "./security-wise-flows";
+import { percentOf } from "../lib/precision";
 
 export type SectorSort = "score" | "fii" | "dii" | "marketCap" | "changePercent" | "pe";
 
@@ -35,7 +36,7 @@ function numeric(value: unknown): number | null { return typeof value === "numbe
 function scoreFor(report: Awaited<ReturnType<typeof analyzeFundamentals>>) { return numeric(report.score); }
 function categoryMetric(report: Awaited<ReturnType<typeof analyzeFundamentals>>, pattern: RegExp) {
   const category = report.categories.find((item) => pattern.test(`${item.key} ${item.label}`));
-  return category ? clamp((category.score / Math.max(category.max, 1)) * 100) : null;
+  return category ? clamp(percentOf(category.score, Math.max(category.max, 1)) ?? 0) : null;
 }
 
 export async function getSectorConstituents(sector: string, options: { sort?: SectorSort; direction?: "asc" | "desc"; range?: FlowRange; limit?: number } = {}) {
