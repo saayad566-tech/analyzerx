@@ -330,11 +330,29 @@ export function indexSymbolsForMarket(iso2: string | null | undefined): string[]
   return isSupportedMarket(key) ? MARKET_INDEX_SYMBOLS[key] ?? [] : [];
 }
 
-/** Every country whose name or ISO2 matches a query, for search and disambiguation. */
+/**
+ * Search countries by ISO2 or name, ranked so an exact code wins.
+ *
+ * Ranking matters: a plain substring match returned Australia for the query "US"
+ * (it contains "us") ahead of the United States. Order is: exact ISO2, ISO2 prefix,
+ * name prefix, then name substring.
+ */
 export function searchCountries(query: string, limit = 8): CountryRecord[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];
+  const rank = (country: CountryRecord): number => {
+    const iso2 = country.iso2.toLowerCase();
+    const name = country.name.toLowerCase();
+    if (iso2 === needle) return 0;
+    if (iso2.startsWith(needle)) return 1;
+    if (name.startsWith(needle)) return 2;
+    if (name.includes(needle)) return 3;
+    return -1;
+  };
   return COUNTRY_REGISTRY
-    .filter((country) => country.iso2.toLowerCase().startsWith(needle) || country.name.toLowerCase().includes(needle))
-    .slice(0, Math.max(0, limit));
+    .map((country) => ({ country, score: rank(country) }))
+    .filter((entry) => entry.score >= 0)
+    .sort((a, b) => a.score - b.score || a.country.name.localeCompare(b.country.name))
+    .slice(0, Math.max(0, limit))
+    .map((entry) => entry.country);
 }
