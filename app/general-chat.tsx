@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenContainer } from "@/components/screen-container";
+import { haptics } from "@/lib/haptics";
 import { trpc } from "@/lib/trpc";
 import { clearGeneralChatHistory, loadGeneralChatHistory, loadMarketChatRuntimeMode, saveGeneralChatHistory, type LocalChatMessage, type MarketChatRuntimeMode } from "@/lib/local-preferences";
 import { buildLocalGeneralPrompt, resolveMarketChatEngine, sanitizeLocalOutput, trimLocalHistory } from "@/lib/market-chat-runtime";
@@ -65,16 +66,16 @@ export default function GeneralChatScreen() {
 
   return (
     <ScreenContainer edges={["top", "left", "right"]} containerClassName="bg-background" className="px-4">
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} style={styles.iconButton} accessibilityLabel="Go back"><Ionicons name="chevron-back" size={22} color={colors.text} /></Pressable>
           <View style={styles.headerCopy}><Text style={styles.eyebrow}>ANALYZERX GENERAL CHAT</Text><Text style={styles.title}>Ask anything</Text></View>
           <Pressable onPress={() => void clearHistory()} style={styles.iconButton} accessibilityLabel="Clear general chat"><Ionicons name="trash-outline" size={20} color={colors.muted} /></Pressable>
         </View>
         <View style={styles.banner}><Text style={styles.bannerTitle}>General-purpose assistant</Text><Text style={styles.bannerText}>Coding, writing, explanations, planning, and everyday questions. Live market facts still require verified market evidence.</Text><Text style={[styles.engine, { color: engine === "local" ? colors.teal : colors.amber }]}>{engine === "local" ? `Local · ${activeModel ?? "model ready"}` : "Connected · hosted AI"}</Text></View>
-        <FlatList data={messages} keyExtractor={(item) => item.id} contentContainerStyle={styles.list} renderItem={({ item }) => <View style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.assistantBubble]}><Text style={styles.role}>{item.role === "user" ? "YOU" : "ANALYZERX"}</Text><Text style={[styles.message, item.error && { color: colors.coral }]}>{item.content}</Text></View>} ListEmptyComponent={<Text style={styles.empty}>Start with any question. AnalyzerX will keep this conversation separate from your market research history.</Text>} />
+        <FlatList data={messages} keyExtractor={(item) => item.id} contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled" onScrollBeginDrag={Keyboard.dismiss} renderItem={({ item }) => <View style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.assistantBubble]}><Text style={styles.role}>{item.role === "user" ? "YOU" : "ANALYZERX"}</Text><Text style={[styles.message, item.error && { color: colors.coral }]}>{item.content}</Text></View>} ListEmptyComponent={<Text style={styles.empty}>Start with any question. AnalyzerX will keep this conversation separate from your market research history.</Text>} />
         {loading && <View style={styles.loading}><ActivityIndicator color={colors.amber} /><Text style={styles.loadingText}>Thinking with {engine === "local" ? "Local AI" : "Connected AI"}…</Text></View>}
-        <View style={styles.composer}><TextInput value={draft} onChangeText={setDraft} placeholder="Ask about coding, writing, ideas, or anything else…" placeholderTextColor={colors.muted} style={styles.input} multiline maxLength={2_000} editable={!loading} onSubmitEditing={() => void sendMessage()} returnKeyType="send" /><Pressable onPress={() => void sendMessage()} disabled={!draft.trim() || loading} style={[styles.send, (!draft.trim() || loading) && styles.disabled]}><Ionicons name="arrow-up" size={22} color={colors.background} /></Pressable></View>
+        <View style={styles.composer}><TextInput value={draft} onChangeText={setDraft} placeholder="Ask about coding, writing, ideas, or anything else…" placeholderTextColor={colors.muted} style={styles.input} multiline maxLength={2_000} editable={!loading} onSubmitEditing={() => void sendMessage()} returnKeyType="send" /><Pressable onPress={() => { haptics.press(); void sendMessage(); }} disabled={!draft.trim() || loading} style={[styles.send, (!draft.trim() || loading) && styles.disabled]}><Ionicons name="arrow-up" size={22} color={colors.background} /></Pressable></View>
       </KeyboardAvoidingView>
     </ScreenContainer>
   );

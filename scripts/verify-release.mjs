@@ -129,6 +129,29 @@ try {
   record("ci", "CI workflow version identity", "FAIL", `cannot read .github/workflows/android-apk.yml: ${error.message}`);
 }
 
+/* ---------- 6b. Android project derives the version from the source ---------- */
+// The APK's own versionName/versionCode come from android/app/build.gradle, not
+// from app.config.ts, because CI builds with Gradle directly (no expo prebuild).
+// If this file pins a literal version, the shipped artifact drifts from the
+// release identity — which is exactly what shipped 1.4.0 as "3.2.0".
+try {
+  const gradle = readText("android/app/build.gradle");
+  const referencesSource = gradle.includes("release-version.json");
+  const hardcodedName = /versionName\s+["']\d+\.\d+\.\d+/.test(gradle);
+  const hardcodedCode = /versionCode\s+\d+/.test(gradle);
+  if (referencesSource && !hardcodedName && !hardcodedCode) {
+    record("android-version", "Android project version identity", "PASS", "android/app/build.gradle reads versionName/versionCode from release-version.json");
+  } else {
+    record("android-version", "Android project version identity", "FAIL", [
+      referencesSource ? null : "build.gradle does not read release-version.json",
+      hardcodedName ? "build.gradle hardcodes a versionName literal" : null,
+      hardcodedCode ? "build.gradle hardcodes a versionCode literal" : null,
+    ].filter(Boolean).join("; "));
+  }
+} catch (error) {
+  record("android-version", "Android project version identity", "NOT VERIFIED", `cannot read android/app/build.gradle: ${error.message}`);
+}
+
 /* ---------- 7. artifact + checksum ---------- */
 const defaultArtifact = "android/app/build/outputs/apk/release/app-release.apk";
 const artifactRel = argValue("--artifact") ?? (exists(defaultArtifact) ? defaultArtifact : null);

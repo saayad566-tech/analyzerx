@@ -81,6 +81,13 @@ def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBu
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+// Release identity comes from the single source of truth at the repository root.
+// The android/ project is committed and CI builds with Gradle directly (no
+// `expo prebuild`), so app.config.ts never reaches the artifact. Reading
+// release-version.json here keeps the APK's own versionName/versionCode in step
+// with the release metadata instead of pinning them in this file.
+def releaseIdentity = new groovy.json.JsonSlurper().parse(rootProject.file('../release-version.json'))
+
 android {
     ndkVersion rootProject.ext.ndkVersion
 
@@ -92,8 +99,8 @@ android {
         applicationId 'com.app.marketeventintelligence'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1400
-        versionName "1.4.0"
+        versionCode releaseIdentity.androidVersionCode
+        versionName releaseIdentity.version
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
