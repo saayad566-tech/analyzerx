@@ -64,7 +64,7 @@ export default function GeneralChatScreen() {
   async function clearHistory() { await clearGeneralChatHistory(); setMessages([]); }
 
   return (
-    <ScreenContainer edges={["top", "left", "right"]} containerClassName="bg-background" className="px-4">
+    <ScreenContainer edges={["top", "left", "right"]} containerClassName="bg-background" className="px-4" keyboardAware={false}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} style={styles.iconButton} accessibilityLabel="Go back"><Ionicons name="chevron-back" size={22} color={colors.text} /></Pressable>

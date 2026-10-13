@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { KeyboardAwareScrollView } from "@/components/keyboard-aware-scroll-view";
 import { MarketScopeChip } from "@/components/market-scope-chip";
 import { useMarketContext } from "@/lib/market-context";
 import { trpc } from "@/lib/trpc";
@@ -66,7 +67,7 @@ export default function ResearchDeskScreen() {
   const exportMarkdown = async () => { if (!activeRunId) return; const response = await exportReport.refetch(); if (response.data?.content && typeof window !== "undefined") { const blob = new Blob([response.data.content], { type: "text/markdown" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = response.data.fileName; anchor.click(); URL.revokeObjectURL(url); } };
 
   return <ScreenContainer className="px-5" containerClassName="bg-background">
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+    <KeyboardAwareScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <View><Text style={styles.eyebrow}>MULTI-AGENT RESEARCH DESK</Text><Text style={styles.title}>Research Desk</Text><Text style={styles.subtitle}>Specialist lanes review the same evidence, then expose coverage and gaps before synthesis.</Text></View>
         <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.close, pressed && styles.pressed]}><Ionicons name="close" size={19} color="#F4F7FB" /></Pressable>
@@ -93,7 +94,7 @@ export default function ResearchDeskScreen() {
         <Text style={styles.sectionTitle}>Evidence index</Text><View style={styles.card}>{result.evidence.length ? result.evidence.slice(0, 12).map((item) => { const navigation = getResearchEvidenceNavigation(item); const open = () => { if (navigation.type === "route") router.push(navigation.href); else if (navigation.type === "external") void Linking.openURL(navigation.url); }; return <Pressable key={item.id} onPress={navigation.type === "unavailable" ? undefined : open} disabled={navigation.type === "unavailable"} style={({ pressed }) => [styles.evidenceRow, pressed && styles.pressed, navigation.type === "unavailable" && styles.evidenceDisabled]}><View style={styles.evidenceBadge}><Text style={styles.evidenceBadgeText}>{item.kind.slice(0, 3).toUpperCase()}</Text></View><View style={styles.agentCopy}><Text style={styles.agentName}>{item.label}</Text><Text style={styles.agentMeta}>{item.source} · {item.freshness}</Text><Text style={styles.evidenceAction}>{navigation.label}</Text></View><Ionicons name={navigation.type === "external" ? "open-outline" : navigation.type === "route" ? "chevron-forward" : "remove-circle-outline"} size={15} color={navigation.type === "unavailable" ? muted : gold} /></Pressable>; }) : <Text style={styles.empty}>No evidence records were returned for this run.</Text>}</View>
         {result.limitations.length ? <Text style={styles.disclaimer}>{result.limitations.join(" ")}</Text> : null}
       </> : <View style={styles.emptyHero}><Ionicons name="layers-outline" size={27} color={gold} /><Text style={styles.emptyTitle}>Run a research desk review</Text><Text style={styles.emptyBody}>The first framework slice uses deterministic, source-backed specialist lanes. It does not claim coverage when filings, flows, quotes, or macro data are unavailable.</Text></View>}
-    </ScrollView>
+    </KeyboardAwareScrollView>
   </ScreenContainer>;
 }
 

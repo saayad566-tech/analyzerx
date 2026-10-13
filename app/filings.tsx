@@ -1,7 +1,8 @@
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { router } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
+import { KeyboardAwareScrollView } from "@/components/keyboard-aware-scroll-view";
 import { useMarketContext } from "@/lib/market-context";
 import { trpc } from "@/lib/trpc";
 import {
@@ -211,7 +212,7 @@ export default function FilingsScreen() {
 
   return (
     <ScreenContainer>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Pressable onPress={() => router.back()} style={styles.backRow} accessibilityRole="button" accessibilityLabel="Go back">
           <Text style={styles.backText}>← Back</Text>
         </Pressable>
@@ -504,7 +505,7 @@ export default function FilingsScreen() {
             </Section>
           </>
         )}
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </ScreenContainer>
   );
 }

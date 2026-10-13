@@ -5,6 +5,7 @@ import * as Sharing from "expo-sharing";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
+import { KeyboardAwareScrollView } from "@/components/keyboard-aware-scroll-view";
 import { FundamentalTrendChart } from "@/components/fundamental-trend-chart";
 import { ValuationRangeChart } from "@/components/valuation-range-chart";
 import { passesResearchFilter, type FilterKey, type ScreenerCandidate } from "@/lib/screener";
@@ -237,7 +238,7 @@ export default function ScreenerScreen() {
 
   return (
     <ScreenContainer className="px-5">
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+      <KeyboardAwareScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <View style={styles.headerRow}><View><Text style={styles.eyebrow}>LONG-HORIZON RESEARCH</Text><Text style={styles.title}>Multibagger</Text></View><Pressable style={styles.iconButton} onPress={() => setShowOnlyEvidence((value) => !value)}><Ionicons name={showOnlyEvidence ? "funnel" : "funnel-outline"} size={18} color="#F4F7FB" /></Pressable></View><MarketScopeChip />
         <Text style={styles.subtitle}>A disciplined watch-list builder for multi-year compounder research—not a return forecast or investment recommendation.</Text>
 
@@ -281,7 +282,7 @@ export default function ScreenerScreen() {
 
         <View style={styles.redFlagCard}><View style={styles.redFlagHeader}><Ionicons name="warning-outline" size={17} color="#FB7185" /><Text style={styles.redFlagTitle}>Red-flag exclusion checklist</Text></View><Text style={styles.redFlagText}>Exclude or deeply investigate promoter pledging, frequent dilution, profit/CFO divergence, related-party leakage, and valuations that already assume years of perfect execution.</Text></View>
         <Text style={styles.footerNote}>Data status: the current screen uses research context already present in the app. Stock-level financial metrics are intentionally shown as unavailable until a verified financial-data feed is connected.</Text>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </ScreenContainer>
   );
 }

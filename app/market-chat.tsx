@@ -210,7 +210,7 @@ export default function MarketChatScreen() {
   async function clearHistory() { await clearMarketChatHistory(); setMessages([]); }
 
   return (
-    <ScreenContainer edges={["top", "left", "right"]} containerClassName="bg-background" className="px-4">
+    <ScreenContainer edges={["top", "left", "right"]} containerClassName="bg-background" className="px-4" keyboardAware={false}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}>
                   <View style={styles.header}>
 

@@ -24,6 +24,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-runtime";
 import { WorkspaceSync } from "@/components/workspace-sync";
 import { MarketProvider } from "@/lib/market-context";
+import { AppLifecycleProvider } from "@/lib/app-lifecycle";
 import { resolveBackAction, resolveRootBackFeedback } from "@/lib/navigation-back";
 import { AssistantModeGate } from "@/components/assistant-mode-gate";
 import { RuntimeReadinessProbe } from "@/components/runtime-readiness-probe";
@@ -147,6 +148,7 @@ export default function RootLayout() {
 
   const content = (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      <AppLifecycleProvider>
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
         <QueryClientProvider client={queryClient}>
           <MarketProvider>
@@ -172,6 +174,7 @@ export default function RootLayout() {
           </MarketProvider>
         </QueryClientProvider>
       </trpc.Provider>
+      </AppLifecycleProvider>
     </GestureHandlerRootView>
   );
 

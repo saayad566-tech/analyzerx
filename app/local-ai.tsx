@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { KeyboardAwareScrollView } from "@/components/keyboard-aware-scroll-view";
 import { OperationProgressCard } from "@/components/operation-progress-card";
 import {
   LOCAL_AI_MODELS,
@@ -113,7 +114,7 @@ export default function LocalAIScreen() {
 
   return (
     <ScreenContainer className="px-4" edges={["top", "left", "right"]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+      <KeyboardAwareScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]} accessibilityLabel="Go back"><Ionicons name="chevron-back" size={20} color={ink} /></Pressable>
           <View style={styles.headerCopy}><Text style={styles.eyebrow}>LOCAL AI</Text><Text style={styles.title}>Use your own hardware</Text></View>
@@ -151,7 +152,7 @@ export default function LocalAIScreen() {
           </View>;
         })}
         <View style={styles.note}><Ionicons name="shield-checkmark-outline" size={17} color={teal} /><Text style={styles.noteText}>The main market workflows remain usable without local hardware. Auto mode uses Connected Assistant when native Local AI is unavailable; Local mode stays explicit and never pretends that an unverified model is loaded. Android native builds support load, stream, cancel, and unload only after the runtime and device gates pass.</Text></View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </ScreenContainer>
   );
 }

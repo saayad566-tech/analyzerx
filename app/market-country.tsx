@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { BackHandler, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { BackHandler, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenContainer } from "@/components/screen-container";
+import { KeyboardAwareScrollView } from "@/components/keyboard-aware-scroll-view";
 import { MARKET_PROFILES, type MarketId } from "@/lib/market-regions";
 import { useMarketContext } from "@/lib/market-context";
 import { trpc } from "@/lib/trpc";
@@ -32,7 +33,7 @@ export default function MarketCountryScreen() {
   const healthColor = healthStatus === "live" ? teal : healthStatus === "delayed" ? amber : muted;
   const filtered = useMemo(() => MARKET_PROFILES.filter((item) => `${item.country} ${item.region} ${item.id} ${item.exchanges.join(" ")}`.toLowerCase().includes(query.trim().toLowerCase())), [query]);
   return <ScreenContainer containerClassName="bg-background" className="px-5" edges={["top", "left", "right", "bottom"]}>
-    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <KeyboardAwareScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.header}><Pressable onPress={() => marketChanged ? router.replace("/(tabs)") : router.back()} style={styles.backButton} accessibilityLabel="Go back"><Ionicons name="chevron-back" size={20} color={ink} /></Pressable><View style={styles.headerCopy}><Text style={styles.eyebrow}>SETTINGS / MARKET SCOPE</Text><Text style={styles.title}>Market & Country</Text></View></View>
       <View style={styles.hero}><View style={styles.heroIcon}><Ionicons name="globe-outline" size={23} color={amber} /></View><View style={styles.heroCopy}><Text style={styles.heroTitle}>Choose your primary market</Text><Text style={styles.heroBody}>India remains the default. Switching the market changes discovery, news, research, alerts, and source context; it does not delete existing watchlists or reports.</Text></View></View>
       <View style={styles.currentCard}><View style={styles.currentCopy}><Text style={styles.currentLabel}>CURRENT MARKET</Text><Text style={styles.currentTitle}>{market.country} · {market.exchanges.join(" / ")}</Text><Text style={styles.currentMeta}>{market.currency} · {market.timezone} · {market.coverage.toUpperCase()} COVERAGE</Text></View><View style={[styles.currentPill, { borderColor: market.coverage === "deep" ? teal : amber }]}><Text style={[styles.currentPillText, { color: market.coverage === "deep" ? teal : amber }]}>{marketId}</Text></View></View>
@@ -44,7 +45,7 @@ export default function MarketCountryScreen() {
       {!filtered.length ? <View style={styles.empty}><Ionicons name="search-outline" size={21} color={muted} /><Text style={styles.emptyTitle}>No market profile found</Text><Text style={styles.emptyBody}>Try a country name, ISO code, or exchange.</Text></View> : null}
       <Pressable onPress={() => router.replace("/(tabs)")} style={({ pressed }) => [styles.continueButton, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={`Continue with ${market.country} market`}><Ionicons name="checkmark-circle-outline" size={18} color="#09111F" /><Text style={styles.continueText}>Continue to AnalyzerX with {market.country}</Text></Pressable>
       <View style={styles.footer}><Ionicons name="shield-checkmark-outline" size={16} color={teal} /><Text style={styles.footerText}>Country expansion is source-gated. AnalyzerX will show partial, delayed, or unavailable states instead of inventing regional coverage.</Text></View>
-    </ScrollView>
+    </KeyboardAwareScrollView>
   </ScreenContainer>;
 }
 
