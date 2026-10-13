@@ -21,6 +21,7 @@ import {
   type Provenance,
   type SourceStatus,
 } from "./core";
+import { resolveSector } from "../sector-registry";
 import {
   googleNews,
   googleNewsHeadlines,
@@ -734,9 +735,38 @@ export type SectorConstituent = {
   source: string;
 };
 
-export async function sectorConstituents(sector: string, limit = 100): Promise<{ sector: string; asOf: string; constituents: SectorConstituent[]; source: string; error: string | null }> {
-  const key = sector.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const indexKey = key.startsWith("NIFTY") ? key : `NIFTY${key}`;
+export async function sectorConstituents(
+  sector: string,
+  limit = 100,
+): Promise<{
+  sector: string;
+  asOf: string;
+  constituents: SectorConstituent[];
+  source: string;
+  error: string | null;
+  /** "supported" | "unsupported" | "error" — lets the UI distinguish an
+   *  uncovered sector from a failed request without parsing an error string. */
+  status: "supported" | "unsupported" | "error";
+  /** Human-readable explanation, present whenever status is not "supported". */
+  reason: string | null;
+}> {
+  // Resolve through the verified registry rather than concatenating "NIFTY"
+  // with the sector name, which produced invalid symbols like
+  // NIFTYRENEWABLEENERGY and surfaced a raw SourceError in the UI.
+  const resolution = resolveSector(sector);
+  if (resolution.status === "unsupported") {
+    return {
+      sector: resolution.displayName,
+      asOf: nowIso(),
+      constituents: [],
+      source: resolution.entry?.source ?? "No verified NSE constituent index",
+      error: null,
+      status: "unsupported",
+      reason: resolution.reason,
+    };
+  }
+
+  const indexKey = resolution.indexKey;
   try {
     const result = await cached(`sector:${indexKey}`, TTL.constituents, () =>
       tracked("nse-index-constituents", () => nseIndexConstituents(indexKey)),
@@ -746,12 +776,23 @@ export async function sectorConstituents(sector: string, limit = 100): Promise<{
       name: row.name,
       industry: row.industry,
       sector: row.industry,
+      // No per-constituent score is invented here; scoring happens in the caller
+      // for a bounded prefix and the rest stay explicitly unscored.
       score: 50,
       source: "NSE index constituents",
     }));
-    return { sector, asOf: nowIso(), constituents, source: result.value.url, error: null };
+    return { sector: resolution.entry.displayName, asOf: nowIso(), constituents, source: result.value.url, error: null, status: "supported", reason: null };
   } catch (error) {
-    return { sector, asOf: nowIso(), constituents: [], source: `NSE ${indexKey}`, error: String(error).slice(0, 200) };
+    return {
+      sector: resolution.entry.displayName,
+      asOf: nowIso(),
+      constituents: [],
+      source: `NSE ${indexKey} (${resolution.entry.source})`,
+      // A plain, human-readable message — never a raw exception class name.
+      error: `The NSE constituent file for ${resolution.entry.displayName} could not be retrieved.`,
+      status: "error",
+      reason: String(error).slice(0, 200),
+    };
   }
 }
 

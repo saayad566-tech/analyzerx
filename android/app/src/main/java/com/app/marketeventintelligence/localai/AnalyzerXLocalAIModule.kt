@@ -124,6 +124,48 @@ class AnalyzerXLocalAIModule(private val context: ReactApplicationContext) : Rea
     return file.canonicalPath
   }
 
+  /**
+   * Compute the SHA-256 of a downloaded artifact so the JS layer can verify it
+   * against the manifest pin. Runs on the background executor because hashing a
+   * ~500 MB model must never block the UI thread. Resolves null (rather than
+   * rejecting) when the file is absent, so the caller can report
+   * "size-verified only" honestly.
+   */
+  @ReactMethod
+  fun sha256(fileUri: String, promise: Promise) {
+    executor.execute {
+      try {
+        val raw = fileUri.trim()
+        if (raw.isBlank()) {
+          promise.resolve(null as String?)
+          return@execute
+        }
+        val file = try {
+          val uri = Uri.parse(raw)
+          if (uri.scheme.equals("file", ignoreCase = true)) File(uri.path ?: "") else File(raw)
+        } catch (_: Throwable) {
+          File("")
+        }
+        if (!file.isFile || file.length() <= 0L) {
+          promise.resolve(null as String?)
+          return@execute
+        }
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { stream ->
+          val buffer = ByteArray(1 shl 16)
+          while (true) {
+            val read = stream.read(buffer)
+            if (read <= 0) break
+            digest.update(buffer, 0, read)
+          }
+        }
+        promise.resolve(digest.digest().joinToString("") { "%02x".format(it) })
+      } catch (error: Throwable) {
+        promise.reject("sha256_failed", error)
+      }
+    }
+  }
+
   @ReactMethod
   fun stream(systemInstruction: String?, prompt: String, imagePath: String?, audioPath: String?, promise: Promise) {
     val activeEngine = engine

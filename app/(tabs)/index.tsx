@@ -22,6 +22,7 @@ import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
 import { scanDeepResearchDetailed } from "@/lib/deep-research";
 import { getDeviceTrackerAvailability } from "@/lib/device-tracker-policy";
+import { deriveTrackerState, trackerAutomationClaim } from "@/lib/tracker-state";
 import {
   filterAndSortArchiveArticles,
   type ArchiveSentiment,
@@ -398,6 +399,42 @@ export default function LiveEventsScreen() {
     refetchInterval: 1_000,
     retry: false,
   });
+  // The provider registry is the single source of truth for how many news
+  // providers are actually configured — the UI must not guess this number.
+  const providerList = trpc.providers.list.useQuery(undefined, {
+    staleTime: 300_000,
+    retry: false,
+  });
+  const newsProvidersConfigured = useMemo(
+    () =>
+      (providerList.data ?? []).filter(
+        (provider) =>
+          provider.domain === "news" &&
+          provider.status === "configured" &&
+          provider.enabled !== false,
+      ).length,
+    [providerList.data],
+  );
+  // ONE state drives every badge, label and count on the tracker panel, so the
+  // panel can no longer say "automatic publication is active" and "0 providers
+  // configured" at the same time.
+  const trackerState = useMemo(
+    () =>
+      deriveTrackerState({
+        providersConfigured: newsProvidersConfigured,
+        providersRequired: 1,
+        isChecking: Boolean(newsTrackerStatus.isLoading),
+        lastAttemptAt: newsTrackerStatus.data?.lastAttemptAt ?? null,
+        lastSuccessAt: newsTrackerStatus.data?.lastSuccessAt ?? null,
+        lastError: newsTrackerStatus.data?.lastError ?? null,
+        articlesStored: newsTrackerStatus.data?.articlesStored ?? 0,
+        // An in-app foreground interval is not an always-on service, so the app
+        // must describe itself as on-device/best-effort rather than automated.
+        hasDurableScheduler: false,
+      }),
+    [newsProvidersConfigured, newsTrackerStatus.data, newsTrackerStatus.isLoading],
+  );
+  const trackerToneColor = trackerState.tone === "error" ? coral : trackerState.tone === "warn" ? amber : trackerState.tone === "neutral" ? amber : teal;
   const newsRefresh = trpc.news.refresh.useMutation();
   const flagIrrelevant = trpc.news.flagIrrelevant.useMutation();
   const undoIrrelevant = trpc.news.undoIrrelevant.useMutation();
@@ -1312,27 +1349,16 @@ export default function LiveEventsScreen() {
               </View>
             </View>
             <View style={styles.liveSummary}>
-              <View
-                style={[
-                  styles.livePulse,
-                  {
-                    backgroundColor: newsTrackerStatus.data?.lastError
-                      ? coral
-                      : teal,
-                  },
-                ]}
-              />
+              <View style={[styles.livePulse, { backgroundColor: trackerToneColor }]} />
               <Text style={styles.liveText}>
-                {newsTrackerStatus.data?.lastError
-                  ? "TRACKER DEGRADED"
-                  : "LIVE TRACKER"}
+                {trackerState.label.toUpperCase()}
               </Text>
               <Text style={styles.liveSubtext}>
                 {newsTrackerStatus.data?.lastSuccessAt
-                  ? `Last collection ${new Date(newsTrackerStatus.data.lastSuccessAt).toLocaleTimeString()}`
+                  ? `Last successful check ${new Date(newsTrackerStatus.data.lastSuccessAt).toLocaleTimeString()}`
                   : newsTrackerStatus.isLoading
                     ? "Reading collector status"
-                    : "Collection starts automatically on this device"}
+                    : trackerState.description}
               </Text>
               <Ionicons name="chevron-forward" size={16} color="#6E7D92" />
             </View>
@@ -1341,52 +1367,18 @@ export default function LiveEventsScreen() {
                 <View>
                   <Text style={styles.finnhubEyebrow}>ON-DEVICE NEWS TRACKER</Text>
                   <Text style={styles.finnhubTitle}>
-                    {newsTrackerStatus.data
-                      ? newsTrackerStatus.data.articlesStored > 0
-                        ? `Impact-ranked news · ${newsTrackerStatus.data.articlesStored} stored`
-                        : newsTrackerStatus.data.lastError
-                          ? "Collector ran but stored nothing yet"
-                          : "Collector ready · first pass pending"
-                      : newsTrackerStatus.isLoading
-                        ? "Reading collector status"
-                        : "Collector status unavailable"}
+                    {trackerState.label} · {newsProvidersConfigured} provider{newsProvidersConfigured === 1 ? "" : "s"} configured · {newsTrackerStatus.data?.articlesStored ?? 0} stored
                   </Text>
                 </View>
                 <View
                   style={[
                     styles.sourcePill,
-                    newsTrackerStatus.data?.lastError && styles.sourcePillError,
+                    trackerState.tone === "error" && styles.sourcePillError,
                   ]}
                 >
-                  <View
-                    style={[
-                      styles.sourceDot,
-                      {
-                        backgroundColor: newsTrackerStatus.data?.lastError
-                          ? coral
-                          : newsTrackerStatus.data?.running
-                            ? teal
-                            : amber,
-                      },
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.sourceText,
-                      {
-                        color: newsTrackerStatus.data?.lastError
-                          ? coral
-                          : newsTrackerStatus.data?.running
-                            ? teal
-                            : amber,
-                      },
-                    ]}
-                  >
-                    {newsTrackerStatus.data?.lastError
-                      ? "Degraded"
-                      : newsTrackerStatus.data?.running
-                        ? "Online"
-                        : "Checking"}
+                  <View style={[styles.sourceDot, { backgroundColor: trackerToneColor }]} />
+                  <Text style={[styles.sourceText, { color: trackerToneColor }]}>
+                    {trackerState.label}
                   </Text>
                 </View>
               </View>
@@ -1442,10 +1434,7 @@ export default function LiveEventsScreen() {
                 </Pressable>
               </View>
               <Text style={styles.finnhubState}>
-                Automatic collection is active on this device: the app polls the
-                configured providers, deduplicates verified articles, stores new
-                items in the local archive, and raises high-impact alerts when
-                eligible. Nothing is sent to a server.
+                {trackerAutomationClaim(trackerState)} Nothing is sent to a server.
               </Text>
               <Pressable
                 onPress={() => router.push("/filings")}

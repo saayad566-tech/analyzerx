@@ -4,6 +4,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export * from "./local-ai-policy";
+import { verifyModelArtifact, type IntegrityResult } from "./local-ai-integrity";
 import {
   assessLocalAIModel,
   getLocalAIModel,
@@ -23,6 +24,8 @@ export interface LocalAIState {
   downloadedBytes: number;
   progress: number;
   error: string | null;
+  /** Result of the integrity check, when one has been performed. */
+  integrity?: IntegrityResult | null;
 }
 
 export interface LocalAIInputFiles {
@@ -116,14 +119,43 @@ export async function getLocalAIModelState(modelId: LocalAIModelId): Promise<Loc
   const localUri = modelFileUri(model as LocalAIModelManifest & { artifactFile: string });
   const info = await FileSystem.getInfoAsync(localUri);
   const downloadedBytes = info.exists ? info.size ?? 0 : 0;
+  // Size alone is not integrity: a right-length but corrupt file would pass it.
+  // The verdict distinguishes checksum-verified from size-verified-only and is
+  // never overstated.
+  const integrity = info.exists
+    ? verifyModelArtifact({
+        expectedSizeBytes: model.sizeBytes,
+        expectedChecksum: model.artifactChecksum?.value ?? null,
+        actualSizeBytes: downloadedBytes,
+        actualChecksum: await computeArtifactSha256(localUri),
+      })
+    : null;
+  const complete = integrity?.ok === true;
   return {
     modelId,
-    status: downloadedBytes === model.sizeBytes ? "downloaded" : "not_downloaded",
+    status: complete ? "downloaded" : "not_downloaded",
     localUri: info.exists ? localUri : null,
     downloadedBytes,
     progress: model.sizeBytes ? Math.min(1, downloadedBytes / model.sizeBytes) : 0,
-    error: null,
+    error: complete ? null : integrity && integrity.verdict !== "missing" ? integrity.reason : null,
+    integrity,
   };
+}
+
+/**
+ * Compute the artifact SHA-256 through the native bridge when it exposes one.
+ * Returns null when no digest can be computed, so the caller reports
+ * "size-verified only" rather than claiming a verification it did not perform.
+ */
+async function computeArtifactSha256(fileUri: string): Promise<string | null> {
+  const nativeModule = NativeModules.AnalyzerXLocalAI as { sha256?: (path: string) => Promise<string | null> } | undefined;
+  if (typeof nativeModule?.sha256 !== "function") return null;
+  try {
+    const digest = await nativeModule.sha256(fileUri);
+    return typeof digest === "string" && digest.length > 0 ? digest : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function downloadLocalAIModel(
@@ -131,6 +163,8 @@ export async function downloadLocalAIModel(
   onProgress?: (progress: Pick<LocalAIState, "downloadedBytes" | "progress">) => void,
 ): Promise<string> {
   if (Platform.OS !== "android") throw new Error("Local Gemma AI is currently supported only in Android native builds.");
+  // Prevent duplicate downloads when the user taps repeatedly.
+  if (activeDownloads[modelId]) throw new Error("A download for this model is already in progress.");
   const model = assertDownloadableModel(getLocalAIModel(modelId));
   const device = await getLocalAIDeviceProfile();
   const assessment = assessLocalAIModel(model, device);
@@ -168,11 +202,19 @@ export async function downloadLocalAIModel(
     }
     const info = await FileSystem.getInfoAsync(result.uri);
     const actualSize = info.exists ? info.size ?? 0 : 0;
-    if (actualSize !== model.sizeBytes) {
+    // Integrity, not just length: verify against the pinned SHA-256 when a digest
+    // can be computed, and refuse to keep a corrupt artifact.
+    const integrity = verifyModelArtifact({
+      expectedSizeBytes: model.sizeBytes,
+      expectedChecksum: model.artifactChecksum?.value ?? null,
+      actualSizeBytes: actualSize,
+      actualChecksum: await computeArtifactSha256(result.uri),
+    });
+    if (!integrity.ok) {
       clearResumeState = true;
       await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => undefined);
       await AsyncStorage.removeItem(resumeKey);
-      throw new Error(`Integrity check failed: expected ${model.sizeBytes} bytes but received ${actualSize}. The incomplete artifact was discarded.`);
+      throw new Error(`Integrity check failed: ${integrity.reason} The artifact was discarded.`);
     }
     await AsyncStorage.removeItem(resumeKey);
     return result.uri;

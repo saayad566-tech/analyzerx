@@ -10,6 +10,7 @@
  * implemented against their documented public endpoints; they are unreachable
  * from the build sandbox but work on a normal device connection.
  */
+import { parsePublicationDate } from "../news-normalization";
 import {
   SourceError,
   csvToObjects,
@@ -372,7 +373,7 @@ function toArticle(item: RssItem, symbol: string, fallbackSource: string): NewsA
     summary: item.description.slice(0, 600),
     source: item.source ?? fallbackSource,
     url: item.link,
-    publishedAt: item.pubDate && Number.isFinite(Date.parse(item.pubDate)) ? new Date(item.pubDate).toISOString() : null,
+    publishedAt: parsePublicationDate(item.pubDate ?? null, { field: "rss" }).iso,
     sentiment,
     impactScore: score,
     keyEntities: symbol ? [symbol] : [],
@@ -418,9 +419,10 @@ export async function gdeltNews(query: string, symbol: string, limit = 25): Prom
       summary: "",
       source: String(row.domain ?? "GDELT"),
       url: String(row.url ?? ""),
-      publishedAt: row.seendate ? new Date(
-        `${row.seendate.slice(0, 4)}-${row.seendate.slice(4, 6)}-${row.seendate.slice(6, 8)}T${row.seendate.slice(9, 11)}:${row.seendate.slice(11, 13)}:${row.seendate.slice(13, 15)}Z`,
-      ).toISOString() : null,
+      // GDELT supplies YYYYMMDDTHHMMSSZ. The previous fixed slicing called
+      // .toISOString() on whatever it produced, which throws RangeError
+      // ("Invalid time value") whenever the value did not match the shape.
+      publishedAt: parsePublicationDate(row.seendate ?? null).iso,
       sentiment,
       impactScore: score,
       keyEntities: symbol ? [symbol] : [],
@@ -535,7 +537,10 @@ export async function nseAnnouncementsRss(limit = 40): Promise<{ articles: NewsA
       summary: item.description.slice(0, 400),
       source: "NSE announcements",
       url: item.link,
-      publishedAt: item.pubDate && Number.isFinite(Date.parse(item.pubDate)) ? new Date(item.pubDate).toISOString() : null,
+      // Parsed through the shared normalizer so an unparseable feed date becomes
+      // null ("Publication date unavailable") instead of throwing or rendering
+      // the literal text "Invalid Date".
+      publishedAt: parsePublicationDate(item.pubDate ?? null, { field: "rss" }).iso,
       sentiment,
       impactScore: score,
       keyEntities: item.title ? [item.title] : [],
@@ -581,7 +586,10 @@ export async function genericRssFeed(
       summary: item.description.slice(0, 600),
       source: sourceName,
       url: item.link,
-      publishedAt: item.pubDate && Number.isFinite(Date.parse(item.pubDate)) ? new Date(item.pubDate).toISOString() : null,
+      // Parsed through the shared normalizer so an unparseable feed date becomes
+      // null ("Publication date unavailable") instead of throwing or rendering
+      // the literal text "Invalid Date".
+      publishedAt: parsePublicationDate(item.pubDate ?? null, { field: "rss" }).iso,
       sentiment,
       impactScore: score,
       keyEntities: [options.kind ?? "disclosure"],

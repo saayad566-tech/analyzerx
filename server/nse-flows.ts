@@ -1,3 +1,5 @@
+import { percentChangeConvention } from "../lib/flows-semantics";
+
 export type InstitutionalParticipant = "FII/FPI" | "DII";
 export type FlowRange = "TODAY" | "THREE_DAYS" | "ONE_WEEK" | "ONE_MONTH" | "QTD";
 
@@ -199,8 +201,10 @@ function aggregate(records: InstitutionalHistoryRecord[]): InstitutionalFlowRow[
 }
 
 function percentChange(current: number | null, previous: number | null) {
-  if (current === null || previous === null || previous === 0) return null;
-  return Number((((current - previous) / Math.abs(previous)) * 100).toFixed(2));
+  // Documented convention (FIX 06): a signed net-flow quantity has no meaningful
+  // percentage change when the prior period was zero, or when the sign flipped
+  // between periods. Those cases return null rather than a misleading figure.
+  return percentChangeConvention(current, previous).pct;
 }
 
 function buildRangeResult(base: { status: NseFlowStatus; source: string; upstream: "NSE" | "NSE via intermediary"; reportDate: string | null; fetchedAt: string; freshnessLabel: string; freshnessBusinessDays: number | null; error: string | null }, history: InstitutionalHistoryRecord[], range: FlowRange) {

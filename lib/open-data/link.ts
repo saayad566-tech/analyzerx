@@ -397,13 +397,18 @@ const HANDLERS: Record<string, Handler> = {
         reportDate: flows?.reportDate ?? null,
       },
       securityWiseFlow: { available: false, reportDate: null, topFii: [], topDii: [] },
-      coverageLabel: base.error ? "Unavailable" : `${base.constituents.length} constituents from the NSE index list`,
-      limitations: base.error
-        ? [base.error]
-        : [
+      // Coverage status comes from the registry resolution, not from parsing an
+      // error string, so an uncovered sector reads as "unsupported" rather than
+      // as a failed request.
+      status: base.status,
+      reason: base.reason,
+      coverageLabel: base.status === "supported" ? `${base.constituents.length} constituents from the NSE index list` : "Unavailable",
+      limitations: base.status === "supported"
+        ? [
             `Fundamental scores are computed on-device for the first ${Math.min(SCORED_LIMIT, base.constituents.length)} constituents; the remainder are shown unscored rather than estimated.`,
             unavailableSort ? "Security-wise FII/DII attribution requires an exchange feed; those rows stay at the bottom and are never inferred." : "Security-wise flow needs an exchange feed.",
-          ],
+          ]
+        : [base.reason ?? base.error ?? "This sector is not covered by a verified NSE constituent index."],
     };
   },
   "market.peerComparison": async (input) => {
@@ -495,8 +500,8 @@ const HANDLERS: Record<string, Handler> = {
       symbol: report.resolvedSymbol,
       marketId,
       marketLabel: report.market.country,
-      fileName: `analyzerx-${report.resolvedSymbol}-3.6.0.pdf`,
-      markdownFileName: `analyzerx-${report.resolvedSymbol}-3.6.0.md`,
+      fileName: `analyzerx-${report.resolvedSymbol}-3.7.0.pdf`,
+      markdownFileName: `analyzerx-${report.resolvedSymbol}-3.7.0.md`,
       format: "pdf",
       content: markdown,
       pdfBase64: "",
