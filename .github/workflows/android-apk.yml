@@ -29,18 +29,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node -e '
-            const v = require("./release-version.json");
-            if (!v.version || !Number.isInteger(v.androidVersionCode)) {
-              console.error("release-version.json is missing version or androidVersionCode");
-              process.exit(1);
-            }
-            const fs = require("fs");
-            fs.appendFileSync(process.env.GITHUB_ENV, `ANALYZERX_VERSION=${v.version}\n`);
-            fs.appendFileSync(process.env.GITHUB_ENV, `ANALYZERX_VERSION_CODE=${v.androidVersionCode}\n`);
-            fs.appendFileSync(process.env.GITHUB_ENV, `ANALYZERX_IOS_BUILD=${v.iosBuildNumber}\n`);
-          '
-          echo "Building AnalyzerX ${ANALYZERX_VERSION} (version code ${ANALYZERX_VERSION_CODE})"
+          VERSION=$(node -p "require('./release-version.json').version")
+          VERSION_CODE=$(node -p "require('./release-version.json').androidVersionCode")
+          IOS_BUILD=$(node -p "require('./release-version.json').iosBuildNumber")
+          if [ -z "$VERSION" ] || [ -z "$VERSION_CODE" ]; then
+            echo "release-version.json is missing version or androidVersionCode"; exit 1
+          fi
+          {
+            echo "ANALYZERX_VERSION=$VERSION"
+            echo "ANALYZERX_VERSION_CODE=$VERSION_CODE"
+            echo "ANALYZERX_IOS_BUILD=$IOS_BUILD"
+          } >> "$GITHUB_ENV"
+          echo "Building AnalyzerX ${VERSION} (version code ${VERSION_CODE})"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
