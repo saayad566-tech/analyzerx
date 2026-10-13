@@ -8,7 +8,7 @@
  * P/E) as unavailable rather than "cheap".
  */
 
-import { round } from "@/lib/precision";
+import { round } from "../precision";
 import type { MetricDirection } from "./config";
 
 /** Winsorise a sample at the given percentiles (defaults 1st/99th). */

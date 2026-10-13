@@ -11,7 +11,7 @@
  * research (Altman 1968, Sloan 1996, Piotroski 2000, Beneish 1999).
  */
 
-import { difference, percentOf, product, quotient, ratio, round, sumValid } from "@/lib/precision";
+import { difference, percentOf, product, quotient, ratio, round, sumValid } from "../precision";
 
 export type PiotroskiInputs = {
   roa: number | null;

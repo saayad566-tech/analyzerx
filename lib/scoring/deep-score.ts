@@ -11,7 +11,7 @@
  * confidence rather than producing NaN (FR-5).
  */
 
-import { clampNumber, round, sumValid } from "@/lib/precision";
+import { clampNumber, round, sumValid } from "../precision";
 import {
   DEFAULT_SCORING_CONFIG,
   metricForSector,

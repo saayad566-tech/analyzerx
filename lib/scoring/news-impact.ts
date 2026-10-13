@@ -7,7 +7,7 @@
  * config so a score is reproducible.
  */
 
-import { clampNumber, product, round, sumValid } from "@/lib/precision";
+import { clampNumber, product, round, sumValid } from "../precision";
 import { DEFAULT_SCORING_CONFIG, type NewsConfig } from "./config";
 
 export type NewsSourceTier = "tier1" | "tier2" | "tier3";
