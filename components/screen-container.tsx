@@ -1,5 +1,6 @@
 import { Keyboard, KeyboardAvoidingView, Platform, Pressable, View, type ViewProps } from "react-native";
 import { keyboardAvoidingBehavior } from "@/lib/keyboard-avoidance";
+import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
 import { SafeAreaView, useSafeAreaInsets, type Edge } from "react-native-safe-area-context";
 
 import { cn } from "@/lib/utils";
@@ -71,6 +72,7 @@ export function ScreenContainer({
   ...props
 }: ScreenContainerProps) {
   const insets = useSafeAreaInsets();
+  const keyboardInset = useKeyboardInset();
   // The KeyboardAvoidingView sits inside the SafeAreaView, so the distance from
   // the screen top to it is the top safe-area inset; callers may add their own.
   const offset = (keyboardVerticalOffset ?? 0) + (edges.includes("top") ? insets.top : 0);
@@ -86,6 +88,7 @@ export function ScreenContainer({
         {keyboardAware ? (
           <KeyboardAvoidingView
             style={FILL}
+            style={[FILL, keyboardInset > 0 && { paddingBottom: keyboardInset }]}
             behavior={keyboardAvoidingBehavior(Platform.OS)}
             keyboardVerticalOffset={offset}
           >
