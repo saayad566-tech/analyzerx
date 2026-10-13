@@ -23,19 +23,17 @@ export function useKeyboardInset(): number {
   useEffect(() => {
     if (Platform.OS !== "android") return undefined;
 
-    // `keyboardDidShow` is used on Android because it reports the final geometry;
-    // `keyboardWillShow` is not reliably emitted there.
-    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-
+    // Platform.OS is already known to be android here (guard above).
+    // `keyboardDidShow` is used because it reports the final geometry;
+    // `keyboardWillShow` is not reliably emitted on Android.
     const onShow = (event: { endCoordinates?: { height?: number } }) => {
       const value = event?.endCoordinates?.height;
       setHeight(typeof value === "number" && Number.isFinite(value) ? value : 0);
     };
     const onHide = () => setHeight(0);
 
-    const showSub = Keyboard.addListener(showEvent, onShow);
-    const hideSub = Keyboard.addListener(hideEvent, onHide);
+    const showSub = Keyboard.addListener("keyboardDidShow", onShow);
+    const hideSub = Keyboard.addListener("keyboardDidHide", onHide);
     return () => {
       showSub.remove();
       hideSub.remove();
