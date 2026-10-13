@@ -9,6 +9,7 @@ import { getProviderHealth } from "./provider-health";
 import { runProviderNow } from "./provider-actions";
 import { answerMarketChat, collectGroundedMarketContext, type MarketChatAttachment, type MarketChatMessage } from "./market-chat";
 import { answerGeneralChat, type GeneralChatMessage } from "./general-chat";
+import { buildDeepScore } from "./scoring";
 import { fetchNseInstitutionalFlows, type FlowRange } from "./nse-flows";
 import { getLatestSourceRecords, getSourceRecordsForSymbol, getUserMarketPreference, upsertUserMarketPreference, saveNewsRelevanceFeedback, undoNewsRelevanceFeedback, listUserNewsRelevanceFeedback, listHeldNewsArticles, getHeldNewsArticle, reviewHeldNewsArticle, saveNewsEvent } from "./db";
 import { getSourceCatalog } from "./source-catalog";
@@ -321,6 +322,14 @@ export const appRouter = router({
     ask: publicProcedure.input(z.object({ message: z.string().trim().max(2_000).default(""), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN"), history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(1_000) })).max(8).default([]), attachments: z.array(z.object({ kind: z.enum(["image", "audio"]), dataUrl: z.string().max(8_000_000), mimeType: z.string().max(80), name: z.string().max(160).optional() })).max(2).default([]) })).mutation(({ input }) => answerMarketChat(input.message, input.symbol, input.history as MarketChatMessage[], input.attachments as MarketChatAttachment[], input.marketId)),
     general: publicProcedure.input(z.object({ message: z.string().trim().min(1).max(2_000), history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(1_000) })).max(20).default([]) })).mutation(({ input }) => answerGeneralChat(input.message, input.history as GeneralChatMessage[])),
     ground: publicProcedure.input(z.object({ message: z.string().trim().min(1).max(2_000), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN") })).mutation(({ input }) => collectGroundedMarketContext(input.message, input.symbol, input.marketId)),
+  }),
+  scoring: router({
+    // Institutional Deep Score for a symbol (Engine A). Returns the composite,
+    // confidence, grade, pillar breakdown, per-metric explainability, overlay and
+    // the percentile source, so the UI never overstates what it knows.
+    deepScore: publicProcedure
+      .input(z.object({ symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/) }))
+      .mutation(({ input }) => buildDeepScore(input.symbol)),
   }),
   researchDesk: router({
     run: publicProcedure.input(z.object({ message: z.string().trim().min(1).max(2_000), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN"), depth: z.enum(["quick", "standard", "deep"]).default("standard"), includeAgents: z.array(z.enum(RESEARCH_AGENT_TYPES as unknown as [ResearchAgentType, ...ResearchAgentType[]])).max(8).optional() })).mutation(({ input }) => runResearchDesk(input)),
