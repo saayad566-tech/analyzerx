@@ -36,7 +36,7 @@ describe("label mapping (mandate §11.7)", () => {
 });
 
 describe("response validation (mandate §11.7)", () => {
-  const good = [
+  const good: LabelScore[] = [
     { label: "positive", score: 0.81 },
     { label: "neutral", score: 0.14 },
     { label: "negative", score: 0.05 },
@@ -66,7 +66,8 @@ describe("response validation (mandate §11.7)", () => {
 
   it("picks the dominant label deterministically, including ties", () => {
     expect(dominantSentiment(good)?.label).toBe("positive");
-    expect(dominantSentiment([{ label: "negative", score: 0.5 }, { label: "positive", score: 0.5 }])?.label).toBe("positive");
+    const tie: LabelScore[] = [{ label: "negative", score: 0.5 }, { label: "positive", score: 0.5 }];
+    expect(dominantSentiment(tie)?.label).toBe("positive");
     expect(dominantSentiment([])).toBeNull();
   });
 });
