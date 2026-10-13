@@ -28,7 +28,7 @@ Two independent engines plus a fusion layer:
 | `lib/scoring/deep-score.ts` | Pillar aggregation with weight redistribution for missing metrics, confidence = weighted coverage × freshness, capped risk overlay, composite clamped to 0–100, rating bands with a "Provisional" gate, and **exact** per-metric explainability (the contributions sum to the pre-overlay composite). |
 | `lib/scoring/news-impact.ts` | Engine B: signed raw impact, source tier × rumour × corroboration multiplier, centrality down-weighting, exponential decay by event half-life, confidence. No catalyst → 0, never NaN. |
 | `lib/scoring/fusion.ts` | Re-check flag on severe negative events, watchlist flag only when the Deep Score is at least grade B, and the 2×2 quadrant. |
-| `tests/scoring.test.ts` | 30 vitest cases across config, formulas, percentile, Deep Score, News Impact and fusion. |
+| `tests/scoring.test.ts` | 27 vitest cases across config, formulas, percentile, Deep Score, News Impact and fusion. |
 | `server/scoring.ts` | Maps the app's existing fundamental analysis into the engine (metric extraction, sector mapping, derived FCF yield / momentum / drawdown / margin of safety). |
 | `app/deep-score.tsx` + `server/routers.ts` | Deep Score screen (composite, grade, confidence, pillar bars, overlay penalties, drivers, unscored metrics, percentile-source note), reachable from the company screen via `scoring.deepScore`. |
 
