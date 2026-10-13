@@ -98,6 +98,27 @@ export function marketScopedPeers(marketId: string, excludeSymbol: string | null
     .slice(0, Math.max(0, count));
 }
 
+/**
+ * Starter prompts for the assistant, scoped to the active market.
+ *
+ * The assistant previously showed the same three Indian prompts ("Analyze TCS
+ * fundamentals", "latest risks for RELIANCE", "FII vs DII") while the market scope
+ * read United States. Prompts now use the active market's own instruments, and the
+ * third prompt drops India-only terminology for other markets.
+ */
+export function starterPromptsForMarket(marketId: string): string[] {
+  const symbols = marketExampleSymbols(marketId);
+  const first = symbols[0];
+  const second = symbols[1];
+  if (!first) {
+    return ["Ask about a company or market", "Explain what this app can do", "Show me where Market Flows is"];
+  }
+  const prompts = [`Analyze ${first} fundamentals`];
+  if (second) prompts.push(`What are the latest risks for ${second}?`);
+  prompts.push(marketId === "IN" ? "Show me where Market Flows is and explain FII vs DII" : "Show me where Market Flows is");
+  return prompts;
+}
+
 /** Market ids this module knows about (declared profiles only). */
 /**
  * The suffix a provider expects for each market's primary listing.
