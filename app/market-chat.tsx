@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Animated, Easing, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -17,6 +17,8 @@ import { buildBoundedLocalPrompt, formatAssistantFailure, isConnectedEngineConfi
 import { createStreamingSanitizer, sanitizeAssistantOutput } from "@/lib/assistant-output";
 import { humanize } from "@/lib/safe-text";
 import { keyboardAvoidingBehavior } from "@/lib/keyboard-avoidance";
+import { starterPromptsForMarket } from "@/lib/market-defaults";
+import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
 import { LocalAIModelError, localAISession } from "@/lib/local-ai-session";
 import { getLocalAIDeviceTelemetrySnapshot, recordLocalAIInference } from "@/lib/local-ai-telemetry";
 import { MarketScopeChip } from "@/components/market-scope-chip";
@@ -33,7 +35,7 @@ const border = "#26364D";
 type ChatItem = LocalChatMessage & { id: string; confidence?: "high" | "medium" | "low"; symbol?: string | null; sources?: { label: string; detail: string; url?: string }[]; dataAsOf?: string | null; limitations?: string[]; suggestedQuestions?: string[]; action?: AnalyzerXAction | null; attachmentLabel?: string; retryQuestion?: string; retryAttachments?: PendingAttachment[] };
 
 type PendingAttachment = MarketChatAttachment & { id: string; label: string; previewUri?: string; sourceUri?: string };
-const starterQuestions = ["Analyze TCS fundamentals", "What are the latest risks for RELIANCE?", "Show me where Market Flows is and explain FII vs DII"];
+// Starter prompts follow the ACTIVE market (see starterPromptsForMarket).
 
 async function uriToDataUrl(uri: string, mimeType: string) {
   if (uri.startsWith("data:")) return uri;
@@ -61,6 +63,11 @@ export default function MarketChatScreen() {
   const [activeLocalModel, setActiveLocalModel] = useState<string | null>(null);
   const [runtimeMode, setRuntimeMode] = useState<MarketChatRuntimeMode>("auto");
   const [localStreaming, setLocalStreaming] = useState(false);
+  // Real keyboard height, so the composer is lifted on Android where
+  // KeyboardAvoidingView cannot be relied on (edge-to-edge disables adjustResize).
+  const keyboardInset = useKeyboardInset();
+  // Starter prompts follow the active market rather than a hardcoded Indian list.
+  const starterPrompts = useMemo(() => starterPromptsForMarket(marketId), [marketId]);
   const chat = trpc.chat.ask.useMutation();
   const ground = trpc.chat.ground.useMutation();
   const generalChat = trpc.chat.general.useMutation();
@@ -263,7 +270,7 @@ export default function MarketChatScreen() {
 
   return (
     <ScreenContainer edges={["top", "left", "right"]} containerClassName="bg-background" className="px-4" keyboardAware={false}>
-      <KeyboardAvoidingView style={styles.flex} behavior={keyboardAvoidingBehavior(Platform.OS)} keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}>
+      <KeyboardAvoidingView style={[styles.flex, keyboardInset > 0 && { paddingBottom: keyboardInset }]} behavior={keyboardAvoidingBehavior(Platform.OS)} keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}>
                   <View style={styles.header}>
 
           <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]} accessibilityLabel="Go back"><Ionicons name="chevron-back" size={20} color={ink} /></Pressable>
@@ -300,7 +307,7 @@ export default function MarketChatScreen() {
           updateCellsBatchingPeriod={50}
           removeClippedSubviews
           keyboardShouldPersistTaps="handled"
-          ListEmptyComponent={<View style={styles.emptyState}><View style={styles.brainIcon}><Ionicons name="sparkles" size={28} color={amber} /></View><Text style={styles.emptyTitle}>Your research co-pilot</Text><Text style={styles.emptyBody}>Ask about a stock or market, upload a chart or error screenshot, or hold the microphone to explain what you need.</Text><View style={styles.suggestionStack}>{starterQuestions.map((question) => <Pressable key={question} onPress={() => void sendMessage(question)} style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}><Text style={styles.suggestionText}>{question}</Text><Ionicons name="arrow-forward" size={15} color={teal} /></Pressable>)}</View></View>}
+          ListEmptyComponent={<View style={styles.emptyState}><View style={styles.brainIcon}><Ionicons name="sparkles" size={28} color={amber} /></View><Text style={styles.emptyTitle}>Your research co-pilot</Text><Text style={styles.emptyBody}>Ask about a stock or market, upload a chart or error screenshot, or hold the microphone to explain what you need.</Text><View style={styles.suggestionStack}>{starterPrompts.map((question) => <Pressable key={question} onPress={() => void sendMessage(question)} style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}><Text style={styles.suggestionText}>{question}</Text><Ionicons name="arrow-forward" size={15} color={teal} /></Pressable>)}</View></View>}
           renderItem={({ item }) => <View style={[styles.messageRow, item.role === "user" ? styles.userRow : styles.assistantRow]}><View style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.assistantBubble]}><Text style={styles.roleLabel}>{item.role === "user" ? "YOU" : `ANALYZERX${item.symbol ? ` · ${item.symbol}` : ""}`}</Text>{item.attachmentLabel ? <View style={styles.attachmentBadge}><Ionicons name="attach" size={13} color={teal} /><Text style={styles.attachmentText}>{item.attachmentLabel}</Text></View> : null}<Text style={styles.messageText}>{item.content}</Text>{item.role === "assistant" && item.confidence ? <Text style={[styles.metaText, { color: item.confidence === "high" ? teal : item.confidence === "medium" ? amber : coral }]}>{item.confidence.toUpperCase()} CONFIDENCE{item.dataAsOf ? ` · DATA ${new Date(item.dataAsOf).toLocaleString()}` : ""}</Text> : null}{item.action ? <View style={styles.actionBadge}><Ionicons name="flash-outline" size={14} color={amber} /><Text style={styles.actionText}>Action executed: {humanize(item.action.type)}</Text></View> : null}{item.sources?.length ? <View style={styles.sourceList}><Text style={styles.sourceHeading}>EVIDENCE USED</Text>{item.sources.slice(0, 4).map((source) => <View key={`${item.id}-${source.label}`} style={styles.sourceRow}><View style={styles.sourceDot} /><View style={styles.sourceCopy}><Text style={styles.sourceLabel}>{source.label}</Text><Text style={styles.sourceDetail} numberOfLines={2}>{source.detail}</Text></View></View>)}</View> : null}{item.limitations?.length ? <View style={styles.limitations}><Text style={styles.limitationHeading}>LIMITATIONS</Text><Text style={styles.limitationText}>{item.limitations.slice(0, 2).join(" · ")}</Text></View> : null}{item.retryQuestion ? <Pressable onPress={() => void sendMessage(item.retryQuestion, item.retryAttachments ?? [], item.id)} disabled={chat.isPending || ground.isPending || localStreaming} style={({ pressed }) => [styles.retryButton, pressed && styles.pressed, (chat.isPending || ground.isPending || localStreaming) && styles.disabled]} accessibilityRole="button" accessibilityLabel="Retry failed assistant request"><Ionicons name="refresh-outline" size={15} color={amber} /><Text style={styles.retryText}>Retry request</Text></Pressable> : null}{item.suggestedQuestions?.length ? <View style={styles.followUps}><Text style={styles.sourceHeading}>TRY NEXT</Text>{item.suggestedQuestions.slice(0, 3).map((question) => <Pressable key={`${item.id}-${question}`} onPress={() => void sendMessage(question)} style={({ pressed }) => [styles.followUp, pressed && styles.pressed]}><Text style={styles.followUpText}>{question}</Text></Pressable>)}</View> : null}</View></View>}
         />
         {chat.isPending || ground.isPending || localStreaming ? <View style={styles.typing}><Skeleton width={16} height={16} radius={8} /><Text style={styles.typingText}>{localStreaming ? `Streaming from ${activeLocalModel ?? "local model"} over grounded evidence…` : "Reading connected evidence and preparing a concise answer…"}</Text></View> : null}
