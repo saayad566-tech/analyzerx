@@ -143,6 +143,10 @@ class AnalyzerXLocalAIModule(private val context: ReactApplicationContext) : Rea
       // second turn of a session fail with:
       //   INTERNAL: The new rendered template string does not start with the
       //   previous rendered template string.
+      // Close any conversation still open from a previous request first: two
+      // live conversations on one engine share the template renderer, which
+      // triggers the same INTERNAL template error.
+      closeConversation(activeConversation)
       val requestConversation = try {
         val instruction = systemInstruction?.takeIf { it.isNotBlank() }
         if (instruction != null) {
