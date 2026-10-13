@@ -249,7 +249,11 @@ async function fetchMarketSnapshot(symbol: string, requestedMarketId?: string) {
     isIndianMarket ? fetchIndianOpenStock(symbol) : Promise.resolve(null),
     getLatestTrackedNews(10, symbol, snapshotMarketId),
   ]);
-  const indianOpen = indianOpenResult.status === "fulfilled" ? normalizeIndianOpenQuote(indianOpenResult.value) : null;
+  // A non-Indian market resolves null here, so the India-specific normalizer is
+  // only applied when a real Indian payload came back.
+  const indianOpen = indianOpenResult.status === "fulfilled" && indianOpenResult.value
+    ? normalizeIndianOpenQuote(indianOpenResult.value)
+    : null;
   const finnhubQuote = quoteResult.status === "fulfilled" ? normalizeQuote(quoteResult.value) : null;
   const trackedNews = trackedNewsResult.status === "fulfilled" ? trackedNewsResult.value.slice(0, 10).map((item) => ({
     id: item.id ?? null,
