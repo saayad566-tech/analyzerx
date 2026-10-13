@@ -3,6 +3,16 @@ import type { MarketChatRuntimeMode } from "./local-preferences";
 export type MarketChatEngine = "local" | "connected" | "blocked";
 
 /**
+ * Whether a real hosted provider is configured. The app is on-device first, so
+ * Connected mode is only genuinely available when a remote origin is set;
+ * otherwise the UI must say so instead of failing at send time.
+ */
+export function isConnectedEngineConfigured(): boolean {
+  const base = typeof process !== "undefined" ? process.env?.EXPO_PUBLIC_API_BASE_URL?.trim() : "";
+  return Boolean(base);
+}
+
+/**
  * Fallback context window when a model's real window is unknown. This is the
  * Qwen3 0.6B LiteRT limit, which is the smallest model in the catalogue.
  */
@@ -69,7 +79,8 @@ export function buildLocalGeneralPrompt(
     "Answer whatever the user asks, the way a good general assistant would: accurate, direct, and complete.",
     "Write in clear prose with short paragraphs. Use a short bulleted list only when a list genuinely helps.",
     "You have no live market feed in this mode. Never state current prices, live news, filings, or future outcomes as fact. If the user asks for those, say plainly that verified connected data is required, then help with everything else you can.",
-    "If you are unsure, say so rather than guessing. Do not output JSON or code fences.",
+    "Help with anything the user brings: coding, writing, explanations, planning, study, and everyday questions — as well as market topics.",
+    "If you are unsure, say so rather than guessing. For coding or writing you may use short code blocks, tables, or lists where they genuinely help; never output raw JSON, hidden reasoning, or chat-template text.",
   ].join("\n");
   const turn = compactText(question || "Please ask a question.", Math.max(400, budget.chars - 1200));
   const prompt = `${system}\n\nUSER:\n${turn}`;
@@ -91,7 +102,7 @@ export function buildBoundedLocalPrompt(
     "Use the VERIFIED CONTEXT supplied with each question for any current prices, news, filings, or forecasts, and use the figures exactly as given.",
     "Answer the user's actual question directly and completely. If part of the question is general knowledge rather than current data, answer that part normally.",
     "If the context does not contain what is needed, say so plainly instead of guessing.",
-    "Never invent prices, news, filings, government announcements, or future outcomes. Do not output JSON or code fences.",
+    "Never invent prices, news, filings, government announcements, or future outcomes. For the non-market parts of a question — coding, writing, general knowledge — answer normally, including short code blocks where they help.",
   ].join("\n");
   const questionText = compactText(question || "Summarize the supplied context.", Math.max(400, Math.floor(budget.chars * 0.25)));
   const turn = `USER QUESTION:\n${questionText}\n\nVERIFIED CONTEXT:\n${compact.context}`;

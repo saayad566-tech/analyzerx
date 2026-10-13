@@ -34,10 +34,10 @@ const enableNativeLocalAI =
 // Version identity is env-overridable (EAS profiles set these) with a single
 // consistent default, so package.json, eas.json, the Android manifest and the
 // release workflow can never disagree about what is being built.
-const releaseVersion = process.env.ANALYZERX_RELEASE_VERSION?.trim() || "3.4.0";
+const releaseVersion = process.env.ANALYZERX_RELEASE_VERSION?.trim() || "3.5.0";
 const releaseAndroidVersionCode =
-  Number.parseInt(process.env.ANALYZERX_ANDROID_VERSION_CODE ?? "3400", 10) || 3400;
-const releaseIosBuildNumber = process.env.ANALYZERX_IOS_BUILD_NUMBER?.trim() || "3400";
+  Number.parseInt(process.env.ANALYZERX_ANDROID_VERSION_CODE ?? "3500", 10) || 3500;
+const releaseIosBuildNumber = process.env.ANALYZERX_IOS_BUILD_NUMBER?.trim() || "3500";
 
 const env = {
   // App branding - update these values directly (do not use env vars)

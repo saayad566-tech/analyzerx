@@ -3,28 +3,28 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-nati
 import { Ionicons } from "@expo/vector-icons";
 
 import {
-  assessLocalAIModel,
   formatBytes,
   getActiveLocalAIModelId,
   getLocalAIDeviceProfile,
   getLocalAIModel,
-  getLocalAIModelState,
   getLocalAIRuntime,
   LOCAL_AI_MODELS,
   setActiveLocalAIModelId,
   type LocalAIDeviceProfile,
   type LocalAIModelId,
 } from "@/lib/local-ai";
+import { localAISession } from "@/lib/local-ai-session";
 import { saveMarketChatRuntimeMode, type MarketChatRuntimeMode } from "@/lib/local-preferences";
 
 /**
  * On-screen engine/model switcher for the assistant.
  *
  * Lets the user change which model answers — the hosted "Connected" engine, the
- * "Auto" router, or any downloaded on-device model — without leaving the chat.
- * Local models that are not downloaded, not eligible for this device, or whose
- * runtime adapter is not shipped are shown with the reason and are not
- * selectable, so the control never promises an engine that cannot run.
+ * "Auto" router, or any on-device model — without leaving the chat. Each model's
+ * row shows its real lifecycle state from `localAISession` (Not installed /
+ * Verifying / Installed / Loading / Ready / Failed / Unsupported), so the UI only
+ * ever says "Ready" after the runtime has actually loaded the model, and never
+ * advertises a model that cannot run.
  */
 
 const palette = { background: "#07101F", panel: "#111C2D", border: "#26364D", text: "#F4F7FB", muted: "#91A2B8", amber: "#F4B860", teal: "#4FD1C5", coral: "#FB7185" };
@@ -35,7 +35,7 @@ export type ModelSwitcherProps = {
   onChange: (next: { mode: MarketChatRuntimeMode; activeModelId: LocalAIModelId | null }) => void;
 };
 
-type ModelRow = { id: LocalAIModelId; label: string; meta: string; selectable: boolean; reason: string | null; downloaded: boolean };
+type ModelRow = { id: LocalAIModelId; label: string; meta: string; selectable: boolean; stateLabel: string; detail: string; operational: boolean };
 
 export function ModelSwitcher({ mode, activeModelId, onChange }: ModelSwitcherProps) {
   const [open, setOpen] = useState(false);
@@ -61,17 +61,15 @@ export function ModelSwitcher({ mode, activeModelId, onChange }: ModelSwitcherPr
       setPersistedActive(await getActiveLocalAIModelId());
       const next: ModelRow[] = [];
       for (const model of LOCAL_AI_MODELS) {
-        const assessment = assessLocalAIModel(model, profile);
-        const state = await getLocalAIModelState(model.id).catch(() => null);
-        const downloaded = state?.status === "downloaded" || state?.status === "loaded";
-        const selectable = assessment.eligible && downloaded;
+        const lifecycle = await localAISession.lifecycleFor(model.id).catch(() => null);
         next.push({
           id: model.id,
           label: model.displayName,
           meta: `${model.sizeLabel} · ${model.capabilities.join(" · ")}`,
-          selectable,
-          downloaded,
-          reason: selectable ? null : !downloaded ? (model.installability === "verified_installable" ? "Not downloaded yet" : assessment.reasons[0] ?? "Unavailable in this build") : assessment.reasons[0] ?? "Not eligible on this device",
+          selectable: lifecycle?.canSelect ?? false,
+          stateLabel: lifecycle?.label ?? "Unavailable",
+          detail: lifecycle?.detail ?? "Lifecycle could not be determined.",
+          operational: lifecycle?.canGenerate ?? false,
         });
       }
       setRows(next);
@@ -84,6 +82,9 @@ export function ModelSwitcher({ mode, activeModelId, onChange }: ModelSwitcherPr
     if (open) void load();
   }, [load, open]);
 
+  // Reflect load/generate transitions while the sheet is open.
+  useEffect(() => localAISession.subscribe(() => { if (open) void load(); }), [load, open]);
+
   const choose = useCallback(async (nextMode: MarketChatRuntimeMode, modelId: LocalAIModelId | null) => {
     await saveMarketChatRuntimeMode(nextMode);
     if (modelId) await setActiveLocalAIModelId(modelId);
@@ -91,7 +92,7 @@ export function ModelSwitcher({ mode, activeModelId, onChange }: ModelSwitcherPr
     setOpen(false);
   }, [activeModelId, onChange]);
 
-  const downloadedCount = rows.filter((row) => row.downloaded).length;
+  const installedCount = rows.filter((row) => row.operational || row.stateLabel === "Installed" || row.stateLabel === "Loading").length;
 
   return (
     <>
@@ -145,20 +146,20 @@ export function ModelSwitcher({ mode, activeModelId, onChange }: ModelSwitcherPr
                   key={row.id}
                   icon="hardware-chip-outline"
                   title={row.label}
-                  subtitle={row.selectable ? row.meta : `${row.meta}${row.reason ? ` · ${row.reason}` : ""}`}
+                  subtitle={row.operational ? row.meta : `${row.meta} · ${row.detail}`}
                   selected={mode === "local" && (activeModelId ?? persistedActive) === row.id}
                   disabled={!row.selectable}
-                  badge={row.downloaded ? "INSTALLED" : undefined}
+                  badge={row.stateLabel.toUpperCase()}
                   onPress={() => void choose("local", row.id)}
                 />
               ))}
               {!busy && rows.length === 0 ? <Text style={styles.note}>No catalogued models.</Text> : null}
               <Text style={styles.footer}>
                 {device?.totalMemoryBytes ? `${Math.round(device.totalMemoryBytes / 1_000_000_000)} GB RAM · ` : ""}
-                {downloadedCount} model{downloadedCount === 1 ? "" : "s"} installed
+                {installedCount} model{installedCount === 1 ? "" : "s"} installed
                 {device?.freeStorageBytes ? ` · ${formatBytes(device.freeStorageBytes)} free` : ""}
               </Text>
-              <Text style={styles.footer}>Manage downloads in Marketplace → Local AI models.</Text>
+              <Text style={styles.footer}>AnalyzerX loads a model automatically the first time you send a message. Manage downloads in Marketplace → Local AI models.</Text>
             </ScrollView>
           </Pressable>
         </Pressable>
