@@ -57,7 +57,7 @@ export async function fetchWithTimeout(
  * Call this once in your app's root layout.
  */
 /**
- * AnalyzerX 3.9.0 is on-device first: every procedure resolves locally against
+ * AnalyzerX 3.10.0 is on-device first: every procedure resolves locally against
  * free/open sources through `localLink`, so the app needs no backend to show
  * live data. A remote server is used only when one is explicitly configured
  * through EXPO_PUBLIC_API_BASE_URL.
