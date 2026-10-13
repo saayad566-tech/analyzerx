@@ -746,6 +746,11 @@ export default function LiveEventsScreen() {
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
+        initialNumToRender={6}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        updateCellsBatchingPeriod={50}
+        removeClippedSubviews
         ListHeaderComponent={
           <>
             <View style={styles.headerRow}>
