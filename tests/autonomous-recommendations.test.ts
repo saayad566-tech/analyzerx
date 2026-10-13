@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildAutonomousRecommendation, discoverAutonomousRecommendationsFromChains } from "../server/autonomous-recommendations";
-import type { SmartEventChain } from "../server/smart-event-alerts";
+import type { SmartEventChain } from "../lib/smart-event-alerts";
 
 // Fixture timestamps are relative to run time so the discovery lookback window
 // (default 30 days) always includes the synthetic events.

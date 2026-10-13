@@ -1,16 +1,59 @@
 {
   "manifestVersion": 1,
   "product": "AnalyzerX",
+  "version": "3.2.0",
+  "androidVersionCode": 3200,
+  "releaseVersionSource": "release-version.json",
   "requiredFeatures": {
-    "newsIntelligence": ["server/news-tracker.ts", "server/indian-news-relevance.ts", "server/optional-providers.ts"],
-    "archiveAndExports": ["server/archive-export.ts", "lib/archive-export.ts", "app/(tabs)/index.tsx"],
-    "marketIsolation": ["lib/market-context.tsx", "lib/market-regions.ts", "lib/market-context.tsx"],
-    "fundamentalAnalysis": ["server/fundamental-analysis.ts", "app/company/[symbol].tsx"],
-    "sectorFlows": ["server/sector-intelligence.ts", "server/security-wise-flows.ts", "server/nse-flows.ts", "app/sector/[name].tsx"],
-    "assistantAndAI": ["server/research-runtime-policy.ts", "lib/market-chat-runtime.ts", "app/market-chat.tsx", "lib/local-ai.ts"],
-    "forgeShelf": ["lib/forge-shelf.ts", "lib/local-ai-policy.ts", "app/marketplace.tsx"],
-    "navigation": ["app/_layout.tsx", "lib/navigation-back.ts"],
-    "releaseProfiles": ["app.config.ts", "eas.json", ".github/workflows/android-apk.yml"]
+    "newsIntelligence": [
+      "server/news-tracker.ts",
+      "server/indian-news-relevance.ts",
+      "server/optional-providers.ts"
+    ],
+    "archiveAndExports": [
+      "server/archive-export.ts",
+      "lib/archive-export.ts",
+      "app/(tabs)/index.tsx"
+    ],
+    "marketIsolation": [
+      "lib/market-context.tsx",
+      "lib/market-regions.ts",
+      "lib/market-context.tsx"
+    ],
+    "fundamentalAnalysis": [
+      "server/fundamental-analysis.ts",
+      "app/company/[symbol].tsx"
+    ],
+    "sectorFlows": [
+      "server/sector-intelligence.ts",
+      "server/security-wise-flows.ts",
+      "server/nse-flows.ts",
+      "app/sector/[name].tsx"
+    ],
+    "assistantAndAI": [
+      "server/research-runtime-policy.ts",
+      "lib/market-chat-runtime.ts",
+      "app/market-chat.tsx",
+      "lib/local-ai.ts"
+    ],
+    "forgeShelf": [
+      "lib/forge-shelf.ts",
+      "lib/local-ai-policy.ts",
+      "app/marketplace.tsx"
+    ],
+    "navigation": [
+      "app/_layout.tsx",
+      "lib/navigation-back.ts"
+    ],
+    "sharedDomainModules": [
+      "lib/smart-event-alerts.ts"
+    ],
+    "releaseProfiles": [
+      "release-version.json",
+      "app.config.ts",
+      "eas.json",
+      ".github/workflows/android-apk.yml"
+    ]
   },
   "requiredSourceMarkers": [
     "securityWiseFlow",

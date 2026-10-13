@@ -6,7 +6,10 @@ on:
     branches:
       - main
     tags:
-      - "v3.2.0"
+      # Not pinned to a single version: any v-prefixed tag triggers a build.
+      # (The release assets this job creates are tagged `apk-<version>-<run>`,
+      # which does not match `v*`, so publishing cannot re-trigger the job.)
+      - "v*"
 
 jobs:
   build-apk:
@@ -22,6 +25,22 @@ jobs:
         with:
           version: 9.12.0
       - run: pnpm install --frozen-lockfile
+      - name: Read the authoritative release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e '
+            const v = require("./release-version.json");
+            if (!v.version || !Number.isInteger(v.androidVersionCode)) {
+              console.error("release-version.json is missing version or androidVersionCode");
+              process.exit(1);
+            }
+            const fs = require("fs");
+            fs.appendFileSync(process.env.GITHUB_ENV, `ANALYZERX_VERSION=${v.version}\n`);
+            fs.appendFileSync(process.env.GITHUB_ENV, `ANALYZERX_VERSION_CODE=${v.androidVersionCode}\n`);
+            fs.appendFileSync(process.env.GITHUB_ENV, `ANALYZERX_IOS_BUILD=${v.iosBuildNumber}\n`);
+          '
+          echo "Building AnalyzerX ${ANALYZERX_VERSION} (version code ${ANALYZERX_VERSION_CODE})"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -43,8 +62,21 @@ jobs:
       - run: pnpm release:verify
         env:
           ANALYZERX_SOURCE_REVISION: ${{ github.sha }}
+      - run: pnpm release:verify:local-ai
       - run: pnpm check
-      - run: pnpm test -- --run
+      - name: Run tests and record evidence
+        shell: bash
+        env:
+          ANALYZERX_SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          set +e
+          mkdir -p artifacts
+          npx vitest run --reporter=default --reporter=json --outputFile.json=artifacts/vitest-raw.json
+          code=$?
+          # Record the result (even a failing one) bound to this revision, then
+          # fail the step if the suite failed. The evidence file is not committed.
+          node scripts/record-test-results.mjs artifacts/vitest-raw.json > /dev/null 2>&1 || true
+          exit $code
       - name: Build release APK
         run: |
           cd android
@@ -65,7 +97,7 @@ jobs:
             -keypass analyzerx-build-password \
             -alias analyzerx \
             -keyalg RSA -keysize 4096 -validity 10000 \
-            -dname "CN=AnalyzerX 3.2.0 Release, OU=Mobile, O=AnalyzerX, L=Local, ST=Local, C=IN"
+            -dname "CN=AnalyzerX ${ANALYZERX_VERSION} Release, OU=Mobile, O=AnalyzerX, L=Local, ST=Local, C=IN"
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$apk" "$apk.aligned"
           mv "$apk.aligned" "$apk"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
@@ -84,6 +116,14 @@ jobs:
           apk=$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)
           test -n "$apk"
           node scripts/checksum-artifact.mjs "$apk"
+      - name: Release-readiness gate (version, manifest, artifact, checksum, signing)
+        shell: bash
+        env:
+          ANALYZERX_SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          apk=$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)
+          node scripts/release-readiness.mjs --artifact "$apk"
       - name: Publish signed APK as a release asset
         shell: bash
         env:
@@ -91,17 +131,17 @@ jobs:
         run: |
           set -euo pipefail
           dir=android/app/build/outputs/apk/release
-          tag="apk-3.2.0-${GITHUB_RUN_NUMBER}"
+          tag="apk-${ANALYZERX_VERSION}-${GITHUB_RUN_NUMBER}"
           gh release create "$tag" \
             "$dir/app-release.apk" \
             "$dir/app-release.apk.sha256" \
-            --title "AnalyzerX 3.2.0 · build ${GITHUB_RUN_NUMBER}" \
+            --title "AnalyzerX ${ANALYZERX_VERSION} · build ${GITHUB_RUN_NUMBER}" \
             --notes "CI-built, v2/v3-signed release APK from ${GITHUB_SHA}." \
             --latest
       - uses: actions/upload-artifact@v4
         continue-on-error: true
         with:
-          name: analyzerx-3.2.0-apk
+          name: analyzerx-${{ env.ANALYZERX_VERSION }}-apk
           path: |
             android/app/build/outputs/apk/release/*.apk
             android/app/build/outputs/apk/release/*.apk.sha256
@@ -112,9 +152,9 @@ jobs:
           set -euo pipefail
           dir=android/app/build/outputs/apk/release
           mkdir -p apk-out
-          cp "$dir/app-release.apk" apk-out/analyzerx-3.2.0.apk
-          cp "$dir/app-release.apk.sha256" apk-out/analyzerx-3.2.0.apk.sha256
-          split -b 4194304 -d -a 3 apk-out/analyzerx-3.2.0.apk apk-out/analyzerx-3.2.0.apk.part
+          cp "$dir/app-release.apk" "apk-out/analyzerx-${ANALYZERX_VERSION}.apk"
+          cp "$dir/app-release.apk.sha256" "apk-out/analyzerx-${ANALYZERX_VERSION}.apk.sha256"
+          split -b 4194304 -d -a 3 "apk-out/analyzerx-${ANALYZERX_VERSION}.apk" "apk-out/analyzerx-${ANALYZERX_VERSION}.apk.part"
           ls -la apk-out
           git config user.email "ci@analyzerx.local"
           git config user.name "AnalyzerX CI"
@@ -122,5 +162,5 @@ jobs:
           git checkout --orphan apk-artifact
           git rm -rf --cached . >/dev/null 2>&1 || true
           git add -f apk-out
-          git commit -m "AnalyzerX 3.2.0 signed release APK (build ${GITHUB_RUN_NUMBER})"
+          git commit -m "AnalyzerX ${ANALYZERX_VERSION} signed release APK (build ${GITHUB_RUN_NUMBER})"
           git push --force origin apk-artifact

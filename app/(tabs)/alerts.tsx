@@ -5,7 +5,7 @@ import { router } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { DEFAULT_ALERT_NOTIFICATION_PREFERENCES, loadAlertNotificationPreferences, loadAlertState, saveAlertNotificationPreferences, saveAlertState, type AlertNotificationPreferences } from "@/lib/local-preferences";
 import { trpc } from "@/lib/trpc";
-import { smartAlertTemplates, type MonitoringRule } from "@/server/smart-event-alerts";
+import { smartAlertTemplates, type MonitoringRule } from "@/lib/smart-event-alerts";
 import { recordResearchEvent } from "@/lib/research-analytics";
 import { MarketScopeChip } from "@/components/market-scope-chip";
 import { useMarketContext } from "@/lib/market-context";

@@ -1,0 +1,8 @@
+{
+  "name": "eslint-import-resolver-node-exports",
+  "version": "1.0.0",
+  "description": "ESLint import resolver that follows Node's own module resolution, including package `exports` maps (wildcard subpaths and .js-suffixed subpaths).",
+  "private": true,
+  "main": "index.cjs",
+  "license": "MIT"
+}

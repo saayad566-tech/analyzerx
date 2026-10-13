@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { extractLiveEventChain } from "../server/live-smart-alerts";
 import type { QuantitativeMetric } from "../server/quantitative-metrics";
-import { discoverEligibleStocks, normalizeMonitoringQuery } from "../server/smart-event-alerts";
+import { discoverEligibleStocks, normalizeMonitoringQuery } from "../lib/smart-event-alerts";
 
 const profile = (symbol: string, companyName: string, marketCap: number, revenue: number, currency: "INR" = "INR") => ({
   resolvedSymbol: symbol, companyName, market: { exchange: "NSE", currency, country: "India", primaryFocus: true },

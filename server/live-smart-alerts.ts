@@ -3,7 +3,7 @@ import { getLatestTrackedNews, type ExtractedNews } from "./news-tracker";
 import { getMarketProfile, type MarketId } from "../lib/market-regions";
 import { getLatestSourceRecords, getSmartAlertResult, markSmartAlertNotified, upsertSmartAlertResult } from "./db";
 import { notifyOwner } from "./_core/notification";
-import { discoverEligibleStocks, type EventEvidence, type MarketCapBand, type MonitoringRule, type SmartAlertDiscovery, type SmartEventChain, type SmartEventType } from "./smart-event-alerts";
+import { discoverEligibleStocks, type EventEvidence, type MarketCapBand, type MonitoringRule, type SmartAlertDiscovery, type SmartEventChain, type SmartEventType } from "../lib/smart-event-alerts";
 
 export type LiveAlertProfile = Pick<FundamentalAnalysis, "resolvedSymbol" | "companyName" | "market" | "metrics" | "quantitativeMetrics" | "sources" | "asOf">;
 

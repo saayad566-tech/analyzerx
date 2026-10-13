@@ -1,6 +1,11 @@
 // Load environment variables with proper priority (system > .env)
 import "./scripts/load-env.js";
 import type { ExpoConfig } from "expo/config";
+// Single source of truth for the release identity. Every release-facing value
+// (app version, Android version code, iOS build number) is read from this file
+// so the app config can never drift from the release metadata. See
+// scripts/verify-release.mjs, which fails when any other file disagrees.
+import releaseIdentity from "./release-version.json";
 
 // Bundle ID format: space.manus.<project_name_dots>.<timestamp>
 // e.g., "my-app" created at 2024-01-15 10:30:45 -> "space.manus.my.app.t20240115103045"
@@ -31,9 +36,9 @@ const schemeFromBundleId = `manus${timestamp}`;
 // lightweight web/preview build when the Android native toolchain is unavailable.
 const enableNativeLocalAI =
   process.env.ANALYZERX_ENABLE_NATIVE_LOCAL_AI !== "false";
-const releaseVersion = "3.2.0";
-const releaseAndroidVersionCode = 3200;
-const releaseIosBuildNumber = "1400";
+const releaseVersion = releaseIdentity.version;
+const releaseAndroidVersionCode = releaseIdentity.androidVersionCode;
+const releaseIosBuildNumber = releaseIdentity.iosBuildNumber;
 
 const env = {
   // App branding - update these values directly (do not use env vars)

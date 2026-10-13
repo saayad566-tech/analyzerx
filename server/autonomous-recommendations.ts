@@ -4,7 +4,7 @@ import { getLatestSourceRecords, getAutonomousRecommendation, getAutonomousRecom
 import { notifyOwner } from "./_core/notification";
 import { getLatestTrackedNews, type ExtractedNews } from "./news-tracker";
 import { extractLiveEventChain, officialRecordToArticle } from "./live-smart-alerts";
-import { deduplicateEventChains, scoreSmartEvent, type EventEvidence, type SmartEventChain, type SmartEventType } from "./smart-event-alerts";
+import { deduplicateEventChains, scoreSmartEvent, type EventEvidence, type SmartEventChain, type SmartEventType } from "../lib/smart-event-alerts";
 
 export type RecommendationRelationship = "direct-beneficiary" | "indirect-beneficiary" | "affected-company" | "mixed-uncertain";
 export type RecommendationDirection = "beneficiary" | "negative-impact" | "mixed-uncertain";

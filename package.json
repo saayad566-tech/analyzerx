@@ -1,6 +1,6 @@
 {
   "name": "app-template",
-  "version": "1.4.0",
+  "version": "3.2.0",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
@@ -20,6 +20,8 @@
     "ios": "expo run:ios",
     "qr": "node scripts/generate_qr.mjs",
     "release:verify": "node scripts/verify-release.mjs",
+    "release:verify:local-ai": "node scripts/verify-local-ai-release-config.mjs",
+    "release:readiness": "node scripts/release-readiness.mjs",
     "apk:checksum": "node scripts/checksum-artifact.mjs"
   },
   "dependencies": {
@@ -102,12 +104,14 @@
     "esbuild": "^0.25.12",
     "eslint": "^9.39.2",
     "eslint-config-expo": "~10.0.0",
+    "eslint-import-resolver-node-exports": "link:./tools/eslint-import-resolver-node-exports",
     "prettier": "^3.7.4",
     "qrcode": "^1.5.4",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.21.0",
     "typescript": "~5.9.3",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.11",
+    "vite": "^7.3.7"
   },
   "packageManager": "pnpm@9.12.0"
 }

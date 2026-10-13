@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deduplicateEventChains, discoverEligibleStocks, normalizeMonitoringQuery, scoreSmartEvent, smartAlertTemplates, type SmartEventChain } from "../server/smart-event-alerts";
+import { deduplicateEventChains, discoverEligibleStocks, normalizeMonitoringQuery, scoreSmartEvent, smartAlertTemplates, type SmartEventChain } from "../lib/smart-event-alerts";
 
 const evidence = (url: string, source = "NSE") => ({ source, url, publishedAt: "2026-08-18T10:00:00.000Z", retrievedAt: "2026-08-18T10:05:00.000Z", status: "verified" as const, excerpt: "Verified filing excerpt" });
 const baseEvent: SmartEventChain = {

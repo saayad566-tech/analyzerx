@@ -30,7 +30,7 @@ import { fetchDerivativesSnapshot, getDerivativesSourceCatalog } from "./derivat
 import { getMultiAssetTimingSignals, getMultibaggerSignals, type MultibaggerStrategyId } from "./research-signals";
 import { discoverLiveSmartAlerts, persistSmartAlertDiscovery } from "./live-smart-alerts";
 import { getAutonomousRecommendation, getEventProjectionsForStoryline, getEventProjectionsForSymbol, getFundamentalObservationsForSymbol, getLatestEventProjections, getMarketObservationsForSymbol, getSmartAlertHistory, getUserAlertResult, listUserAlertResultsPage, getResearchRun, listResearchRuns, listResearchAgentRuns, getUserNotificationPreferences, listProviderHealthHistory, getEnabledUserPushTokens, listUserAlertResults, listUserAlertRules, listUserSavedResearch, listUserSavedScreens, listUserWatchlistItems, revokeUserAlertRule, revokeUserPushToken, revokeUserSavedResearch, revokeUserSavedScreen, revokeUserWatchlistItem, upsertUserAlertRule, upsertUserNotificationPreferences, upsertUserPushToken, upsertUserSavedResearch, upsertUserSavedScreen, upsertUserWatchlistItem, cancelResearchRun } from "./db";
-import { normalizeMonitoringQuery, type SmartAlertDiscovery } from "./smart-event-alerts";
+import { normalizeMonitoringQuery, type SmartAlertDiscovery } from "../lib/smart-event-alerts";
 import { getDataCapabilities, getDataCapabilityMatrix } from "./data-capability-registry";
 import { discoverAutonomousRecommendations, getPersistedAutonomousRecommendations } from "./autonomous-recommendations";
 import { persistProfileObservations } from "./data-observations";
