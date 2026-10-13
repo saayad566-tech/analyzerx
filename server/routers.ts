@@ -10,6 +10,7 @@ import { runProviderNow } from "./provider-actions";
 import { answerMarketChat, collectGroundedMarketContext, type MarketChatAttachment, type MarketChatMessage } from "./market-chat";
 import { answerGeneralChat, type GeneralChatMessage } from "./general-chat";
 import { buildDeepScore } from "./scoring";
+import { analyzeSentiment, getSentimentAvailability } from "./sentiment";
 import { fetchNseInstitutionalFlows, type FlowRange } from "./nse-flows";
 import { getLatestSourceRecords, getSourceRecordsForSymbol, getUserMarketPreference, upsertUserMarketPreference, saveNewsRelevanceFeedback, undoNewsRelevanceFeedback, listUserNewsRelevanceFeedback, listHeldNewsArticles, getHeldNewsArticle, reviewHeldNewsArticle, saveNewsEvent } from "./db";
 import { getSourceCatalog } from "./source-catalog";
@@ -330,6 +331,23 @@ export const appRouter = router({
     deepScore: publicProcedure
       .input(z.object({ symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/) }))
       .mutation(({ input }) => buildDeepScore(input.symbol)),
+  }),
+  sentiment: router({
+    // Availability is reported honestly: with no server-side credential this is
+    // `not-configured`, never a fabricated score (audit mandate §11.4).
+    status: publicProcedure.query(() => getSentimentAvailability()),
+    analyze: publicProcedure
+      .input(z.object({
+        articles: z.array(z.object({
+          id: z.string().trim().min(1).max(300),
+          title: z.string().trim().max(500),
+          text: z.string().max(20_000),
+          publisher: z.string().trim().max(200).optional(),
+          url: z.string().trim().max(2_000).optional(),
+          publishedAt: z.string().max(40).nullable().optional(),
+        })).max(12),
+      }))
+      .mutation(({ input }) => analyzeSentiment(input.articles)),
   }),
   researchDesk: router({
     run: publicProcedure.input(z.object({ message: z.string().trim().min(1).max(2_000), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN"), depth: z.enum(["quick", "standard", "deep"]).default("standard"), includeAgents: z.array(z.enum(RESEARCH_AGENT_TYPES as unknown as [ResearchAgentType, ...ResearchAgentType[]])).max(8).optional() })).mutation(({ input }) => runResearchDesk(input)),
