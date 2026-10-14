@@ -19,8 +19,7 @@ import {
   unavailableProvenance,
   type MarketId,
   type Provenance,
-  type SourceStatus,
-} from "./core";
+  type SourceStatus, scopedCacheKey } from "./core";
 import { resolveSector } from "../sector-registry";
 import {
   googleNews,
@@ -178,7 +177,7 @@ export async function snapshot(symbol: string, marketId: MarketId): Promise<Mark
         key: `yahoo-${host}${onBse ? "-bse" : ""}`,
         name: `Yahoo Finance (${host}${onBse ? " · BSE listing" : ""})`,
         run: async (): Promise<QuoteLinkValue | null> => {
-          const result = await cached(`quote:${listing}:${host}`, TTL.quote, () =>
+          const result = await cached(scopedCacheKey(marketId, `quote:${listing}:${host}`), TTL.quote, () =>
             yahooChart(listing, "5d", "1d", host),
           );
           const quote = quoteFromSeries(result.value.series);
@@ -282,8 +281,8 @@ export async function search(query: string, marketId: MarketId): Promise<SearchP
 
   try {
     const outcome = await runChain([
-      { key: "yahoo-query2-search", name: "Yahoo Finance search (query2)", run: () => cached(`search:q2:${q}`, TTL.search, () => yahooSearch(q, 15, "query2")) },
-      { key: "yahoo-query1-search", name: "Yahoo Finance search (query1)", run: () => cached(`search:q1:${q}`, TTL.search, () => yahooSearch(q, 15, "query1")) },
+      { key: "yahoo-query2-search", name: "Yahoo Finance search (query2)", run: () => cached(scopedCacheKey(marketId, `search:q2:${q}`), TTL.search, () => yahooSearch(q, 15, "query2")) },
+      { key: "yahoo-query1-search", name: "Yahoo Finance search (query1)", run: () => cached(scopedCacheKey(marketId, `search:q1:${q}`), TTL.search, () => yahooSearch(q, 15, "query1")) },
     ]);
     if (!outcome.value) throw new Error("Both Yahoo search hosts failed.");
     const hit = outcome.value;
@@ -363,8 +362,8 @@ export async function nseUniverse(): Promise<UniverseSnapshot> {
   const industryBySymbol = new Map(FALLBACK_UNIVERSE.map((row) => [row.symbol.toUpperCase(), row.industry]));
   try {
     const outcome = await runChain([
-      { key: "nse-equity-master", name: "NSE Equity Master", run: () => cached("universe:nse", TTL.universe, () => nseEquityMaster()) },
-      { key: "nse-sme-universe", name: "NSE SME Universe", run: () => cached("universe:nse-sme", TTL.universe, () => nseSmeUniverse()) },
+      { key: "nse-equity-master", name: "NSE Equity Master", run: () => cached(scopedCacheKey("IN", "universe:nse"), TTL.universe, () => nseEquityMaster()) },
+      { key: "nse-sme-universe", name: "NSE SME Universe", run: () => cached(scopedCacheKey("IN", "universe:nse-sme"), TTL.universe, () => nseSmeUniverse()) },
     ]);
     if (!outcome.value) throw new Error("Every NSE universe provider failed.");
     const result = outcome.value;
@@ -443,18 +442,18 @@ export async function stockNews(symbol: string, limit: number, marketId: MarketI
       {
         key: "google-news-rss",
         name: "Google News RSS",
-        run: async () => (await cached(`news:g:${clean}`, TTL.news, () => googleNews(`"${clean}" OR "${symbol}" stock`, clean, limit))).value.articles,
+        run: async () => (await cached(scopedCacheKey(marketId, `news:g:${clean}`), TTL.news, () => googleNews(`"${clean}" OR "${symbol}" stock`, clean, limit))).value.articles,
       },
       {
         key: "yahoo-news-rss",
         name: "Yahoo Finance news RSS",
-        run: async () => (await cached(`news:y:${clean}`, TTL.news, () => yahooNewsRss(yahooSymbol, limit))).value.articles,
+        run: async () => (await cached(scopedCacheKey(marketId, `news:y:${clean}`), TTL.news, () => yahooNewsRss(yahooSymbol, limit))).value.articles,
       },
       {
         key: "nse-announcements-rss",
         name: "NSE announcements RSS",
         run: async () =>
-          (await cached("news:nse-announcements", TTL.news, () => nseAnnouncementsRss(60))).value.articles.filter(
+          (await cached(scopedCacheKey("IN", "news:nse-announcements"), TTL.news, () => nseAnnouncementsRss(60))).value.articles.filter(
             (article) => article.headline.toUpperCase().includes(clean) || article.summary.toUpperCase().includes(clean),
           ),
       },
@@ -484,12 +483,12 @@ export async function marketNews(limit = 60): Promise<NewsPayload> {
       {
         key: "google-news-rss",
         name: "Google News RSS (market)",
-        run: async () => (await cached("news:market:g", TTL.news, () => googleNewsHeadlines(limit))).value.articles,
+        run: async () => (await cached(scopedCacheKey(marketId, "news:market:g"), TTL.news, () => googleNewsHeadlines(limit))).value.articles,
       },
       {
         key: "nse-announcements-rss",
         name: "NSE announcements RSS",
-        run: async () => (await cached("news:nse-announcements", TTL.news, () => nseAnnouncementsRss(60))).value.articles,
+        run: async () => (await cached(scopedCacheKey("IN", "news:nse-announcements"), TTL.news, () => nseAnnouncementsRss(60))).value.articles,
       },
     ],
     { key: (article) => article.id, limit: 300 },
@@ -609,7 +608,7 @@ export async function institutionalFlows(range = "TODAY"): Promise<Institutional
 
   // Primary: NSE's own provisional report for the current session.
   const nseOutcome = await runChain([
-    { key: "nse-fii-dii", name: "NSE FII/DII", run: () => cached("flows:fii-dii", TTL.flows, () => nseFiiDii()) },
+    { key: "nse-fii-dii", name: "NSE FII/DII", run: () => cached(scopedCacheKey("IN", "flows:fii-dii"), TTL.flows, () => nseFiiDii()) },
   ]);
 
   if (nseOutcome.value) {
@@ -625,7 +624,7 @@ export async function institutionalFlows(range = "TODAY"): Promise<Institutional
   } else {
     // Secondary: the keyless GitHub-hosted dataset, which carries its own chain.
     const gh = await runChain([
-      { key: "fii-dii-github", name: "FII/DII open dataset", run: () => cached("flows:fii-dii-github", TTL.flows, () => fiiDiiGithubLatest()) },
+      { key: "fii-dii-github", name: "FII/DII open dataset", run: () => cached(scopedCacheKey("IN", "flows:fii-dii-github"), TTL.flows, () => fiiDiiGithubLatest()) },
     ]);
     const ghSession = gh.value ? gh.value.value.session : null;
     if (ghSession) {
@@ -648,7 +647,7 @@ export async function institutionalFlows(range = "TODAY"): Promise<Institutional
   // and the screens' slicing both behave as designed.
   let history: InstitutionalHistoryRecord[] = [];
   try {
-    const backfill = await cached("flows:fii-dii-history", 6 * 60 * 60_000, () => fiiDiiGithubHistory(30));
+    const backfill = await cached(scopedCacheKey("IN", "flows:fii-dii-history"), 6 * 60 * 60_000, () => fiiDiiGithubHistory(30));
     history = backfill.value.sessions
       .map((session) => ({
         reportDate: session.date,
@@ -714,7 +713,7 @@ export async function institutionalFlows(range = "TODAY"): Promise<Institutional
 /** NSDL-derived fortnightly FPI sector allocation. Device-side source. */
 export async function sectorInstitutionalFlows(): Promise<{ rows: SectorFlowRow[]; asOf: string | null; source: string; error: string | null }> {
   const outcome = await runChain([
-    { key: "nsdl-sector-flows", name: "NSDL FPI sector allocation", run: () => cached("flows:sector", 6 * 60 * 60_000, () => nsdlSectorFlows()) },
+    { key: "nsdl-sector-flows", name: "NSDL FPI sector allocation", run: () => cached(scopedCacheKey("IN", "flows:sector"), 6 * 60 * 60_000, () => nsdlSectorFlows()) },
   ]);
   if (!outcome.value) {
     return { rows: [], asOf: null, source: "NSDL FPI sector allocation", error: `Sector flow dataset unavailable: ${outcome.attempts[0]?.error ?? "unknown"}` };
@@ -768,7 +767,7 @@ export async function sectorConstituents(
 
   const indexKey = resolution.indexKey;
   try {
-    const result = await cached(`sector:${indexKey}`, TTL.constituents, () =>
+    const result = await cached(scopedCacheKey("IN", `sector:${indexKey}`), TTL.constituents, () =>
       tracked("nse-index-constituents", () => nseIndexConstituents(indexKey)),
     );
     const constituents = result.value.rows.slice(0, limit).map((row) => ({
@@ -811,7 +810,7 @@ export async function peerComparison(symbol: string, marketId: MarketId): Promis
   const indexKeys = ["NIFTY50", "NIFTYBANK", "NIFTYIT", "NIFTYAUTO", "NIFTYPHARMA", "NIFTYFMCG", "NIFTYMETAL", "NIFTYENERGY", "NIFTYREALTY", "NIFTYFINSERVICE"];
   for (const indexKey of indexKeys) {
     try {
-      const result = await cached(`sector:${indexKey}`, TTL.constituents, () => tracked("nse-index-constituents", () => nseIndexConstituents(indexKey)));
+      const result = await cached(scopedCacheKey("IN", `sector:${indexKey}`), TTL.constituents, () => tracked("nse-index-constituents", () => nseIndexConstituents(indexKey)));
       const match = result.value.rows.find((row) => row.symbol === clean);
       if (match) {
         const peers = result.value.rows.filter((row) => row.symbol !== clean).slice(0, 8);
@@ -849,7 +848,7 @@ export async function primeEps(symbols: string[], marketId: MarketId) {
     symbols.map(async (symbol) => {
       if (latestEpsCache.has(symbol)) return;
       try {
-        const result = await cached(`fund:${toYahooSymbol(symbol, marketId)}`, TTL.fundamentals, () => tracked("yahoo-fundamentals", () => yahooFundamentals(toYahooSymbol(symbol, marketId))));
+        const result = await cached(scopedCacheKey(marketId, `fund:${toYahooSymbol(symbol, marketId)}`), TTL.fundamentals, () => tracked("yahoo-fundamentals", () => yahooFundamentals(toYahooSymbol(symbol, marketId))));
         const points = result.value.data.metrics.annualDilutedEPS ?? [];
         const latest = points.length ? [...points].sort((a, b) => a.asOfDate.localeCompare(b.asOfDate)).slice(-1)[0] : null;
         latestEpsCache.set(symbol, latest?.raw ?? null);
@@ -870,7 +869,7 @@ export async function priceHistory(symbol: string, range = "6mo", interval = "1d
     (["query1", "query2"] as YahooHost[]).map((host) => ({
       key: `yahoo-${host}`,
       name: `Yahoo Finance (${host})`,
-      run: () => cached(`history:${yahooSymbol}:${range}:${interval}:${host}`, TTL.history, () => yahooChart(yahooSymbol, range, interval, host)),
+      run: () => cached(scopedCacheKey(marketId, `history:${yahooSymbol}:${range}:${interval}:${host}`), TTL.history, () => yahooChart(yahooSymbol, range, interval, host)),
     })),
   );
   if (!outcome.value) throw new Error(`Price history unavailable from all ${outcome.attempts.length} providers.`);
@@ -904,7 +903,7 @@ export async function multiAssetTiming(): Promise<{ generatedAt: string; signals
     await Promise.all(
       targets.map(async (target) => {
         try {
-          const result = await cached(`quote:${target.symbol}`, TTL.quote, () => tracked("yahoo-finance", () => yahooChart(target.symbol, "1mo", "1d")));
+          const result = await cached(scopedCacheKey(marketId, `quote:${target.symbol}`), TTL.quote, () => tracked("yahoo-finance", () => yahooChart(target.symbol, "1mo", "1d")));
           const quote = quoteFromSeries(result.value.series);
           const changePct = quote.changePercent;
           const score = changePct === null ? 50 : clamp(round(50 + changePct * 2));
