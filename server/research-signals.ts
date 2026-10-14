@@ -51,10 +51,10 @@ export function scoreMultibaggerStrategy(strategyId: MultibaggerStrategyId, metr
   return { score, matchedCriteria, failedCriteria };
 }
 
-export async function getMultibaggerSignals(strategyId: MultibaggerStrategyId = "buffett-munger") {
+export async function getMultibaggerSignals(marketId: MarketId, strategyId: MultibaggerStrategyId = "buffett-munger") {
   const strategy = strategyWeights[strategyId] ?? strategyWeights["buffett-munger"];
   const results = await Promise.allSettled(verifiedResearchUniverse.map(async (candidate) => {
-    const report = await analyzeFundamentals(candidate.symbol);
+    const report = await analyzeFundamentals(candidate.symbol, marketId);
     const institutional = report.institutionalReport;
     const technical = report.stockAnalysis.technical;
     const coverage = clamp(report.coverage.score);
