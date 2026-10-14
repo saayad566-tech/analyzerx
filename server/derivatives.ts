@@ -1,4 +1,5 @@
 import { markProviderHealthy, markProviderRejected } from "./provider-health";
+import { type MarketId } from "../lib/market-regions";
 import { fetchAngelOneSnapshot, getAngelOneSourceCatalog } from "./angelone";
 
 export type DerivativesStatus = "fresh" | "stale" | "unavailable" | "auth_required" | "error";
