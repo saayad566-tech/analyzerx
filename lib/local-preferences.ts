@@ -1,7 +1,50 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { DEFAULT_MARKET_ID, isMarketId } from "@/lib/market-regions";
 
 const ALERTS_KEY = "market-event-intelligence.alerts.enabled";
 const RECENT_SEARCHES_KEY = "market-event-intelligence.screener.recent-searches";
+
+/**
+ * Every user-owned list is stored per market.
+ *
+ * The defect this fixes: one watchlist and one saved-screens list were shared across
+ * all markets, so a US watchlist could hold Indian tickers and switching markets did
+ * not change what you saw.
+ *
+ * The legacy unscoped keys are migrated ONCE into the India bucket, because the data
+ * they hold was written when the app was India-only. Nothing is deleted until the
+ * scoped copy exists.
+ */
+function scopedStorageKey(base: string, marketId: string): string {
+  const market = isMarketId(marketId) ? marketId.toUpperCase() : DEFAULT_MARKET_ID;
+  return `${base}.${market}`;
+}
+
+/** Move a legacy unscoped key into the India bucket, once. */
+async function migrateLegacyKey(base: string): Promise<void> {
+  const target = scopedStorageKey(base, DEFAULT_MARKET_ID);
+  try {
+    const legacy = await AsyncStorage.getItem(base);
+    if (legacy === null) return;
+    const existing = await AsyncStorage.getItem(target);
+    if (existing === null) await AsyncStorage.setItem(target, legacy);
+    await AsyncStorage.removeItem(base);
+  } catch {
+    // Migration is best-effort; a failure leaves the legacy key readable, not lost.
+  }
+}
+
+/**
+ * One-time migration of pre-scoping user data. Safe to call on every launch: it is a
+ * no-op once the legacy keys are gone.
+ */
+export async function migrateLegacyMarketStorage(): Promise<void> {
+  await Promise.all([
+    migrateLegacyKey(WATCHLIST_KEY),
+    migrateLegacyKey(SAVED_SCREENS_KEY),
+    migrateLegacyKey(RECENT_SEARCHES_KEY),
+  ]);
+}
 const SAVED_SCREENS_KEY = "market-event-intelligence.screener.saved-screens";
 const WATCHLIST_KEY = "market-event-intelligence.screener.watchlist";
 
@@ -40,9 +83,9 @@ export async function saveAlertState(value: [boolean, boolean]) {
   }
 }
 
-export async function loadRecentSearches(): Promise<string[]> {
+export async function loadRecentSearches(marketId: string): Promise<string[]> {
   try {
-    const raw = await AsyncStorage.getItem(RECENT_SEARCHES_KEY);
+    const raw = await AsyncStorage.getItem(scopedStorageKey(RECENT_SEARCHES_KEY, marketId));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string").slice(0, 5) : [];
@@ -51,36 +94,36 @@ export async function loadRecentSearches(): Promise<string[]> {
   }
 }
 
-export async function loadSavedScreens(): Promise<SavedScreen[]> {
+export async function loadSavedScreens(marketId: string): Promise<SavedScreen[]> {
   try {
-    const raw = await AsyncStorage.getItem(SAVED_SCREENS_KEY);
+    const raw = await AsyncStorage.getItem(scopedStorageKey(SAVED_SCREENS_KEY, marketId));
     const parsed = raw ? JSON.parse(raw) as unknown : [];
     return Array.isArray(parsed) ? parsed.filter((item): item is SavedScreen => Boolean(item && typeof item === "object" && typeof (item as SavedScreen).name === "string" && Array.isArray((item as SavedScreen).filters))).slice(0, 10) : [];
   } catch { return []; }
 }
 
-export async function saveSavedScreen(screen: SavedScreen, current: SavedScreen[]) {
+export async function saveSavedScreen(marketId: string, screen: SavedScreen, current: SavedScreen[]) {
   const next = [screen, ...current.filter((item) => item.name !== screen.name)].slice(0, 10);
-  try { await AsyncStorage.setItem(SAVED_SCREENS_KEY, JSON.stringify(next)); } catch { /* best effort */ }
+  try { await AsyncStorage.setItem(scopedStorageKey(SAVED_SCREENS_KEY, marketId), JSON.stringify(next)); } catch { /* best effort */ }
 }
 
-export async function loadWatchlist(): Promise<string[]> {
+export async function loadWatchlist(marketId: string): Promise<string[]> {
   try {
-    const raw = await AsyncStorage.getItem(WATCHLIST_KEY);
+    const raw = await AsyncStorage.getItem(scopedStorageKey(WATCHLIST_KEY, marketId));
     const parsed = raw ? JSON.parse(raw) as unknown : [];
     return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string").slice(0, 30) : [];
   } catch { return []; }
 }
 
-export async function saveWatchlist(symbols: string[]) {
-  try { await AsyncStorage.setItem(WATCHLIST_KEY, JSON.stringify([...new Set(symbols.map((symbol) => symbol.trim().toUpperCase()).filter(Boolean))].slice(0, 30))); } catch { /* best effort */ }
+export async function saveWatchlist(marketId: string, symbols: string[]) {
+  try { await AsyncStorage.setItem(scopedStorageKey(WATCHLIST_KEY, marketId), JSON.stringify([...new Set(symbols.map((symbol) => symbol.trim().toUpperCase()).filter(Boolean))].slice(0, 30))); } catch { /* best effort */ }
 }
 
-export async function saveRecentSearch(symbol: string, current: string[]) {
+export async function saveRecentSearch(marketId: string, symbol: string, current: string[]) {
   const next = mergeRecentSearches(symbol, current);
   if (next.length === 0) return;
   try {
-    await AsyncStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next));
+    await AsyncStorage.setItem(scopedStorageKey(RECENT_SEARCHES_KEY, marketId), JSON.stringify(next));
   } catch {
     // Persistence is best-effort; search and analysis continue without it.
   }
