@@ -635,7 +635,7 @@ export const appRouter = router({
     derivatives: publicProcedure.input(symbolInput).query(({ input }) => fetchDerivativesSnapshot(input.symbol, input.marketId)),
     derivativesSources: publicProcedure.query(() => getDerivativesSourceCatalog()),
     multibaggerSignals: publicProcedure.input(z.object({ marketId: marketIdSchema, strategyId: z.enum(["buffett-munger", "peter-lynch", "canslim", "greenblatt", "fisher", "small-cap-compounder"]).default("buffett-munger") })).query(({ input }) => getMultibaggerSignals(input.marketId, input.strategyId as MultibaggerStrategyId)),
-    multiAssetTiming: publicProcedure.query(() => getMultiAssetTimingSignals()),
+    multiAssetTiming: publicProcedure.input(z.object({ marketId: marketIdSchema })).query(({ input }) => getMultiAssetTimingSignals(input.marketId)),
     indianSnapshot: publicProcedure.input(symbolInput).query(async ({ input }) => {
       try {
         const payload = await fetchIndian<IndianStockResponse>(input.symbol);
