@@ -1,4 +1,5 @@
 import { callIndiaStockMcpTool } from "./india-stock-mcp";
+import { type MarketId } from "../lib/market-regions";
 
 import { runProvidersInParallel } from "./parallel-providers";
 import { fetchIndianOpenStock, normalizeIndianOpenQuote } from "./indian-open-api";
