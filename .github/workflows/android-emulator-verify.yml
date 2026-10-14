@@ -67,76 +67,19 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: |
-            set -eu
-            PKG=com.app.marketeventintelligence
-            echo "package under test: $PKG"
-
-            echo "=== 1. device is up ==="
-            adb wait-for-device
-            adb shell getprop ro.build.version.release
-            adb shell wm size
-
-            echo "=== 2. install the real APK ==="
-            adb install -r app-release.apk
-            adb shell pm list packages > packages.txt
-            grep "com.app.marketeventintelligence" packages.txt
-
-            echo "=== 3. clear logcat and launch the app ==="
-            adb logcat -c
-            # Launch the MAIN/LAUNCHER activity explicitly. `monkey` rejects its
-            # arguments under this shell, and an explicit component start is both
-            # deterministic and easier to assert on.
-            adb shell am start -W -n com.app.marketeventintelligence/.MainActivity
-            sleep 5
-            echo "=== 3b. informational: what is on screen ==="
-            # `am start` already reported Status: ok. This is a soft, informational
-            # dump only — the authoritative liveness proof is the pidof check below,
-            # so it must never abort the run.
-            adb shell dumpsys activity activities > activities.txt 2>&1 || true
-            if grep -q "com.app.marketeventintelligence" activities.txt; then
-              echo "activity present in dumpsys"
-            else
-              echo "activity not listed yet in dumpsys (informational only)"
-            fi
-
-            echo "=== 4. wait for it to settle ==="
-            sleep 25
-
-            echo "=== 5. the process must be alive (a crash would leave no pid) ==="
-            PID=$(adb shell pidof com.app.marketeventintelligence | tr -d '\r')
-            echo "pid=$PID"
-            if [ -z "$PID" ]; then echo "APP IS NOT RUNNING"; adb logcat -d | tail -80; exit 1; fi
-
-            echo "=== 6. the launch activity must be resumed ==="
-            adb shell dumpsys activity activities | grep -E "mResumedActivity|topResumedActivity" | head -3 || true
-
-            echo "=== 7. exercise the UI: tap around the main surface ==="
-            for xy in "540 1200" "540 1800" "900 400" "200 2200"; do
-              adb shell input tap $xy || true
-              sleep 3
-            done
-            sleep 5
-
-            echo "=== 8. still alive after interaction? ==="
-            PID2=$(adb shell pidof com.app.marketeventintelligence | tr -d '\r')
-            echo "pid after interaction=$PID2"
-            if [ -z "$PID2" ]; then echo "APP DIED DURING INTERACTION"; adb logcat -d | tail -120; exit 1; fi
-
-            echo "=== 9. no fatal exception in logcat ==="
-            adb logcat -d > logcat.txt
-            if grep -E "FATAL EXCEPTION" logcat.txt ; then
-              echo "FATAL EXCEPTION FOUND"; exit 1
-            fi
-            echo "no fatal exception"
-
-            echo "=== 10. capture a screenshot ==="
-            adb exec-out screencap -p > emulator-screenshot.png
-            ls -l emulator-screenshot.png
-
-            echo "=== 11. app logcat tail (evidence) ==="
-            grep -i "marketeventintelligence" logcat.txt | tail -40 || true
-
+            echo "=== 1. device is up ==="; adb wait-for-device; adb shell getprop ro.build.version.release; adb shell wm size
+            echo "=== 2. install the real APK ==="; adb install -r app-release.apk
+            echo "=== 2b. the package must be listed ==="; adb shell pm list packages > packages.txt; grep "com.app.marketeventintelligence" packages.txt || (echo "PACKAGE NOT INSTALLED"; exit 1)
+            echo "=== 3. launch the MAIN/LAUNCHER activity ==="; adb logcat -c; adb shell am start -W -n com.app.marketeventintelligence/.MainActivity
+            echo "=== 4. let it settle ==="; sleep 30
+            echo "=== 5. THE PROCESS MUST BE ALIVE (a crash leaves no pid) ==="; adb shell pidof com.app.marketeventintelligence | grep -q . || (echo "APP IS NOT RUNNING"; adb logcat -d | tail -80; exit 1); adb shell pidof com.app.marketeventintelligence
+            echo "=== 6. exercise the UI ==="; for xy in "540 1200" "540 900" "900 400" "200 2200" "540 1600"; do adb shell input tap $xy; sleep 3; done
+            echo "=== 7. STILL ALIVE AFTER INTERACTION ==="; adb shell pidof com.app.marketeventintelligence | grep -q . || (echo "APP DIED DURING INTERACTION"; adb logcat -d | tail -120; exit 1); adb shell pidof com.app.marketeventintelligence
+            echo "=== 8. no fatal exception in logcat ==="; adb logcat -d > logcat.txt; if grep -q "FATAL EXCEPTION" logcat.txt; then echo "FATAL EXCEPTION FOUND"; tail -60 logcat.txt; exit 1; fi; echo "no fatal exception"
+            echo "=== 9. app logcat tail (evidence) ==="; grep -i "marketeventintelligence" logcat.txt | tail -40 || true
+            echo "=== 10. capture a screenshot ==="; adb exec-out screencap -p > emulator-screenshot.png; ls -l emulator-screenshot.png
             echo "EMULATOR VERIFICATION PASSED"
+
 
       - name: Upload the screenshot and logcat
         if: always()
