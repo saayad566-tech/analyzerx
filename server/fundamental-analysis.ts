@@ -960,7 +960,7 @@ export function buildAnalysis(requestedSymbol: string, resolvedSymbol: string, r
   };
 }
 
-export async function analyzeFundamentals(requestedSymbol: string): Promise<FundamentalAnalysis> {
+export async function analyzeFundamentals(requestedSymbol: string, marketId: MarketId): Promise<FundamentalAnalysis> {
   const requested = requestedSymbol.trim().toUpperCase();
   const requestedBase = requested.replace(/\.(NS|BO)$/i, "");
   const alias = corporateAliases[requested] ?? corporateAliases[requestedBase];
