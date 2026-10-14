@@ -318,8 +318,8 @@ export default function LiveEventsScreen() {
   const { isAuthenticated } = useAuth();
   const [query, setQuery] = useState("");
   const [remoteLiveQuery, setRemoteLiveQuery] = useState("");
-  const [newsSymbol, setNewsSymbol] = useState("RELIANCE");
-  const [newsLookupSymbol, setNewsLookupSymbol] = useState("RELIANCE");
+  const [newsSymbol, setNewsSymbol] = useState(() => defaultSymbolForMarket(market.id) ?? "");
+  const [newsLookupSymbol, setNewsLookupSymbol] = useState(() => defaultSymbolForMarket(market.id) ?? "");
   const [activeFilter, setActiveFilter] = useState("All events");
   const [archiveScope, setArchiveScope] = useState<
     "All archive" | "Special Events"
@@ -388,7 +388,7 @@ export default function LiveEventsScreen() {
     setShowCustomRange(false);
   }, [market.id]);
   const liveSearch = trpc.market.search.useQuery(
-    { query: remoteLiveQuery },
+    { marketId: market.id, query: remoteLiveQuery },
     { enabled: remoteLiveQuery.length >= 1, retry: false, staleTime: 30_000 },
   );
   const liveSuggestions = useMemo(
@@ -396,7 +396,7 @@ export default function LiveEventsScreen() {
     [liveSearch.data?.results],
   );
   const finnhubSnapshot = trpc.market.snapshot.useQuery(
-    { symbol: featuredSymbol, marketId: market.id },
+    { marketId: market.id, symbol: featuredSymbol },
     // Keep the snapshot current without a manual pull; bounded, not a tight loop.
     { staleTime: 60_000, retry: 1, refetchInterval: 90_000, refetchIntervalInBackground: false },
   );
@@ -406,7 +406,7 @@ export default function LiveEventsScreen() {
   useEffect(() => {
     setFeaturedSymbol(defaultSymbolForMarket(market.id) ?? "");
   }, [market.id]);
-  const newsTrackerStatus = trpc.news.status.useQuery(undefined, {
+  const newsTrackerStatus = trpc.news.status.useQuery({ marketId: market.id }, {
     refetchInterval: 1_000,
     retry: false,
   });
@@ -450,7 +450,7 @@ export default function LiveEventsScreen() {
   const flagIrrelevant = trpc.news.flagIrrelevant.useMutation();
   const undoIrrelevant = trpc.news.undoIrrelevant.useMutation();
   const trackedNews = trpc.news.stock.useQuery(
-    { symbol: newsLookupSymbol, marketId: market.id },
+    { marketId: market.id, symbol: newsLookupSymbol },
     {
       staleTime: 0,
       refetchInterval: 30_000,
@@ -461,7 +461,7 @@ export default function LiveEventsScreen() {
     },
   );
   const newsArchive = trpc.news.archive.useQuery(
-    {
+    { marketId: market.id,
       days: archiveDays,
       page: archivePage,
       limit: 100,
@@ -505,23 +505,23 @@ export default function LiveEventsScreen() {
     staleTime: 300_000,
     retry: false,
   });
-  const sourceCatalog = trpc.sources.list.useQuery(undefined, {
+  const sourceCatalog = trpc.sources.list.useQuery({ marketId: market.id }, {
     staleTime: 300_000,
     retry: false,
   });
-  const nseUniverse = trpc.market.universe.useQuery(undefined, {
+  const nseUniverse = trpc.market.universe.useQuery({ marketId: market.id }, {
     staleTime: 3_600_000,
     retry: false,
   });
   const latestSourceRecords = trpc.sources.latest.useQuery(
-    { limit: 5 },
+    { marketId: market.id, limit: 5 },
     { staleTime: 60_000, retry: false },
   );
-  const nseCollectors = trpc.sources.nseCollectors.useQuery(undefined, {
+  const nseCollectors = trpc.sources.nseCollectors.useQuery({ marketId: market.id }, {
     staleTime: 300_000,
     retry: false,
   });
-  const collectorHealth = trpc.sources.health.useQuery(undefined, {
+  const collectorHealth = trpc.sources.health.useQuery({ marketId: market.id }, {
     refetchInterval: 30_000,
     retry: false,
   });
