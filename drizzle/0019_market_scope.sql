@@ -55,8 +55,6 @@ UPDATE `source_records` SET `marketId` = 'US' WHERE `marketId` = 'UNKNOWN' AND `
 --> statement-breakpoint
 UPDATE `source_records` SET `marketId` = 'IN' WHERE `marketId` = 'UNKNOWN' AND (`sourceKey` LIKE 'nse%' OR `sourceKey` LIKE 'bse%' OR `sourceKey` LIKE 'sebi%' OR `sourceKey` LIKE 'nsdl%' OR `sourceKey` LIKE 'amfi%' OR `sourceKey` LIKE 'company-ir%');
 --> statement-breakpoint
-UPDATE `source_records` SET `marketId` = 'US' WHERE `marketId` = 'UNKNOWN' AND `symbol` REGEXP '^[A-Z]{1,5}$';
---> statement-breakpoint
 UPDATE `source_records` SET `marketId` = 'GB' WHERE `marketId` = 'UNKNOWN' AND `symbol` LIKE '%.L';
 --> statement-breakpoint
 UPDATE `source_records` SET `marketId` = 'CA' WHERE `marketId` = 'UNKNOWN' AND (`symbol` LIKE '%.TO' OR `symbol` LIKE '%.V');
@@ -80,8 +78,11 @@ UPDATE `event_projections` SET `marketId` = 'JP' WHERE `marketId` = 'UNKNOWN' AN
 --> statement-breakpoint
 UPDATE `event_projections` SET `marketId` = 'HK' WHERE `marketId` = 'UNKNOWN' AND `symbol` LIKE '%.HK';
 --> statement-breakpoint
-UPDATE `event_projections` SET `marketId` = 'US' WHERE `marketId` = 'UNKNOWN' AND `symbol` REGEXP '^[A-Z]{1,5}$';
---> statement-breakpoint
+-- NOTE: there is deliberately NO "bare upper-case ticker means US" rule here.
+-- A bare ticker is ambiguous: the US uses them (AAPL) and so does India (RELIANCE),
+-- and they are the two largest markets in this app. Assigning a bare ticker to the US
+-- would silently misclassify Indian rows, so a row whose source key and symbol suffix
+-- do not identify a market STAYS UNKNOWN and remains hidden.
 -- User rows that were created before scoping belong to India, which was the only
 -- selectable market then. These are explicitly classified, not left UNKNOWN, so a
 -- returning user keeps their list.
