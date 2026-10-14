@@ -879,7 +879,20 @@ export async function priceHistory(symbol: string, range = "6mo", interval = "1d
   const points = series.timestamps
     .map((ts, index) => ({ t: new Date(ts * 1000).toISOString(), c: series.closes[index] ?? null }))
     .filter((point) => point.c !== null);
-  return { symbol: toDisplaySymbol(yahooSymbol), range, interval, points, source: result.value.url, latencyMs: result.value.latencyMs };
+  // The full OHLCV series is exposed alongside the close-only `points`. Candlestick
+  // rendering and every volume-based indicator (VWAP, OBV, MFI, accumulation) need the
+  // open, high, low and volume, which were previously discarded here.
+  const bars = series.timestamps
+    .map((ts, index) => ({
+      t: new Date(ts * 1000).toISOString(),
+      o: series.opens[index] ?? null,
+      h: series.highs[index] ?? null,
+      l: series.lows[index] ?? null,
+      c: series.closes[index] ?? null,
+      v: series.volumes[index] ?? null,
+    }))
+    .filter((bar) => bar.c !== null);
+  return { symbol: toDisplaySymbol(yahooSymbol), range, interval, points, bars, source: result.value.url, latencyMs: result.value.latencyMs };
 }
 
 /* ------------------------------------------------------------------ *
