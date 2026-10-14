@@ -31,7 +31,7 @@ describe("broad stock search", () => {
 
   it("accepts a valid exact ticker even when autocomplete has no row", () => {
     expect(isValidDirectStockSymbol("TATASTBLSL")).toBe("TATASTBLSL");
-    expect(createDirectStockResultForMarket("TATASTBLSL")).toMatchObject({ symbol: "TATASTBLSL", name: "TATASTBLSL", source: "Market-aware direct lookup", exchange: "NSE" });
+    expect(createDirectStockResultForMarket("TATASTBLSL", "IN")).toMatchObject({ symbol: "TATASTBLSL", name: "TATASTBLSL", source: "Market-aware direct lookup", exchange: "NSE" });
   });
 
   it("uses the selected market exchange and country context for direct lookups", () => {
@@ -40,7 +40,7 @@ describe("broad stock search", () => {
   });
 
   it("rejects free-form text as a direct ticker", () => {
-    expect(createDirectStockResultForMarket("Tata Steel")).toBeNull();
-    expect(createDirectStockResultForMarket("***")).toBeNull();
+    expect(createDirectStockResultForMarket("Tata Steel", "IN")).toBeNull();
+    expect(createDirectStockResultForMarket("***", "IN")).toBeNull();
   });
 });
