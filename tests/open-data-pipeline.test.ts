@@ -82,10 +82,23 @@ describe("source catalog", () => {
   });
 
   it("attributes query variants to their real provider", () => {
-    const gnews = catalog.find((source) => source.id.startsWith("gnews-"));
+    // Symbol-lens ids are market-prefixed so they stay unique across markets, and the
+    // lens itself is built with that market's own news edition. Every market must have
+    // its own lens set, and each must resolve to the real provider behind the URL.
+    const gnews = catalog.find((source) => source.id.includes("-gnews-"));
     expect(gnews && providerOf(gnews)).toBe("google-news");
     const nse = catalog.find((source) => source.id.startsWith("nse-rss-"));
     expect(nse && providerOf(nse)).toBe("nse");
+    for (const market of ["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]) {
+      const lens = catalog.find((source) => source.id.startsWith(`${market.toLowerCase()}-gnews-`));
+      expect(lens, `${market} has no symbol lens`).toBeDefined();
+      expect(providerOf(lens!)).toBe("google-news");
+      expect(lens!.market).toBe(market);
+    }
+    // A non-Indian lens must never carry the India news edition.
+    const usLens = catalog.find((source) => source.id.startsWith("us-gnews-"));
+    expect(usLens!.url).not.toContain("gl=IN");
+    expect(usLens!.url).not.toContain("ceid=IN");
   });
 
   it("summarises the catalog for the ops screen", () => {
