@@ -51,6 +51,7 @@ function toneFor(sentiment: StoredArticle["sentiment"]): string {
 }
 
 export default function NewsDetailScreen() {
+  const { market } = useMarketContext();
   const { id } = useLocalSearchParams<{ id: string }>();
   // The detail screen reads the same on-device archive the list uses and looks
   // the story up by id, so it needs no procedure the typed router does not
