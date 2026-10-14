@@ -137,7 +137,7 @@ export async function discoverLiveSmartAlerts(rule: MonitoringRule, options: { l
   const cutoff = Date.now() - lookbackDays * 86_400_000;
   const marketId = requireMarketId(options.marketId);
   const market = getMarketProfile(marketId);
-  const [trackedArticles, sourceRecords] = await Promise.all([getLatestTrackedNews(250), getLatestSourceRecords(400)]);
+  const [trackedArticles, sourceRecords] = await Promise.all([getLatestTrackedNews(250), getLatestSourceRecords(marketId, 400)]);
   const officialArticles = sourceRecords.map((record) => officialRecordToArticle(record, marketId)).filter((article): article is ExtractedNews => Boolean(article));
   const articles = [...trackedArticles, ...officialArticles];
   const filtered = articles.filter((article) => Date.parse(article.published_at) >= cutoff && (marketId === "IN" || article.source === "news-tracker" || sourceStatus(article.source) === "verified"));
