@@ -100,7 +100,10 @@ export const OFFICIAL_SOURCES: CatalogSource[] = [
 
 // Index and sector constituent lists — one catalog entry per NSE index.
 import { PUBLISHER_FEEDS } from "../market-publisher-feeds";
-import { MARKET_TOPICS, topicFeedUrl } from "../market-news-query";
+import { MARKET_TOPICS, topicFeedUrl, marketQueryTerms } from "../market-news-query";
+import { newsEditionFor } from "../market-news-edition";
+import { seedUniverseForMarket } from "../market-universe";
+import { toYahooSymbol } from "./core";
 import { MARKET_IDS, type MarketId } from "../market-regions";
 
 export const NSE_INDEX_SOURCES: CatalogSource[] = [
@@ -158,7 +161,7 @@ export type SymbolLens = {
 };
 
 export const SYMBOL_LENSES: SymbolLens[] = [
-  { suffix: "news", label: "news", kind: "news", engine: "google", query: (s) => `"${s}" stock India` },
+  { suffix: "news", label: "news", kind: "news", engine: "google", query: (s) => `"${s}" stock` },
   { suffix: "results", label: "quarterly results", kind: "results", engine: "google", query: (s) => `"${s}" quarterly results earnings` },
   { suffix: "orders", label: "orders and contracts", kind: "news", engine: "google", query: (s) => `"${s}" order contract wins` },
   { suffix: "announcements", label: "board announcements", kind: "announcement", engine: "google", query: (s) => `"${s}" board announcement` },
@@ -169,16 +172,18 @@ export const SYMBOL_LENSES: SymbolLens[] = [
   { suffix: "yahoo", label: "Yahoo Finance feed", kind: "news", engine: "yahoo", query: (s) => s },
 ];
 
-function symbolFeed(symbol: string, lens: SymbolLens): CatalogSource {
+function symbolFeed(symbol: string, lens: SymbolLens, marketId: MarketId): CatalogSource {
   const clean = symbol.replace(/[^A-Z0-9&-]/g, "");
+  const edition = newsEditionFor(marketId) ?? { hl: "en-US", gl: "US", ceid: "US:en" };
+  const terms = marketQueryTerms(marketId);
   if (lens.engine === "yahoo") {
     return {
-      id: `yahoonews-${clean.toLowerCase()}`,
+      id: `${marketId.toLowerCase()}-yahoonews-${clean.toLowerCase()}`,
       name: `Yahoo Finance news · ${clean}`,
       kind: lens.kind,
       format: "rss",
-      url: `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(`${clean}.NS`)}&region=US&lang=en-US`,
-      market: "IN",
+      url: `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(toYahooSymbol(clean, marketId))}&region=${edition.gl}&lang=${edition.hl}`,
+      market: marketId,
       cadenceMs: 20 * MIN,
       credentialState: "none-required",
       reachability: "verified",
@@ -188,13 +193,16 @@ function symbolFeed(symbol: string, lens: SymbolLens): CatalogSource {
       provider: "yahoo-finance-news",
     };
   }
+  // Each symbol lens carries the market's own search terms and news edition. It used to
+  // be pinned to India (`... stock India`, hl=en-IN&gl=IN&ceid=IN:en) for every market.
+  const query = terms ? `${lens.query(clean)} ${terms}` : lens.query(clean);
   return {
-    id: `gnews-${clean.toLowerCase()}-${lens.suffix}`,
+    id: `${marketId.toLowerCase()}-gnews-${clean.toLowerCase()}-${lens.suffix}`,
     name: `Google News · ${clean} · ${lens.label}`,
     kind: lens.kind,
     format: "rss",
-    url: `https://news.google.com/rss/search?q=${encodeURIComponent(lens.query(clean))}&hl=en-IN&gl=IN&ceid=IN:en`,
-    market: "IN",
+    url: `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=${edition.hl}&gl=${edition.gl}&ceid=${edition.ceid}`,
+    market: marketId,
     cadenceMs: 20 * MIN,
     credentialState: "none-required",
     reachability: "verified",
@@ -236,6 +244,17 @@ export function buildCatalog(symbols: string[] = [], target = CATALOG_TARGET): C
         reachability: "device" as const,
         license: "Google News RSS aggregation; links to the original publisher.",
       });
+    }
+  }
+
+  // Per-symbol research lenses, one set per market. This generation was lost when the
+  // India-tagged topic block was replaced, which is why the catalog fell from 800+
+  // targets to 328. It is restored per market rather than once for India, so the catalog
+  // is both large and correctly scoped.
+  for (const marketId of MARKET_IDS) {
+    const marketSymbols = marketId === "IN" ? universe : seedUniverseForMarket(marketId);
+    for (const symbol of marketSymbols) {
+      for (const lens of SYMBOL_LENSES) sources.push(symbolFeed(symbol, lens, marketId));
     }
   }
   return sources;
