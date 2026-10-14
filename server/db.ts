@@ -1,5 +1,5 @@
 import mysql from "mysql2";
-import { requireMarketId } from "../lib/market-regions";
+import { requireMarketId, type MarketId } from "../lib/market-regions";
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import { and, desc, eq, gte, like, lt, or, sql } from "drizzle-orm";
@@ -282,7 +282,7 @@ export async function getLatestSourceRecords(marketId: MarketId, limit = 50) {
 export async function getSourceRecordsForSymbol(marketId: MarketId, symbol: string, limit = 100) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(sourceRecords).where(eq(sourceRecords.marketId, marketId)).where(eq(sourceRecords.symbol, symbol.toUpperCase())).orderBy(desc(sourceRecords.retrievedAt)).limit(limit);
+  return db.select().from(sourceRecords).where(and(eq(sourceRecords.marketId, marketId), eq(sourceRecords.symbol, symbol.toUpperCase()))).orderBy(desc(sourceRecords.retrievedAt)).limit(limit);
 }
 
 export async function upsertPushToken(token: InsertPushToken): Promise<boolean> {
@@ -398,7 +398,7 @@ export async function getEventProjectionsForSymbol(marketId: MarketId, symbol: s
   const db = await getDb();
   if (!db) return [];
   const cutoff = new Date(Date.now() - Math.min(730, Math.max(1, lookbackDays)) * 24 * 60 * 60 * 1000);
-  return db.select().from(eventProjections).where(eq(eventProjections.marketId, marketId)).where(and(eq(eventProjections.symbol, symbol.toUpperCase()), gte(eventProjections.eventAt, cutoff))).orderBy(desc(eventProjections.eventAt)).limit(Math.min(500, Math.max(1, limit)));
+  return db.select().from(eventProjections).where(and(eq(eventProjections.marketId, marketId), eq(eventProjections.symbol, symbol.toUpperCase()), gte(eventProjections.eventAt, cutoff))).orderBy(desc(eventProjections.eventAt)).limit(Math.min(500, Math.max(1, limit)));
 }
 
 export async function getEventProjectionsForStoryline(storylineKey: string, limit = 100): Promise<EventProjection[]> {
@@ -411,7 +411,7 @@ export async function getLatestEventProjections(marketId: MarketId, limit = 200,
   const db = await getDb();
   if (!db) return [];
   const cutoff = new Date(Date.now() - Math.min(730, Math.max(1, lookbackDays)) * 24 * 60 * 60 * 1000);
-  return db.select().from(eventProjections).where(eq(eventProjections.marketId, marketId)).where(and(eq(eventProjections.status, "active"), gte(eventProjections.eventAt, cutoff))).orderBy(desc(eventProjections.eventAt)).limit(Math.min(500, Math.max(1, limit)));
+  return db.select().from(eventProjections).where(and(eq(eventProjections.marketId, marketId), eq(eventProjections.status, "active"), gte(eventProjections.eventAt, cutoff))).orderBy(desc(eventProjections.eventAt)).limit(Math.min(500, Math.max(1, limit)));
 }
 
 export async function getAutonomousRecommendation(id: string): Promise<AutonomousRecommendation | undefined> {
