@@ -172,7 +172,7 @@ function toArchiveArticle(article: NewsArticle & { collectedAt?: string | null }
 }
 
 async function eventProjections(marketId: MarketId, limit = 100, symbol?: string) {
-  const payload = symbol ? await stockNews(symbol, 40, marketId) : await marketNews(60);
+  const payload = symbol ? await stockNews(symbol, 40, marketId) : await marketNews(marketId, 60);
   return payload.articles.slice(0, limit).map(projectionFromArticle);
 }
 
@@ -230,7 +230,7 @@ async function groundedAnswer(question: string, symbol: string, marketId: Market
       dataAsOf = dataAsOf ?? news.value.fetchedAt;
     }
   } else {
-    const market = await marketNews(6);
+    const market = await marketNews(marketId, 6);
     parts.push("Ask about a specific ticker for a sourced answer. Latest market headlines:");
     for (const article of market.articles.slice(0, 3)) {
       parts.push(`• ${article.headline} (${article.source})`);
@@ -415,7 +415,7 @@ const HANDLERS: Record<string, Handler> = {
     const result = await peerComparison(str(input, "symbol"), market(input));
     return { ...result, note: result.peers.length ? result.comparisonBasis : "No peer set was found for this symbol from the NSE index lists." };
   },
-  "market.multiAssetTiming": () => multiAssetTiming(),
+  "market.multiAssetTiming": (input) => multiAssetTiming(market(input)),
   "market.sectorNames": () => Object.keys(NSE_INDEX_FILES).map((key) => key.replace(/^NIFTY/, "").replace(/([A-Z]+)/g, (m) => m[0] + m.slice(1).toLowerCase())),
   "market.officialFilingLinks": (input) => ({ links: officialFilingLinks(str(input, "symbol")), note: "Official regulator and exchange filing entry points; no scraping is performed." }),
   "market.filings": async (input) => ({ symbol: str(input, "symbol"), records: [], entryLinks: officialFilingLinks(str(input, "symbol")) }),
@@ -500,8 +500,8 @@ const HANDLERS: Record<string, Handler> = {
       symbol: report.resolvedSymbol,
       marketId,
       marketLabel: report.market.country,
-      fileName: `analyzerx-${report.resolvedSymbol}-3.20.0.pdf`,
-      markdownFileName: `analyzerx-${report.resolvedSymbol}-3.20.0.md`,
+      fileName: `analyzerx-${report.resolvedSymbol}-3.21.0.pdf`,
+      markdownFileName: `analyzerx-${report.resolvedSymbol}-3.21.0.md`,
       format: "pdf",
       content: markdown,
       pdfBase64: "",
@@ -594,7 +594,7 @@ const HANDLERS: Record<string, Handler> = {
     const archived = await queryArchive({ limit: 2000 });
     const found = archived.articles.find((article) => article.id === id);
     if (found) return toArchiveArticle(found);
-    const live = await marketNews(200).catch(() => ({ articles: [] as NewsArticle[] }));
+    const live = await marketNews(market(input), 200).catch(() => ({ articles: [] as NewsArticle[] }));
     const liveMatch = live.articles.find((article) => article.id === id);
     return liveMatch ? toArchiveArticle(liveMatch) : null;
   },
@@ -633,7 +633,7 @@ const HANDLERS: Record<string, Handler> = {
     // First run on a fresh install: top the archive up with a live pass so the
     // screen is never empty while history builds.
     if (articles.length === 0) {
-      const payload = await marketNews(200);
+      const payload = await marketNews(market(input), 200);
       const live = symbol
         ? payload.articles.filter((a) => a.symbol === symbol || a.headline.toUpperCase().includes(symbol.toUpperCase()))
         : payload.articles;
@@ -701,7 +701,7 @@ const HANDLERS: Record<string, Handler> = {
   "news.reviewHeld": async () => ({ items: await localGet("news.held", []), held: await localGet("news.held", []) }),
   "news.held": async () => ({ items: await localGet("news.held", []), held: await localGet("news.held", []) }),
   "news.archiveExport": async (input) => {
-    const payload = await marketNews(500);
+    const payload = await marketNews(market(input), 500);
     const rows = payload.articles;
     const header = "date,headline,source,sentiment,url";
     const csv = [header, ...rows.map((a) => [a.publishedAt ?? "", `"${a.headline.replace(/"/g, '""')}"`, a.source, a.sentiment, a.url].join(","))].join("\n");
@@ -823,8 +823,8 @@ const HANDLERS: Record<string, Handler> = {
 
   /* ---- alerts / recommendations ---- */
   "smartAlerts.discover": async (input) => ({ rules: [], results: [], evaluatedAt: nowIso(), symbol: str(input, "symbol"), note: "Alert evaluation runs over live news on-device." }),
-  "autonomousRecommendations.discover": async () => {
-    const payload = await marketNews(40);
+  "autonomousRecommendations.discover": async (input) => {
+    const payload = await marketNews(market(input), 40);
     const candidates = payload.articles
       .filter((a) => a.impactScore >= 65 && a.symbol)
       .slice(0, 10)
@@ -872,8 +872,8 @@ const HANDLERS: Record<string, Handler> = {
   },
   "sources.nseCollectors": async () => [{ key: "nse-equity-master", status: "live", cadence: "daily" }, { key: "nse-index-constituents", status: "live", cadence: "daily" }, { key: "nse-fii-dii", status: "live", cadence: "intraday" }],
   "sources.regionalCollectors": async () => [],
-  "sources.publicMacro": async () => {
-    const timing = await multiAssetTiming();
+  "sources.publicMacro": async (input) => {
+    const timing = await multiAssetTiming(market(input));
     const macro = timing.signals.filter((s) => s.type === "macro");
     return {
       checkedAt: timing.generatedAt,
@@ -943,8 +943,8 @@ async function researchRun(input: Input) {
   const marketId = market(input);
   const [fund, news, signals, flows] = await Promise.allSettled([
     symbol ? fundamentals(symbol, marketId) : Promise.resolve(null),
-    symbol ? stockNews(symbol, 12, marketId) : marketNews(12),
-    multiAssetTiming(),
+    symbol ? stockNews(symbol, 12, marketId) : marketNews(marketId, 12),
+    multiAssetTiming(marketId),
     marketId === "IN" ? institutionalFlows("TODAY") : Promise.resolve(null),
   ]);
   const agents = [
