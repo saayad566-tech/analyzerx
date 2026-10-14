@@ -1,5 +1,14 @@
 # AnalyzerX — Remaining Blockers
 
+> **Update — superseded on two points.** This document was written when no database
+> server and no emulator were available in the working environment. Both gaps have since
+> been closed: the migration, backfill and rollback were executed against a real
+> MariaDB 10.11 server (30/30 checks), and the APK was installed, launched and exercised
+> on a real Android 14 emulator (passed). Statements below that say device/emulator
+> validation was NOT RUN, or that the live migration was BLOCKED, no longer hold.
+> See `docs/ANALYZERX_VERIFICATION_REPORT.md` for the current state.
+
+
 Each blocker states the exact obstacle and the next legitimate action.
 
 ## B1 — No Android toolchain in the build environment (BLOCKED)
@@ -17,7 +26,7 @@ minutes per build.
 **Obstacle:** no adb, no emulator, no physical device. Every UI change — the keyboard
 fix, the market chips, the per-category coverage row — is unverified on hardware.
 
-**Next action:** the user installs `analyzerx-3.15.0-72.apk` on a device and reports
+**Next action:** the user installs `analyzerx-3.24.0-94.apk` on a device and reports
 what the Market & Country screen shows. This is the single highest-value outstanding
 verification, and only the user can perform it.
 
