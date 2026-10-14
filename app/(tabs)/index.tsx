@@ -465,7 +465,6 @@ export default function LiveEventsScreen() {
       days: archiveDays,
       page: archivePage,
       limit: 100,
-      marketId: market.id,
       symbol: newsLookupSymbol.trim() || undefined,
       archiveScope,
       archiveSentiment,
