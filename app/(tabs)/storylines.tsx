@@ -84,7 +84,7 @@ export default function StorylinesScreen() {
   const [mode, setMode] = useState<"news" | "storylines">("news");
 
   const eventsQuery = trpc.events.latest.useQuery(
-    { limit: 200, lookbackDays: selectedWindow },
+    { marketId: market.id, limit: 200, lookbackDays: selectedWindow },
     { staleTime: 60_000, retry: false },
   );
 
@@ -97,7 +97,7 @@ export default function StorylinesScreen() {
   // market never appears here.
   const { marketId } = useMarketContext();
   const archiveQuery = trpc.news.archive.useQuery(
-    { days: archiveDays, limit: 300, archiveOrder: "Newest first", page: 0, marketId },
+    { marketId: market.id, days: archiveDays, limit: 300, archiveOrder: "Newest first", page: 0 },
     { staleTime: 60_000, retry: false },
   );
 
