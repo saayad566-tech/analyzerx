@@ -42,6 +42,9 @@ export const MARKET_IDS = ["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE",
  */
 export const UNKNOWN_MARKET = "UNKNOWN";
 
+/** A market id, or the explicit UNKNOWN marker. Never a silent India default. */
+export type ResolvedMarketId = MarketId | typeof UNKNOWN_MARKET;
+
 /** True only for one of the ten configured markets. Never true for UNKNOWN. */
 export function isMarketId(value: string | null | undefined): value is MarketId {
   const id = (value ?? "").trim().toUpperCase();
@@ -55,7 +58,7 @@ export function isMarketId(value: string | null | undefined): value is MarketId 
  * becomes UNKNOWN, which no market filter matches, so the data is hidden rather than
  * mislabelled.
  */
-export function resolveMarketId(value: string | null | undefined): MarketId | typeof UNKNOWN_MARKET {
+export function resolveMarketId(value: string | null | undefined): ResolvedMarketId {
   const id = (value ?? "").trim().toUpperCase();
   return isMarketId(id) ? id : UNKNOWN_MARKET;
 }
