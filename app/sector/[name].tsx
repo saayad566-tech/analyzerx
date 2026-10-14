@@ -38,7 +38,7 @@ export default function SectorDetailScreen() {
   const [direction, setDirection] = useState<"asc" | "desc">("desc");
   const [marketCapBand, setMarketCapBand] = useState<MarketCapBand | "all">("all");
   const [range, setRange] = useState<FlowRange>("TODAY");
-  const { marketId } = useMarketContext();
+  const { market, marketId } = useMarketContext();
   const query = trpc.market.sectorConstituents.useQuery({ marketId: market.id, sector, sort, direction, range, limit: 100 }, { staleTime: 60_000, retry: false });
   const rows = useMemo(() => (query.data?.rows ?? []).filter((row) => marketCapBand === "all" || classifyMarketCap(marketId, row.marketCap) === marketCapBand), [marketCapBand, marketId, query.data?.rows]);
   const toggleSort = (next: SortKey) => { if (next === sort) setDirection((current) => current === "desc" ? "asc" : "desc"); else { setSort(next); setDirection("desc"); } };
