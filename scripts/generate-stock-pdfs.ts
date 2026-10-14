@@ -11,7 +11,7 @@ async function main() {
   const manifest: Array<{ symbol: string; companyName: string; score: number; fileName: string; bytes: number }> = [];
 
   for (const symbol of symbols) {
-    const report = await analyzeFundamentals(symbol);
+    const report = await analyzeFundamentals(symbol, "IN");
     const pdf = await institutionalReportToPdf(report);
     const fileName = reportFileName(report, "pdf");
     await writeFile(`${outputDir}/${fileName}`, pdf);
