@@ -425,7 +425,7 @@ const HANDLERS: Record<string, Handler> = {
     const [snap, analysis, news] = await Promise.all([
       snapshot(symbol, "IN"),
       fundamentals(symbol, "IN").catch(() => null),
-      stockNews(symbol, 8, marketId).catch(() => null),
+      stockNews(symbol, 8, "IN").catch(() => null),
     ]);
     return {
       available: Boolean(snap.quote),
@@ -582,7 +582,7 @@ const HANDLERS: Record<string, Handler> = {
   "news.stock": async (input) => {
     const symbol = str(input, "symbol");
     const marketId = market(input);
-    const payload = await stockNews(symbol, Number(input?.limit ?? 40) || 40);
+    const payload = await stockNews(symbol, Number(input?.limit ?? 40) || 40, market(input));
     return { available: payload.articles.length > 0, symbol: payload.symbol, marketId, providerFailures: payload.providerFailures, freshArticleCount: payload.freshArticleCount, stale: payload.stale, fetchedAt: payload.fetchedAt, articles: payload.articles, sources: payload.sources, error: null };
   },
   // Single article lookup for the news detail screen. Reads the phone's own
@@ -694,7 +694,7 @@ const HANDLERS: Record<string, Handler> = {
   },
   "news.refresh": async (input) => {
     await runCollectionCycle({ batchSize: 18, budgetMs: 15_000, symbols: str(input, "symbol") ? [str(input, "symbol")] : [] }).catch(() => undefined);
-    return stockNews(str(input, "symbol"), 40);
+    return stockNews(str(input, "symbol"), 40, market(input));
   },
   "news.flagIrrelevant": async (input) => localSet("news.flagged", input ?? {}),
   "news.undoIrrelevant": async () => localSet("news.flagged", {}),
@@ -729,7 +729,7 @@ const HANDLERS: Record<string, Handler> = {
     // graph from the phone's own archive so the tab is populated from real,
     // already-collected evidence rather than waiting for a server.
     const articles: Array<{ symbol: string; source: string }> = symbol
-      ? ((await stockNews(symbol, 20, marketId).catch(() => ({ articles: [] }))).articles as Array<{ symbol: string; source: string }>)
+      ? ((await stockNews(symbol, 20, market(input)).catch(() => ({ articles: [] }))).articles as Array<{ symbol: string; source: string }>)
       : ((await queryArchive({ limit: 300, order: "newest" })).articles as Array<{ symbol: string; source: string }>);
 
     const bySymbol = new Map<string, { count: number; sources: Map<string, number> }>();
@@ -943,7 +943,7 @@ async function researchRun(input: Input) {
   const marketId = market(input);
   const [fund, news, signals, flows] = await Promise.allSettled([
     symbol ? fundamentals(symbol, marketId) : Promise.resolve(null),
-    symbol ? stockNews(symbol, 12) : marketNews(12),
+    symbol ? stockNews(symbol, 12, marketId) : marketNews(12),
     multiAssetTiming(),
     marketId === "IN" ? institutionalFlows("TODAY") : Promise.resolve(null),
   ]);
