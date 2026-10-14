@@ -1,5 +1,14 @@
 # AnalyzerX — Master Engineering Remediation Report
 
+> **Update — superseded on two points.** This document was written when no database
+> server and no emulator were available in the working environment. Both gaps have since
+> been closed: the migration, backfill and rollback were executed against a real
+> MariaDB 10.11 server (30/30 checks), and the APK was installed, launched and exercised
+> on a real Android 14 emulator (passed). Statements below that say device/emulator
+> validation was NOT RUN, or that the live migration was BLOCKED, no longer hold.
+> See `docs/ANALYZERX_VERIFICATION_REPORT.md` for the current state.
+
+
 Response to the Master Engineering, System Remediation & Quality Assurance mandate
 (phases 1–11, final report format A–H). Written from tool output produced in this
 session. Unrun checks are named explicitly; nothing here is inferred.
