@@ -70,3 +70,35 @@ Thumbs.db
 android/.cxx
 android/app/.cxx
 android/.gradle
+
+# Build artifacts and large binaries.
+#
+# GitHub rejects any single file over 100 MiB, and a committed APK is both huge and
+# stale the moment it is built. Releases are published as release assets, and the
+# artifact-branch staging step commits only the split parts and the checksum, so no
+# large binary belongs in the working tree at all.
+*.apk
+*.aab
+*.ipa
+*.so
+*.dylib
+*.dll
+*.aar
+*.jar
+*.keystore
+!android/app/debug.keystore
+
+# Gradle / Android build output
+.gradle/
+android/app/build/
+android/build/
+android/.cxx/
+build/
+*.hprof
+
+# Local model artifacts (downloaded at runtime, never committed)
+*.gguf
+*.onnx
+*.tflite
+*.bin
+models/
