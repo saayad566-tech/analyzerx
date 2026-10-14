@@ -38,7 +38,7 @@ unverified on hardware. An APK that builds is not an APK that runs.
 
 | # | Requirement | Status | Evidence / gap |
 |---|---|---|---|
-| P0-1 | The app builds a signed release APK | VERIFIED | CI run 72 green; `analyzerx-3.15.0-72.apk`, sha256 `41658cbd…a05c7` |
+| P0-1 | The app builds a signed release APK | VERIFIED | CI run 94 green; `analyzerx-3.24.0-94.apk`, sha256 `8682d0b1…a32e` |
 | P0-2 | Signing is stable across releases | VERIFIED | Builds 57–72 share cert SHA-256 `fac61745…33b9c`; earlier builds 48–56 each had a different cert, which caused `INSTALL_FAILED_UPDATE_INCOMPATIBLE (-7)` |
 | P0-3 | No cross-market data mixing | PARTIALLY VERIFIED | Isolation modules built and unit-tested; **not yet threaded through every screen's live query key and formatter** |
 | P0-4 | No fabricated data, no placeholder states | PARTIALLY VERIFIED | Several stubs removed (cross-market `"RELIANCE"` fallbacks, blanket `.NS` suffix); a full sweep is NOT RUN |
