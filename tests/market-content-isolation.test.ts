@@ -22,7 +22,7 @@ import { marketQueryTerms, topicFeedUrl, MARKET_TOPICS } from "../lib/market-new
 import { eventProjectionsToMarketEvents, eventProjectionToMarketEvent } from "../lib/event-projection-view";
 import { MARKET_IDS } from "../lib/market-regions";
 
-const MARKETS = MARKET_IDS as string[];
+const MARKETS: readonly string[] = MARKET_IDS;
 
 /** Symbols that must never appear for a market other than India. */
 const INDIA_ONLY_SYMBOLS = ["^NSEI", "^BSESN", "^NSEBANK", "INR=X"];
@@ -32,7 +32,7 @@ describe("multi-asset benchmarks", () => {
   it("covers every supported market", () => {
     for (const market of MARKETS) {
       expect(hasMarketBenchmarks(market), `${market} has no benchmark set`).toBe(true);
-      expect(MARKET_BENCHMARKS[market as never]).toBeDefined();
+      expect(MARKET_BENCHMARKS[market as keyof typeof MARKET_BENCHMARKS]).toBeDefined();
     }
   });
 
@@ -93,7 +93,7 @@ describe("seed universe", () => {
   it("covers every market with a non-empty list", () => {
     for (const market of MARKETS) {
       expect(seedUniverseForMarket(market).length, `${market} has no seed universe`).toBeGreaterThan(0);
-      expect(MARKET_SEED_UNIVERSE[market as never]).toBeDefined();
+      expect(MARKET_SEED_UNIVERSE[market as keyof typeof MARKET_SEED_UNIVERSE]).toBeDefined();
     }
   });
 
