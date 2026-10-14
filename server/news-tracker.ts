@@ -4,7 +4,7 @@ import { getEnabledPushTokens, getImpactRankedNewsEvents, getLatestNewsEvents, g
 import { fetchOptionalNews } from "./optional-providers";
 import { classifyIndianNewsRelevance, classifyNewsPublication } from "./indian-news-relevance";
 import { fetchNseUniverse } from "./nse-universe";
-import { MARKET_IDS, resolveMarketId, type MarketId } from "../lib/market-regions";
+import { MARKET_IDS, resolveMarketId, type MarketId, type ResolvedMarketId } from "../lib/market-regions";
 import { filterAndSortArchiveArticles, type ArchiveOrder, type ArchiveScope, type ArchiveSentiment } from "../lib/news-archive";
 
 export type NewsCategory = "Tech" | "Finance" | "Markets" | "Crypto" | "General";
@@ -12,7 +12,7 @@ export type NewsSentiment = "Positive" | "Neutral" | "Negative";
 
 export type ExtractedNews = {
   id: string;
-  marketId?: MarketId;
+  marketId?: ResolvedMarketId;
   symbol: string;
   headline: string;
   category: NewsCategory;
@@ -28,7 +28,7 @@ export type ExtractedNews = {
 };
 
 type RawArticle = {
-  marketId?: MarketId;
+  marketId?: ResolvedMarketId;
   symbol: string;
   headline: string;
   summary?: string | null;
@@ -636,7 +636,7 @@ export function resolveHistoricalArchiveRange({ days = 30, startDate, endDate, n
   return { from: new Date(now.getTime() - safeDays * 24 * 60 * 60 * 1000), to: undefined, days: safeDays, startDate: undefined, endDate: undefined } as const;
 }
 
-export async function getHistoricalTrackedNews({ limit = 100, symbol, marketId, days = 30, startDate, endDate, page = 0, archiveScope = "All archive", archiveSentiment = "All sentiment", archiveOrder = "Newest first" }: { limit?: number; symbol?: string; marketId?: MarketId; days?: number; startDate?: string; endDate?: string; page?: number; archiveScope?: ArchiveScope; archiveSentiment?: ArchiveSentiment; archiveOrder?: ArchiveOrder }) {
+export async function getHistoricalTrackedNews({ limit = 100, symbol, marketId, days = 30, startDate, endDate, page = 0, archiveScope = "All archive", archiveSentiment = "All sentiment", archiveOrder = "Newest first" }: { limit?: number; symbol?: string; marketId: MarketId; days?: number; startDate?: string; endDate?: string; page?: number; archiveScope?: ArchiveScope; archiveSentiment?: ArchiveSentiment; archiveOrder?: ArchiveOrder }) {
   const range = resolveHistoricalArchiveRange({ days, startDate, endDate });
   if ("error" in range) return { marketId, days: 0, page: Math.max(0, page), limit: Math.min(200, Math.max(1, limit)), articles: [], fetchedAt: new Date().toISOString(), coverage: "invalid" as const, sourceCoverage: [], rangeError: range.error };
   const persisted = await getNewsArchiveEvents({ marketId, symbol, from: range.from, to: range.to, limit: 5000, offset: 0 });
