@@ -10,7 +10,9 @@
  * Classification rules, in order:
  *   1. source key prefix (sec-* is US; nse/bse/sebi/nsdl/amfi/company-ir are IN)
  *   2. symbol suffix (.L GB, .TO/.V CA, .AX AU, .T JP, .HK HK, .SI SG, .DE DE, .PA FR)
- *   3. a bare upper-case ticker is US (that is the US convention)
+ *   3. NOTHING ELSE. A bare upper-case ticker is deliberately NOT treated as US: the
+ *      US and India both use bare tickers, so that rule would misclassify Indian
+ *      rows. A row with no market-identifying evidence stays UNKNOWN and hidden.
  *   4. user-owned rows are IN, because India was the only selectable market when they
  *      were created, so a returning user keeps their list.
  *
@@ -40,7 +42,6 @@ const RULES = [
   ["source_records", "symbol", "LIKE '%.SI'", "SG"],
   ["source_records", "symbol", "LIKE '%.DE'", "DE"],
   ["source_records", "symbol", "LIKE '%.PA'", "FR"],
-  ["source_records", "symbol", "REGEXP '^[A-Z]{1,5}$'", "US"],
   ["event_projections", "symbol", "LIKE '%.L'", "GB"],
   ["event_projections", "symbol", "LIKE '%.T'", "JP"],
   ["event_projections", "symbol", "LIKE '%.HK'", "HK"],
@@ -49,7 +50,6 @@ const RULES = [
   ["event_projections", "symbol", "LIKE '%.TO'", "CA"],
   ["event_projections", "symbol", "LIKE '%.DE'", "DE"],
   ["event_projections", "symbol", "LIKE '%.PA'", "FR"],
-  ["event_projections", "symbol", "REGEXP '^[A-Z]{1,5}$'", "US"],
   // user-owned rows predate market selection, so they belong to India
   ["user_watchlist_items", "userId", "IS NOT NULL", "IN"],
   ["user_saved_screens", "userId", "IS NOT NULL", "IN"],
