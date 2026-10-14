@@ -1,4 +1,5 @@
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useMarketContext } from "@/lib/market-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenContainer } from "@/components/screen-container";
@@ -26,7 +27,8 @@ function SourceCard({ label, item }: { label: string; item: { status: "live" | "
 }
 
 export default function MacroContextScreen() {
-  const context = trpc.sources.publicMacro.useQuery(undefined, { staleTime: 5 * 60_000, retry: false });
+  const { market } = useMarketContext();
+  const context = trpc.sources.publicMacro.useQuery({ marketId: market.id }, { staleTime: 5 * 60_000, retry: false });
   return <ScreenContainer containerClassName="bg-background" className="px-5" edges={["top", "left", "right", "bottom"]}>
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.header}><Pressable onPress={() => router.back()} style={styles.backButton} accessibilityLabel="Go back"><Ionicons name="chevron-back" size={20} color={ink} /></Pressable><View style={styles.headerCopy}><Text style={styles.eyebrow}>RESEARCH / MACRO CONTEXT</Text><Text style={styles.title}>Public macro data</Text></View></View>
