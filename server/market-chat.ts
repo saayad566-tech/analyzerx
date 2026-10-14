@@ -128,7 +128,7 @@ export async function collectGroundedMarketContext(message: string, explicitSymb
     symbol ? analyzeFundamentals(symbol, marketId) : Promise.resolve(null),
     symbol ? fetchStockNewsNow(symbol, false, marketId) : Promise.resolve(null),
     getLatestTrackedNews(20, undefined, marketId),
-    getMultiAssetTimingSignals(),
+    getMultiAssetTimingSignals(marketId),
   ]);
   const analysis = settled[0].status === "fulfilled" ? settled[0].value : null;
   const news = settled[1].status === "fulfilled" ? settled[1].value : null;
