@@ -333,7 +333,7 @@ export const appRouter = router({
     }),
   }),
   chat: router({
-    ask: publicProcedure.input(z.object({ message: z.string().trim().max(2_000).default(""), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), marketId: marketIdSchema, history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(1_000) })).max(8).default([]), attachments: z.array(z.object({ kind: z.enum(["image", "audio"]), dataUrl: z.string().max(8_000_000), mimeType: z.string().max(80), name: z.string().max(160).optional() })).max(2).default([]) })).mutation(({ input }) => answerMarketChat(input.message, input.symbol, input.history as MarketChatMessage[], input.attachments as MarketChatAttachment[], input.marketId)),
+    ask: publicProcedure.input(z.object({ message: z.string().trim().max(2_000).default(""), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), marketId: marketIdSchema, history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(1_000) })).max(8).default([]), attachments: z.array(z.object({ kind: z.enum(["image", "audio"]), dataUrl: z.string().max(8_000_000), mimeType: z.string().max(80), name: z.string().max(160).optional() })).max(2).default([]) })).mutation(({ input }) => answerMarketChat(input.message, input.marketId, input.symbol, input.history as MarketChatMessage[], input.attachments as MarketChatAttachment[])),
     general: publicProcedure.input(z.object({ message: z.string().trim().min(1).max(2_000), history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(1_000) })).max(20).default([]) })).mutation(({ input }) => answerGeneralChat(input.message, input.history as GeneralChatMessage[])),
     ground: publicProcedure.input(z.object({ message: z.string().trim().min(1).max(2_000), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), marketId: marketIdSchema })).mutation(({ input }) => collectGroundedMarketContext(input.message, input.symbol, input.marketId)),
   }),
@@ -342,8 +342,8 @@ export const appRouter = router({
     // confidence, grade, pillar breakdown, per-metric explainability, overlay and
     // the percentile source, so the UI never overstates what it knows.
     deepScore: publicProcedure
-      .input(z.object({ symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/) }))
-      .mutation(({ input }) => buildDeepScore(input.symbol)),
+      .input(z.object({ symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/), marketId: marketIdSchema }))
+      .mutation(({ input }) => buildDeepScore(input.symbol, input.marketId)),
   }),
   sentiment: router({
     // Availability is reported honestly: with no server-side credential this is
@@ -399,7 +399,7 @@ export const appRouter = router({
     gdeltBudget: publicProcedure.query(() => getGdeltBudgetStatus()),
     health: adminProcedure.query(() => getProviderHealth()),
     history: adminProcedure.input(z.object({ providerId: z.string().trim().min(1).max(64).optional(), limit: z.number().int().min(1).max(200).default(50) }).optional()).query(({ input }) => listProviderHealthHistory(input?.providerId, input?.limit ?? 50)),
-    runNow: adminProcedure.input(z.object({ providerId: z.string().trim().min(1).max(64), symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/).optional() })).mutation(async ({ input }) => {
+    runNow: adminProcedure.input(z.object({ marketId: marketIdSchema, providerId: z.string().trim().min(1).max(64), symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/).optional() })).mutation(async ({ input }) => {
       try {
         return await runProviderNow(input.providerId, input.symbol, input.marketId);
       } catch (error) {
@@ -632,7 +632,7 @@ export const appRouter = router({
     peerComparison: publicProcedure.input(symbolInput).query(({ input }) => comparePeers(input.symbol, input.marketId)),
     filings: publicProcedure.input(symbolInput).query(async ({ input }) => ({ symbol: input.symbol, records: filterFilingsForSymbol(await getLatestSourceRecords(500), input.symbol), entryLinks: getOfficialFilingLinks(input.symbol) })),
     officialFilingLinks: publicProcedure.input(symbolInput).query(({ input }) => getOfficialFilingLinks(input.symbol)),
-    derivatives: publicProcedure.input(symbolInput).query(({ input }) => fetchDerivativesSnapshot(input.symbol)),
+    derivatives: publicProcedure.input(symbolInput).query(({ input }) => fetchDerivativesSnapshot(input.symbol, input.marketId)),
     derivativesSources: publicProcedure.query(() => getDerivativesSourceCatalog()),
     multibaggerSignals: publicProcedure.input(z.object({ marketId: marketIdSchema, strategyId: z.enum(["buffett-munger", "peter-lynch", "canslim", "greenblatt", "fisher", "small-cap-compounder"]).default("buffett-munger") })).query(({ input }) => getMultibaggerSignals(input.marketId, input.strategyId as MultibaggerStrategyId)),
     multiAssetTiming: publicProcedure.query(() => getMultiAssetTimingSignals()),
