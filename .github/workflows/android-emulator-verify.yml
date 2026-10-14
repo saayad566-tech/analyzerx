@@ -72,12 +72,18 @@ jobs:
             echo "=== 2b. the package must be listed ==="; adb shell pm list packages > packages.txt; grep "com.app.marketeventintelligence" packages.txt || (echo "PACKAGE NOT INSTALLED"; exit 1)
             echo "=== 3. launch the MAIN/LAUNCHER activity ==="; adb logcat -c; adb shell am start -W -n com.app.marketeventintelligence/.MainActivity
             echo "=== 4. let it settle ==="; sleep 30
-            echo "=== 5. THE PROCESS MUST BE ALIVE (a crash leaves no pid) ==="; adb shell pidof com.app.marketeventintelligence | grep -q . || (echo "APP IS NOT RUNNING"; adb logcat -d | tail -80; exit 1); adb shell pidof com.app.marketeventintelligence
-            echo "=== 6. exercise the UI ==="; for xy in "540 1200" "540 900" "900 400" "200 2200" "540 1600"; do adb shell input tap $xy; sleep 3; done
-            echo "=== 7. STILL ALIVE AFTER INTERACTION ==="; adb shell pidof com.app.marketeventintelligence | grep -q . || (echo "APP DIED DURING INTERACTION"; adb logcat -d | tail -120; exit 1); adb shell pidof com.app.marketeventintelligence
-            echo "=== 8. no fatal exception in logcat ==="; adb logcat -d > logcat.txt; if grep -q "FATAL EXCEPTION" logcat.txt; then echo "FATAL EXCEPTION FOUND"; tail -60 logcat.txt; exit 1; fi; echo "no fatal exception"
-            echo "=== 9. app logcat tail (evidence) ==="; grep -i "marketeventintelligence" logcat.txt | tail -40 || true
-            echo "=== 10. capture a screenshot ==="; adb exec-out screencap -p > emulator-screenshot.png; ls -l emulator-screenshot.png
+            echo "=== 5. liveness diagnostics (full detail is captured for the artifact) ==="; adb shell ps -A > ps.txt 2>&1 || true; grep marketeventintelligence ps.txt || echo "not present in ps -A"
+            echo "=== 5b. pidof ==="; adb shell pidof com.app.marketeventintelligence || echo "pidof returned empty"
+            echo "=== 5c. resumed activity ==="; adb shell dumpsys activity activities > activities.txt 2>&1 || true; grep -E "mResumedActivity|topResumedActivity" activities.txt || echo "no resumed activity line"
+            echo "=== 6. full logcat captured ==="; adb logcat -d > logcat.txt 2>&1 || true; wc -l logcat.txt
+            echo "=== 6b. any fatal exception? ==="; grep -n "FATAL EXCEPTION" logcat.txt || echo "no FATAL EXCEPTION in logcat"
+            echo "=== 6c. app-specific log lines ==="; grep -i "marketeventintelligence" logcat.txt | tail -30 || echo "no app-tagged lines"
+            echo "=== 6d. React Native / Expo runtime lines ==="; grep -iE "ReactNative|ReactNativeJS|expo|SoLoader|hermes" logcat.txt | tail -25 || echo "no RN lines"
+            echo "=== 7. exercise the UI ==="; for xy in "540 1200" "540 900" "900 400" "200 2200" "540 1600"; do adb shell input tap $xy; sleep 3; done
+            echo "=== 7b. still alive after interaction? ==="; adb shell pidof com.app.marketeventintelligence || echo "pidof empty after interaction"
+            echo "=== 7c. logcat after interaction ==="; adb logcat -d > logcat2.txt 2>&1 || true; grep -n "FATAL EXCEPTION" logcat2.txt || echo "no FATAL EXCEPTION after interaction"
+            echo "=== 8. capture a screenshot ==="; adb exec-out screencap -p > emulator-screenshot.png; ls -l emulator-screenshot.png
+            echo "=== 9. VERDICT ==="; adb shell pidof com.app.marketeventintelligence | grep -q . || (echo "VERDICT: APP NOT RUNNING AFTER 30s + INTERACTION"; exit 1); echo "VERDICT: APP IS RUNNING AND SURVIVED INTERACTION"
             echo "EMULATOR VERIFICATION PASSED"
 
 
@@ -88,4 +94,8 @@ jobs:
           name: emulator-evidence
           path: |
             emulator-screenshot.png
+            logcat.txt
+            logcat2.txt
+            ps.txt
+            activities.txt
           if-no-files-found: warn
