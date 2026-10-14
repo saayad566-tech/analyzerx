@@ -126,13 +126,46 @@ publish all succeeded. **Emulator run 33: VERIFIED green.**
 | SHA-256 | `8682d0b113e6ae077c01fd958c890d564d84c04109ee658eb02ee4e04a99a32e` |
 | Version | 3.24.0 / versionCode 32400 |
 | Native ABIs | `arm64-v8a`, `x86_64` — `libreactnative.so` present in both |
+| versionName / versionCode | `3.24.0` / `32400`, read from the binary manifest |
 | Signing cert SHA-256 | `fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c` |
-| Signature scheme | v2 + v3 verified from the APK signing block |
+| Signing cert subject | `CN=Android Debug, O=Android, C=US` — **the debug keystore** |
+| Signature scheme | **v2 only.** No v1 JAR signature and no v3 block in the APK |
 | Built from commit | `b50f3a920939c5e376835cf4cdc07b6d6d0a656f` |
 
 Size and SHA-256 were re-computed locally after download and matched the release asset.
 The certificate was extracted from the APK's own signing block and matches builds
 57–94, so the signing identity has not drifted across 38 releases.
+
+### 5a. Signing is stable but it is a DEBUG key — not a publishable release
+
+A recheck of the signing block corrected an earlier claim in this document. It said the
+APK was signed with "v2 + v3". It is not. Inspecting the APK's signing block shows a
+single `v2` entry (`0x7109871a`), no v3 entry (`0xf05368c0`) and no v1 JAR signature in
+`META-INF/`. Extracting the signer certificate gives the subject
+`CN=Android Debug, O=Android, C=US`.
+
+That is the committed `android/app/debug.keystore`. Both fallbacks land there:
+
+- `android/app/build.gradle` — `signingConfigs.release` uses `RELEASE_STORE_FILE` when
+  set, otherwise the debug keystore.
+- `.github/workflows/android-apk.yml` — signs with `--v2-signing-enabled true
+  --v3-signing-enabled true` only when `ANDROID_KEYSTORE_BASE64` is set, otherwise it
+  keeps the signature Gradle already applied from the debug keystore.
+
+Neither secret is configured, so the artifact is debug-signed.
+
+This is deliberate in one respect and a real gap in another. Deliberate: the key is
+stable across builds, which is why in-place upgrades work and why the certificate has
+not changed across 38 releases — a fresh key per build used to cause
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`. A real gap: **Google Play rejects APKs signed with
+a debug key**, and a debug key is not appropriate for distribution. The APK is fine for
+sideloading, internal testing and the emulator verification above. It is not a
+publishable production release.
+
+**To close this:** generate a release keystore, keep it out of the repository, and set
+`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_PASSWORD` as
+repository secrets. The next CI build will then sign with the release key and carry a v3
+block. Only the repository owner can do this, because it involves a secret.
 
 ## 6. NOT RUN — and why
 
@@ -156,3 +189,8 @@ engine and survives interaction on a real Android 14 emulator.
 What remains unverified is narrow and specific: execution on ARM64 hardware, execution
 against the production database, on-device inference, and performance and accessibility
 measurement. Nothing in this repository should be read as a claim about those.
+
+One further point is not an unverified claim but a real limitation: the artifact is
+signed with the debug keystore, v2-only (section 5a). It installs and runs, and it
+upgrades in place, but it is not a publishable production release until the release
+keystore secrets are set.
