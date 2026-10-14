@@ -3,6 +3,7 @@ import { filterFilingsForSymbol, normalizeValidatedFiling } from "../server/fili
 import type { SourceRecord } from "../drizzle/schema";
 
 const base: SourceRecord = {
+  marketId: "IN",
   id: "nse-record-1", sourceKey: "nse-announcements-rss", sourceUrl: "https://www.nseindia.com/companies-listing/corporate-filings-announcements", documentName: "Online announcements.xml", recordType: "corporate-announcement", externalId: "x1", symbol: "RELIANCE", title: "Reliance announces a new project", reportDate: null, publishedAt: new Date("2026-08-18T06:00:00Z"), retrievedAt: new Date("2026-08-18T07:00:00Z"), freshnessStatus: "fresh", rawPayload: "{}", normalizedPayload: JSON.stringify({ title: "Reliance announces a new project", description: "Official announcement", publishedAt: "2026-08-18T06:00:00Z" }), errorMessage: null, dataHash: "hash", parserVersion: "nse-rss-v1", supersedesId: null, createdAt: new Date("2026-08-18T07:00:00Z"),
 };
 
