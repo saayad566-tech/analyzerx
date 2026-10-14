@@ -20,7 +20,7 @@ function Action({ icon, label, route }: { icon: keyof typeof Ionicons.glyphMap; 
 }
 
 export default function ResearchWorkspaceScreen() {
-  const { marketId } = useMarketContext();
+  const { market, marketId } = useMarketContext();
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [watchlist, setWatchlist] = useState<string[]>([]);
   const [savedScreens, setSavedScreens] = useState<SavedScreen[]>([]);
