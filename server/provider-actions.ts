@@ -87,7 +87,7 @@ export async function runProviderNow(providerId: string, requestedSymbol: string
         payload = await getIndiaStockMcpSnapshot(symbol);
         break;
       case "dhan-mcp":
-        payload = await fetchDerivativesSnapshot(symbol);
+        payload = await fetchDerivativesSnapshot(symbol, marketId);
         const derivativesPayload = payload as Awaited<ReturnType<typeof fetchDerivativesSnapshot>>;
         if (derivativesPayload.status === "auth_required" || derivativesPayload.status === "error") throw new Error(derivativesPayload.error ?? "Dhan derivatives provider unavailable");
         break;
