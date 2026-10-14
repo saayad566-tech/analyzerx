@@ -39,7 +39,7 @@ describe("repairs found in the screen recording", () => {
   }, NETWORK_TIMEOUT);
 
   it("screens real candidates instead of 0/0", async () => {
-    const signals = (await resolveLocal("market.multibaggerSignals", { strategyId: "buffett-munger" })) as {
+    const signals = (await resolveLocal("market.multibaggerSignals", { strategyId: "buffett-munger", marketId: "IN" })) as {
       universeSize: number;
       screenedCount: number;
       signals: Array<{ symbol: string; sector: string; score: number }>;
