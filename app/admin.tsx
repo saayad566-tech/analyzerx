@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useMarketContext } from "@/lib/market-context";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,8 +24,9 @@ function freshness(lastSuccessAt: string | null) {
 }
 
 export default function AdminScreen() {
-  const collectors = trpc.sources.nseCollectors.useQuery(undefined, { staleTime: 60_000, retry: false });
-  const health = trpc.sources.health.useQuery(undefined, { refetchInterval: 30_000, retry: false });
+  const { market } = useMarketContext();
+  const collectors = trpc.sources.nseCollectors.useQuery({ marketId: market.id }, { staleTime: 60_000, retry: false });
+  const health = trpc.sources.health.useQuery({ marketId: market.id }, { refetchInterval: 30_000, retry: false });
   const providers = trpc.providers.list.useQuery(undefined, { staleTime: 60_000, retry: false });
   const providerHealth = trpc.providers.health.useQuery(undefined, { refetchInterval: 30_000, retry: false });
   const providerHistory = trpc.providers.history.useQuery({ limit: 20 }, { refetchInterval: 60_000, retry: false });
@@ -98,7 +100,7 @@ export default function AdminScreen() {
           return <View key={`telemetry-${provider.id}`} style={styles.telemetryCard}>
             <View style={styles.cardHeader}><View style={styles.cardCopy}><Text style={styles.providerName}>{provider.name}</Text><Text style={styles.cardKey}>{provider.domain} · {provider.id}</Text></View><Text style={[styles.providerStatus, { color: stateColor }]}>{state.toUpperCase()}</Text></View>
             <View style={styles.telemetryMetrics}><View style={styles.telemetryMetric}><Text style={styles.metricLabel}>LATENCY</Text><Text style={styles.metricValue}>{formatLatency(runtime?.latencyMs)}</Text></View><View style={styles.telemetryMetric}><Text style={styles.metricLabel}>LAST SUCCESS</Text><Text style={styles.metricValue}>{formatSuccess(runtime?.lastSuccessAt)}</Text></View><View style={styles.telemetryMetric}><Text style={styles.metricLabel}>LAST CHECK</Text><Text style={styles.metricValue}>{formatSuccess(runtime?.lastCheckedAt)}</Text></View><View style={styles.telemetryMetric}><Text style={styles.metricLabel}>PAYLOAD AT</Text><Text style={styles.metricValue}>{formatSuccess(runtime?.lastPayloadAt)}</Text></View></View>
-            <View style={styles.circuitRow}><Text style={styles.telemetryNote}>{runtime?.circuitState ? `Circuit ${runtime.circuitState}${runtime.cooldownUntil ? ` · retry after ${formatSuccess(runtime.cooldownUntil)}` : ""}` : "Circuit closed · no cooldown"}</Text><Pressable onPress={() => runProvider.mutate({ providerId: provider.id, symbol: "RELIANCE" })} disabled={runProvider.isPending} style={({ pressed }) => [styles.providerRunButton, pressed && styles.pressed, runProvider.isPending && styles.disabled]} accessibilityRole="button" accessibilityLabel={`Run ${provider.name} now`}><Ionicons name="play" size={13} color="#09111F" /><Text style={styles.runText}>{runProvider.isPending ? "RUNNING…" : "RUN NOW"}</Text></Pressable></View>
+            <View style={styles.circuitRow}><Text style={styles.telemetryNote}>{runtime?.circuitState ? `Circuit ${runtime.circuitState}${runtime.cooldownUntil ? ` · retry after ${formatSuccess(runtime.cooldownUntil)}` : ""}` : "Circuit closed · no cooldown"}</Text><Pressable onPress={() => runProvider.mutate({ providerId: provider.id, symbol: market.tickerExamples[0] ?? "", marketId: market.id })} disabled={runProvider.isPending} style={({ pressed }) => [styles.providerRunButton, pressed && styles.pressed, runProvider.isPending && styles.disabled]} accessibilityRole="button" accessibilityLabel={`Run ${provider.name} now`}><Ionicons name="play" size={13} color="#09111F" /><Text style={styles.runText}>{runProvider.isPending ? "RUNNING…" : "RUN NOW"}</Text></Pressable></View>
             {runtime?.lastError ? <Text style={styles.errorLine}>Latest error: {runtime.lastError}</Text> : <Text style={styles.telemetryNote}>{runtime ? "Latest request completed without an error." : "No runtime request has sampled this provider yet."}</Text>}
             {runtime?.lastPayloadPreview ? <View style={styles.previewBox}><Text style={styles.metricLabel}>LAST SUCCESSFUL PAYLOAD PREVIEW</Text><Text selectable style={styles.previewText} numberOfLines={8}>{runtime.lastPayloadPreview}</Text></View> : <Text style={styles.telemetryNote}>No successful payload preview is available yet.</Text>}
           </View>;
