@@ -11,7 +11,7 @@ import { ValuationRangeChart } from "@/components/valuation-range-chart";
 import { passesResearchFilter, type FilterKey, type ScreenerCandidate } from "@/lib/screener";
 import { displayText, humanize, joinList, listLength } from "@/lib/safe-text";
 import { metricBasis } from "@/lib/safe-access";
-import { createDirectStockResult, createDirectStockResultForMarket, normalizeStockSymbol, rankStockMatches, type StockSearchResult } from "@/lib/stock-search";
+import { createDirectStockResultForMarket, normalizeStockSymbol, rankStockMatches, type StockSearchResult } from "@/lib/stock-search";
 import { trpc } from "@/lib/trpc";
 import { exportResearchPdf } from "@/lib/pdf";
 import { loadRecentSearches, loadSavedScreens, loadWatchlist, saveRecentSearch, saveSavedScreen, saveWatchlist, type SavedScreen } from "@/lib/local-preferences";
