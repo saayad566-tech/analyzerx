@@ -1,4 +1,5 @@
 import mysql from "mysql2";
+import { requireMarketId } from "../lib/market-regions";
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import { and, desc, eq, gte, like, lt, or, sql } from "drizzle-orm";
