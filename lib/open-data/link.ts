@@ -28,6 +28,7 @@ import {
   sectorConstituents,
   snapshot,
   stockNews,
+  type SectorConstituent,
 } from "./engine";
 import { NSE_INDEX_FILES, type NewsArticle } from "./sources";
 import { queryArchive, storeStats } from "./store";
@@ -321,7 +322,21 @@ const HANDLERS: Record<string, Handler> = {
   "market.institutionalFlows": (input) => institutionalFlows(str(input, "range", "TODAY")),
   "market.sectorConstituents": async (input) => {
     const sector = str(input, "sector");
-    const base = await sectorConstituents(sector, Number(input?.limit ?? 100) || 100);
+    // The constituent index is the NSE index set, which is India-only. For any other
+    // market there is no free equivalent, so this returns an explicit unsupported
+    // state with no rows rather than Indian constituents under a foreign heading.
+    const constituentsMarketId = market(input);
+    const base = constituentsMarketId === "IN"
+      ? await sectorConstituents(sector, Number(input?.limit ?? 100) || 100)
+      : {
+          sector,
+          asOf: nowIso(),
+          constituents: [] as SectorConstituent[],
+          source: "No constituent index is available for this market",
+          error: null,
+          status: "unsupported" as const,
+          reason: `Sector constituents are not available for ${constituentsMarketId}. AnalyzerX shows nothing here rather than another market's constituents.`,
+        };
     const flows = await institutionalFlows(str(input, "range", "TODAY")).catch(() => null);
     const fii = flows?.rows.find((r) => r.participant === "FII/FPI");
     const dii = flows?.rows.find((r) => r.participant === "DII");
@@ -500,8 +515,8 @@ const HANDLERS: Record<string, Handler> = {
       symbol: report.resolvedSymbol,
       marketId,
       marketLabel: report.market.country,
-      fileName: `analyzerx-${report.resolvedSymbol}-3.21.0.pdf`,
-      markdownFileName: `analyzerx-${report.resolvedSymbol}-3.21.0.md`,
+      fileName: `analyzerx-${report.resolvedSymbol}-3.22.0.pdf`,
+      markdownFileName: `analyzerx-${report.resolvedSymbol}-3.22.0.md`,
       format: "pdf",
       content: markdown,
       pdfBase64: "",
