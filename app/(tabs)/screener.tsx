@@ -156,9 +156,9 @@ export default function ScreenerScreen() {
     setSelectedStock(direct ?? { symbol, name: symbol, sector: "Global equities", exchange: "Unknown", source: "Research Workspace" });
   }, [marketId, routedSymbol, selectedSymbol]);
   useEffect(() => {
-    void loadRecentSearches().then(setRecentSearches);
-    void loadSavedScreens().then(setSavedScreens);
-    void loadWatchlist().then(setWatchlist);
+    void loadRecentSearches(marketId).then(setRecentSearches);
+    void loadSavedScreens(marketId).then(setSavedScreens);
+    void loadWatchlist(marketId).then(setWatchlist);
   }, []);
   const [remoteSearchQuery, setRemoteSearchQuery] = useState("");
   useEffect(() => {
@@ -194,7 +194,7 @@ export default function ScreenerScreen() {
     [enabledFilters, marketCapBand, marketId, showOnlyEvidence],
   );
   const toggleFilter = (filter: FilterKey) => setEnabledFilters((current) => current.includes(filter) ? current.filter((item) => item !== filter) : [...current, filter]);
-  const selectStock = (stock: StockSearchResult) => { const symbol = normalizeStockSymbol(stock.symbol); setAnalysisQuery(symbol); setSelectedSymbol(symbol); setSelectedStock({ ...stock, symbol }); setRecentSearches((current) => [symbol, ...current.filter((item) => item !== symbol)].slice(0, 5)); void saveRecentSearch(symbol, recentSearches); };
+  const selectStock = (stock: StockSearchResult) => { const symbol = normalizeStockSymbol(stock.symbol); setAnalysisQuery(symbol); setSelectedSymbol(symbol); setSelectedStock({ ...stock, symbol }); setRecentSearches((current) => [symbol, ...current.filter((item) => item !== symbol)].slice(0, 5)); void saveRecentSearch(marketId, symbol, recentSearches); };
   const analyzeQuery = () => {
     const direct = createDirectStockResultForMarket(analysisQuery, marketId);
     if (suggestions[0]) return selectStock(suggestions[0]);
@@ -226,8 +226,8 @@ export default function ScreenerScreen() {
   const activeAnalysisStageIndex = analysisStageState.findIndex((stage) => !stage.done);
   const analysisOperationStages = analysisStageState.map((stage, index) => ({ label: stage.label, state: stage.done ? "complete" as const : index === activeAnalysisStageIndex ? "active" as const : "pending" as const, detail: index === activeAnalysisStageIndex ? "Checking source-backed data; unavailable lanes will be shown clearly" : undefined }));
   const officialFilingLinks = trpc.market.officialFilingLinks.useQuery({ marketId: market.id, symbol: selectedSymbol ?? market.tickerExamples[0] ?? "" }, { enabled: Boolean(selectedSymbol), retry: false, staleTime: 300_000 });
-  const toggleWatchlist = () => { if (!selectedSymbol) return; const next = watchlist.includes(selectedSymbol) ? watchlist.filter((item) => item !== selectedSymbol) : [selectedSymbol, ...watchlist].slice(0, 30); setWatchlist(next); void saveWatchlist(next); };
-  const saveCurrentScreen = () => { const name = screenName.trim(); if (!name || enabledFilters.length === 0) return; const screen = { name, filters: enabledFilters, createdAt: new Date().toISOString() }; setSavedScreens((current) => [screen, ...current.filter((item) => item.name !== name)].slice(0, 10)); void saveSavedScreen(screen, savedScreens); setScreenName(""); };
+  const toggleWatchlist = () => { if (!selectedSymbol) return; const next = watchlist.includes(selectedSymbol) ? watchlist.filter((item) => item !== selectedSymbol) : [selectedSymbol, ...watchlist].slice(0, 30); setWatchlist(next); void saveWatchlist(marketId, next); };
+  const saveCurrentScreen = () => { const name = screenName.trim(); if (!name || enabledFilters.length === 0) return; const screen = { name, filters: enabledFilters, createdAt: new Date().toISOString() }; setSavedScreens((current) => [screen, ...current.filter((item) => item.name !== name)].slice(0, 10)); void saveSavedScreen(marketId, screen, savedScreens); setScreenName(""); };
   const formatValue = (value: number | null | undefined, suffix = "") => typeof value === "number" ? `${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}${suffix}` : "Unavailable";
   const [exporting, setExporting] = useState(false);
   /**
