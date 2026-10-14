@@ -41,9 +41,13 @@ describe("app inventory", () => {
   });
 
   it("finds screens by alias and by label", () => {
+    // findScreens matches a single label/alias term; whole-word matching inside a
+    // sentence is resolveAppTargets' job (covered below).
     expect(findScreens("flows")[0].id).toBe("flows");
-    expect(findScreens("fii dii")[0].id).toBe("flows");
+    expect(findScreens("fii")[0].id).toBe("flows");
+    expect(findScreens("capital flows")[0].id).toBe("flows");
     expect(findScreens("screener")[0].id).toBe("screener");
+    expect(findScreens("no-such-screen")).toEqual([]);
     expect(findScreens("")[0]).toBeUndefined();
   });
 
