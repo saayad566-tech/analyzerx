@@ -43,7 +43,7 @@ jobs:
       - run: pnpm release:verify
         env:
           ANALYZERX_SOURCE_REVISION: ${{ github.sha }}
-      - name: Market isolation report
+      - name: Market isolation gate
         run: node scripts/check-market-isolation.mjs
       - run: pnpm check
       - run: pnpm test -- --run
