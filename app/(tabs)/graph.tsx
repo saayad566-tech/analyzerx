@@ -15,7 +15,7 @@ export default function GraphScreen() {
   const [maxHops, setMaxHops] = useState<1 | 2>(2);
   const [contradictionFilter, setContradictionFilter] = useState<"all" | "conflicting">("all");
   const [minimumSources, setMinimumSources] = useState<1 | 2>(1);
-  const graphQuery = trpc.graph.projection.useQuery({ marketId: market.id, maxHops, limit: 80 }, { staleTime: 60_000, retry: false });
+  const graphQuery = trpc.graph.projection.useQuery({ maxHops, limit: 80 }, { staleTime: 60_000, retry: false });
   const graph = graphQuery.data;
   const entityNodes = useMemo(() => graph?.nodes.filter((node) => node.type === "entity") ?? [], [graph]);
   const visibleEdges = useMemo(() => (graph?.edges ?? []).filter((edge) => edge.sourceCount >= minimumSources && (contradictionFilter === "all" || edge.contradiction !== "none")), [contradictionFilter, graph?.edges, minimumSources]);
