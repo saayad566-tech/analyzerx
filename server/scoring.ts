@@ -1,4 +1,5 @@
 import { analyzeFundamentals, type FundamentalAnalysis } from "./fundamental-analysis";
+import { type MarketId } from "../lib/market-regions";
 import { computeDeepScore, type DeepScoreInput, type DeepScoreResult, type SectorModel } from "../lib/scoring";
 
 /**
@@ -88,8 +89,8 @@ export function buildDeepScoreInput(analysis: FundamentalAnalysis): DeepScoreInp
   };
 }
 
-export async function buildDeepScore(symbol: string): Promise<DeepScoreResponse> {
-  const analysis = await analyzeFundamentals(symbol);
+export async function buildDeepScore(symbol: string, marketId: MarketId): Promise<DeepScoreResponse> {
+  const analysis = await analyzeFundamentals(symbol, marketId);
   const result = computeDeepScore(buildDeepScoreInput(analysis));
   return {
     symbol: analysis.requestedSymbol,
