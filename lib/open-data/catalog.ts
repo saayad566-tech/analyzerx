@@ -210,6 +210,9 @@ function symbolFeed(symbol: string, lens: SymbolLens): CatalogSource {
  * available; the bundled list is used as a floor so the catalog is always large
  * enough to run continuously.
  */
+/** Floor list so the catalog is never empty before a live universe is fetched. */
+const DEFAULT_SYMBOLS = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK"];
+
 export function buildCatalog(symbols: string[] = [], target = CATALOG_TARGET): CatalogSource[] {
   const universe = [...new Set([...symbols.map((s) => s.toUpperCase()), ...DEFAULT_SYMBOLS])].filter(Boolean);
   const sources: CatalogSource[] = [...OFFICIAL_SOURCES, ...NSE_INDEX_SOURCES, ...PUBLISHER_SOURCES];
@@ -217,7 +220,7 @@ export function buildCatalog(symbols: string[] = [], target = CATALOG_TARGET): C
   // Topic sources are built per market, each with that market's own search terms and
   // news edition. Previously every topic was an Indian subject tagged "IN" and built
   // with hl=en-IN&gl=IN&ceid=IN:en, so a French market got Indian topics.
-  for (const marketId of MARKET_IDS as MarketId[]) {
+  for (const marketId of MARKET_IDS) {
     for (const topic of MARKET_TOPICS) {
       const url = topicFeedUrl(marketId, topic);
       if (!url) continue;
