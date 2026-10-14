@@ -1,4 +1,5 @@
 import { analyzeFundamentals } from "./fundamental-analysis";
+import { type MarketId } from "../lib/market-regions";
 import { inferMarketFromSymbol, marketScopedPeers } from "../lib/market-defaults";
 
 const peerMap: Record<string, string[]> = {
