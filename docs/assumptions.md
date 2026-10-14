@@ -5,8 +5,8 @@ chosen and is logged here rather than left implicit.
 
 ## A1 — The repository is the source of truth, not prior messages
 
-Where a message and the code disagreed, the code won. The version was resolved from
-`package.json` (3.16.0), not from a remembered 3.2.0 or 3.5.0.
+Where a message and the code disagreed, the code won. The version is always resolved
+from `package.json` and never from a remembered or quoted number.
 
 ## A2 — "Supported market" means the app has an adapter, not that the country exists
 
