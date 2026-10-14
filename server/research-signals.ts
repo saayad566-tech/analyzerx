@@ -1,4 +1,5 @@
 import { analyzeFundamentals } from "./fundamental-analysis";
+import { type MarketId } from "../lib/market-regions";
 
 export type SignalAction = "RESEARCH_BUY_WINDOW" | "RESEARCH_SELL_RISK" | "NO_CONFIRMED_SIGNAL" | "UNAVAILABLE";
 
