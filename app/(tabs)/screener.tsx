@@ -133,6 +133,7 @@ const researchCandidates: ScreenerCandidate[] = [
 ];
 
 export default function ScreenerScreen() {
+  const { market } = useMarketContext();
   const { marketId } = useMarketContext();
   const [enabledFilters, setEnabledFilters] = useState<FilterKey[]>([]);
   const [showOnlyEvidence, setShowOnlyEvidence] = useState(true);
@@ -209,7 +210,7 @@ export default function ScreenerScreen() {
   );
   const analyzedMarketCapBand = classifyMarketCap(marketId, fundamentalAnalysis.data?.marketCap.value);
   const derivatives = trpc.market.derivatives.useQuery({ marketId: market.id, symbol: selectedSymbol ?? market.tickerExamples[0] ?? "" }, { enabled: Boolean(selectedSymbol), retry: false, staleTime: 30_000 });
-  const multibaggerSignals = trpc.market.multibaggerSignals.useQuery({ marketId: market.id, strategyId: selectedStrategyId }, { retry: false, staleTime: 900_000, refetchInterval: 300_000, refetchIntervalInBackground: false });
+  const multibaggerSignals = trpc.market.multibaggerSignals.useQuery({ strategyId: selectedStrategyId }, { retry: false, staleTime: 900_000, refetchInterval: 300_000, refetchIntervalInBackground: false });
   const multiAssetTiming = trpc.market.multiAssetTiming.useQuery({ marketId: market.id }, { retry: false, staleTime: 120_000, refetchInterval: 180_000, refetchIntervalInBackground: false });
   const reportExport = trpc.market.report.useQuery({ symbol: selectedSymbol ?? market.tickerExamples[0] ?? "", marketId }, { enabled: false, retry: false });
   const { width: viewportWidth } = useWindowDimensions();
