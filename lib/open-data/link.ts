@@ -171,8 +171,8 @@ function toArchiveArticle(article: NewsArticle & { collectedAt?: string | null }
   };
 }
 
-async function eventProjections(limit = 100, symbol?: string) {
-  const payload = symbol ? await stockNews(symbol, 40) : await marketNews(60);
+async function eventProjections(marketId: MarketId, limit = 100, symbol?: string) {
+  const payload = symbol ? await stockNews(symbol, 40, marketId) : await marketNews(60);
   return payload.articles.slice(0, limit).map(projectionFromArticle);
 }
 
@@ -194,7 +194,7 @@ function officialFilingLinks(symbol: string) {
  * Deterministic local chat (no LLM, no server)
  * ------------------------------------------------------------------ */
 
-async function groundedAnswer(question: string, symbol: string, marketId: MarketId = "IN") {
+async function groundedAnswer(question: string, symbol: string, marketId: MarketId) {
   const clean = (symbol || question.match(/\b([A-Z]{2,12})\b/)?.[1] || "").toUpperCase();
   const parts: string[] = [];
   const sources: Array<{ label: string; detail: string; url?: string }> = [];
@@ -204,7 +204,7 @@ async function groundedAnswer(question: string, symbol: string, marketId: Market
     const [snap, fund, news] = await Promise.allSettled([
       snapshot(clean, marketId),
       fundamentals(clean, marketId),
-      stockNews(clean, 6),
+      stockNews(clean, 6, marketId),
     ]);
     if (snap.status === "fulfilled" && snap.value.quote) {
       const q = snap.value.quote;
@@ -278,7 +278,7 @@ const HANDLERS: Record<string, Handler> = {
     const marketId = market(input);
     const snap = await snapshot(symbol, marketId);
     const analysis = await fundamentals(symbol, marketId).catch(() => null);
-    const news = await stockNews(symbol, 6).catch(() => null);
+    const news = await stockNews(symbol, 6, marketId).catch(() => null);
     return {
       ...snap,
       asOf: snap.asOf,
@@ -300,7 +300,7 @@ const HANDLERS: Record<string, Handler> = {
   "market.profile": async (input) => {
     const symbol = str(input, "symbol");
     const marketId = market(input);
-    const [marketSnap, fund, news] = await Promise.allSettled([snapshot(symbol, marketId), fundamentals(symbol, marketId), stockNews(symbol)]);
+    const [marketSnap, fund, news] = await Promise.allSettled([snapshot(symbol, marketId), fundamentals(symbol, marketId), stockNews(symbol, 40, marketId)]);
     return {
       symbol,
       asOf: nowIso(),
@@ -412,7 +412,7 @@ const HANDLERS: Record<string, Handler> = {
     };
   },
   "market.peerComparison": async (input) => {
-    const result = await peerComparison(str(input, "symbol"));
+    const result = await peerComparison(str(input, "symbol"), market(input));
     return { ...result, note: result.peers.length ? result.comparisonBasis : "No peer set was found for this symbol from the NSE index lists." };
   },
   "market.multiAssetTiming": () => multiAssetTiming(),
@@ -425,7 +425,7 @@ const HANDLERS: Record<string, Handler> = {
     const [snap, analysis, news] = await Promise.all([
       snapshot(symbol, "IN"),
       fundamentals(symbol, "IN").catch(() => null),
-      stockNews(symbol, 8).catch(() => null),
+      stockNews(symbol, 8, marketId).catch(() => null),
     ]);
     return {
       available: Boolean(snap.quote),
@@ -494,14 +494,14 @@ const HANDLERS: Record<string, Handler> = {
   "market.report": async (input) => {
     const symbol = str(input, "symbol");
     const marketId = market(input);
-    const [report, news] = await Promise.all([fundamentals(symbol, marketId), stockNews(symbol, 20)]);
+    const [report, news] = await Promise.all([fundamentals(symbol, marketId), stockNews(symbol, 20, marketId)]);
     const markdown = `# Selected market: ${report.market.country} (${marketId})\n\n${report.stockAnalysis.conclusion}\n\n## Score\n${report.score}/100 — ${report.verdict}\n\n## Sources\n${report.sources.map((s) => `- ${s.name} (${s.status})`).join("\n")}\n`;
     return {
       symbol: report.resolvedSymbol,
       marketId,
       marketLabel: report.market.country,
-      fileName: `analyzerx-${report.resolvedSymbol}-3.19.0.pdf`,
-      markdownFileName: `analyzerx-${report.resolvedSymbol}-3.19.0.md`,
+      fileName: `analyzerx-${report.resolvedSymbol}-3.20.0.pdf`,
+      markdownFileName: `analyzerx-${report.resolvedSymbol}-3.20.0.md`,
       format: "pdf",
       content: markdown,
       pdfBase64: "",
@@ -709,10 +709,10 @@ const HANDLERS: Record<string, Handler> = {
   },
 
   /* ---- events ---- */
-  "events.latest": (input) => eventProjections(Number(input?.limit ?? 100) || 100),
-  "events.timeline": (input) => eventProjections(Number(input?.limit ?? 100) || 100, str(input, "symbol")),
+  "events.latest": (input) => eventProjections(market(input), Number(input?.limit ?? 100) || 100),
+  "events.timeline": (input) => eventProjections(market(input), Number(input?.limit ?? 100) || 100, str(input, "symbol")),
   "events.storyline": async () => [],
-  "events.search": (input) => eventProjections(500).then((rows) => rows.filter((row) => JSON.stringify(row).toLowerCase().includes(str(input, "query").toLowerCase())).slice(0, Number(input?.limit ?? 100) || 100)),
+  "events.search": (input) => eventProjections(market(input), 500).then((rows) => rows.filter((row) => JSON.stringify(row).toLowerCase().includes(str(input, "query").toLowerCase())).slice(0, Number(input?.limit ?? 100) || 100)),
 
   /* ---- graph ---- */
   "graph.projection": async (input) => {
@@ -729,7 +729,7 @@ const HANDLERS: Record<string, Handler> = {
     // graph from the phone's own archive so the tab is populated from real,
     // already-collected evidence rather than waiting for a server.
     const articles: Array<{ symbol: string; source: string }> = symbol
-      ? ((await stockNews(symbol, 20).catch(() => ({ articles: [] }))).articles as Array<{ symbol: string; source: string }>)
+      ? ((await stockNews(symbol, 20, marketId).catch(() => ({ articles: [] }))).articles as Array<{ symbol: string; source: string }>)
       : ((await queryArchive({ limit: 300, order: "newest" })).articles as Array<{ symbol: string; source: string }>);
 
     const bySymbol = new Map<string, { count: number; sources: Map<string, number> }>();
