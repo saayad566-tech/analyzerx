@@ -31,7 +31,7 @@ export default function ResearchWorkspaceScreen() {
   const effectiveWatchlist = isAuthenticated && ownedWatchlist.data ? serverWatchlist : watchlist;
   const effectiveSavedScreens = isAuthenticated && ownedScreens.data ? ownedScreens.data : savedScreens;
   const latestSymbol = recentSearches[0] ?? effectiveWatchlist[0] ?? null;
-  const financialAnalysis = trpc.market.fundamentals.useQuery({ symbol: resolveMarketScopedSymbol(latestSymbol, marketId) ?? "" }, { enabled: Boolean(latestSymbol), retry: false, staleTime: 60_000 });
+  const financialAnalysis = trpc.market.fundamentals.useQuery({ marketId: market.id, symbol: resolveMarketScopedSymbol(latestSymbol, marketId) ?? "" }, { enabled: Boolean(latestSymbol), retry: false, staleTime: 60_000 });
   const watchlistEvidence = trpc.market.watchlistEvidence.useQuery({ symbols: effectiveWatchlist.length ? effectiveWatchlist : (resolveMarketScopedSymbol(null, marketId) ? [resolveMarketScopedSymbol(null, marketId)!] : []) }, { enabled: effectiveWatchlist.length > 0, retry: false, staleTime: 60_000 });
   const watchlistEventCounts = useMemo(() => new Map((watchlistEvidence.data ?? []).map((item) => [item.symbol, item.events.length])), [watchlistEvidence.data]);
   const openFinancialAnalysis = (symbol: string) => router.push({ pathname: "/screener", params: { symbol } });
