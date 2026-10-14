@@ -212,7 +212,7 @@ describe("open-data live sources (contract + availability)", () => {
   it("returns sector constituents and multi-asset signals", async () => {
     const [sector, timing, history] = await Promise.all([
       sectorConstituents("NIFTYBANK", 50),
-      multiAssetTiming(),
+      multiAssetTiming("IN"),
       priceHistory("RELIANCE", "1mo", "1d", "IN").catch(() => ({ points: [] as Array<{ t: string; c: number | null }> })),
     ]);
     expect(Array.isArray(sector.constituents)).toBe(true);
@@ -235,7 +235,7 @@ describe("open-data live sources (contract + availability)", () => {
   it("proves at least one free source is reachable from this environment", async () => {
     const results = await Promise.all([
       snapshot("RELIANCE", "IN").then((r) => Boolean(r.quote)).catch(() => false),
-      marketNews(5).then((r) => r.articles.length > 0).catch(() => false),
+      marketNews("IN", 5).then((r) => r.articles.length > 0).catch(() => false),
       nseUniverse().then((r) => r.securities.length > 0).catch(() => false),
       institutionalFlows("TODAY").then((r) => r.rows.length > 0).catch(() => false),
     ]);
