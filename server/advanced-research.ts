@@ -17,14 +17,14 @@ export type PeerComparison = {
   note: string;
 };
 
-export async function comparePeers(symbol: string): Promise<PeerComparison> {
+export async function comparePeers(symbol: string, marketId: MarketId): Promise<PeerComparison> {
   const normalized = symbol.trim().toUpperCase();
   // Peers follow the instrument's own market. The previous fallback always used
   // Indian peers, which is the cross-market leak the mandate forbids.
   const peerSymbols = peerMap[normalized] ?? marketScopedPeers(inferMarketFromSymbol(normalized) ?? "US", normalized);
   const results = await Promise.all(peerSymbols.slice(0, 3).map(async (peer) => {
     try {
-      const analysis = await analyzeFundamentals(peer);
+      const analysis = await analyzeFundamentals(peer, marketId);
       const estimated = Object.values(analysis.metrics).filter((metric) => metric.basis === "estimated").length;
       return { symbol: analysis.resolvedSymbol, companyName: analysis.companyName, score: analysis.score, verdict: analysis.verdict, dataQuality: estimated === 0 ? "reported" as const : estimated < 5 ? "mixed" as const : "estimated" as const, sourceCount: analysis.sources.filter((source) => source.status === "used").length };
     } catch {
