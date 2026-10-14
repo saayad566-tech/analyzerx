@@ -131,7 +131,7 @@ export function discoverAutonomousRecommendationsFromChains(events: SmartEventCh
 }
 
 export async function discoverAutonomousRecommendations(marketId: MarketId, lookbackDays = 30, limit = 50): Promise<AutonomousRecommendationDiscovery> {
-  const [trackedNews, records] = await Promise.all([getLatestTrackedNews(300), getLatestSourceRecords(marketId, 500)]);
+  const [trackedNews, records] = await Promise.all([getLatestTrackedNews(300, undefined, marketId), getLatestSourceRecords(marketId, 500)]);
   const officialArticles = records.map((record) => officialRecordToArticle(record, marketId)).filter((item): item is ExtractedNews => Boolean(item));
   const articles = [...trackedNews, ...officialArticles].filter((article) => Date.parse(article.published_at) >= Date.now() - Math.min(180, Math.max(1, lookbackDays)) * 86_400_000);
   const symbols = [...new Set(articles.map((article) => article.symbol).filter(Boolean))].slice(0, 40);
@@ -157,7 +157,7 @@ export async function discoverAutonomousRecommendations(marketId: MarketId, look
   return { ...result, recommendations: result.recommendations.slice(0, limit), coverage: { trackedNews: trackedNews.length, officialRecords: officialArticles.length, providerFailures } };
 }
 
-export async function getPersistedAutonomousRecommendations(options: { lookbackDays?: number; limit?: number; sort?: "impact" | "confidence" | "latest" } = {}) {
-  const rows = await getAutonomousRecommendations(options.lookbackDays ?? 30, options.limit ?? 50);
+export async function getPersistedAutonomousRecommendations(options: { marketId: MarketId; lookbackDays?: number; limit?: number; sort?: "impact" | "confidence" | "latest" }) {
+  const rows = await getAutonomousRecommendations(options.marketId, options.lookbackDays ?? 30, options.limit ?? 50);
   return [...rows].sort((a, b) => options.sort === "confidence" ? b.confidenceScore - a.confidenceScore : options.sort === "latest" ? b.eventTimestamp.getTime() - a.eventTimestamp.getTime() : b.impactScore - a.impactScore);
 }
