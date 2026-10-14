@@ -222,7 +222,7 @@ export async function exportResearchPdf(symbol: string, marketId: MarketId, opti
   const [report, history, news] = await Promise.all([
     fundamentals(symbol, marketId),
     priceHistory(symbol, "1y", "1d", marketId).catch(() => ({ points: [] as Array<{ t: string; c: number | null }> })),
-    stockNews(symbol, 10).catch(() => ({ articles: [] as Array<{ headline: string }> })),
+    stockNews(symbol, 10, marketId).catch(() => ({ articles: [] as Array<{ headline: string }> })),
   ]);
   const html = buildHtml(report, news.articles.map((a) => a.headline), history.points, report.market.country);
   const fileName = `AnalyzerX-${report.resolvedSymbol}-3.20.0.pdf`;
