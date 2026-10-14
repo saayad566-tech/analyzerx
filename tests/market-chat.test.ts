@@ -36,7 +36,7 @@ describe("market chatbot", () => {
 
   it("resolves a company name and returns structured grounded output", async () => {
     invokeLLM.mockResolvedValue({ choices: [{ message: { content: JSON.stringify({ answer: "TCS has a 76/100 research score in the supplied context.", confidence: "medium", limitations: ["Verify the latest filing"], suggestedQuestions: ["Show risks"] }) } }] });
-    const result = await answerMarketChat("Can you analyze Tata Consultancy Services fundamentals?");
+    const result = await answerMarketChat("Can you analyze Tata Consultancy Services fundamentals?", "IN");
     expect(result.symbol).toBe("TCS");
     expect(result.engine).toBe("server-grounded");
     expect(result.sources[0]?.label).toBe("Test filing");
@@ -44,7 +44,7 @@ describe("market chatbot", () => {
 
   it("returns a deterministic fallback when the model is unavailable", async () => {
     invokeLLM.mockRejectedValue(new Error("LLM unavailable"));
-    const result = await answerMarketChat("What are the latest risks for TCS?");
+    const result = await answerMarketChat("What are the latest risks for TCS?", "IN");
     expect(result.symbol).toBe("TCS");
     expect(result.engine).toBe("deterministic-fallback");
     expect(result.answer).toContain("Tata Consultancy Services");
@@ -53,33 +53,33 @@ describe("market chatbot", () => {
 
   it("returns a deterministic fallback when an upstream model payload is malformed", async () => {
     invokeLLM.mockResolvedValue({ choices: [{ message: { content: "Service temporarily unavailable" } }] });
-    const result = await answerMarketChat("What are the latest risks for TCS?");
+    const result = await answerMarketChat("What are the latest risks for TCS?", "IN");
     expect(result.engine).toBe("deterministic-fallback");
     expect(result.answer).toContain("Tata Consultancy Services");
     expect(result.limitations.join(" ")).toContain("Unexpected token");
   });
 
   it("returns low-latency deterministic guidance with an allowlisted navigation action", async () => {
-    const result = await answerMarketChat("Where do I find Market Flows in AnalyzerX?");
+    const result = await answerMarketChat("Where do I find Market Flows in AnalyzerX?", "IN");
     expect(result.confidence).toBe("high");
     expect(result.action).toEqual({ type: "navigate", route: "/flows" });
     expect(result.answer).toContain("Today, 3 Days, 1 Week, 1 Month, or QTD");
   });
 
   it("returns a safe news filter action for a selected symbol", async () => {
-    const result = await answerMarketChat("Show positive news for Reliance");
+    const result = await answerMarketChat("Show positive news for Reliance", "IN");
     expect(result.symbol).toBe("RELIANCE");
     expect(result.action).toEqual({ type: "filter_news", symbol: "RELIANCE", sentiment: "Positive" });
   });
 
   it("answers educational questions without fabricating a live value", async () => {
-    const result = await answerMarketChat("Explain compound interest simply.");
+    const result = await answerMarketChat("Explain compound interest simply.", "IN");
     expect(result.confidence).toBe("high");
     expect(result.answer).toContain("Compound interest");
     expect(result.limitations.join(" ")).toContain("not live market data");
   });
 
   it("rejects empty questions before any provider work", async () => {
-    await expect(answerMarketChat("  ")).rejects.toThrow("market question is required");
+    await expect(answerMarketChat("  ", "IN")).rejects.toThrow("market question is required");
   });
 });
