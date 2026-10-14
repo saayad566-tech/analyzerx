@@ -129,7 +129,7 @@ export default function FilingsScreen() {
   const { market, marketId } = useMarketContext();
 
   const archiveQuery = trpc.news.archive.useQuery(
-    { days: 30, limit: 60, page: 0, marketId, archiveOrder: "Newest first" },
+    { marketId: market.id, days: 30, limit: 60, page: 0, archiveOrder: "Newest first" },
     { staleTime: 60_000, retry: false },
   );
 
