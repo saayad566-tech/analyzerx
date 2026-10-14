@@ -133,6 +133,13 @@ jobs:
           cp "$dir/app-release.apk" "apk-out/analyzerx-${VERSION}.apk"
           cp "$dir/app-release.apk.sha256" "apk-out/analyzerx-${VERSION}.apk.sha256"
           split -b 4194304 -d -a 3 "apk-out/analyzerx-${VERSION}.apk" "apk-out/analyzerx-${VERSION}.apk.part"
+          # The split parts exist precisely because the whole APK is too big for git.
+          # Committing the unsplit file as well gets the push rejected outright:
+          #   "File apk-out/analyzerx-3.24.0.apk is 105.90 MB; this exceeds GitHub's
+          #    file size limit of 100.00 MB"  -> pre-receive hook declined
+          # So only the parts and the checksum are committed. The full APK is already
+          # published as a release asset and uploaded as a workflow artifact.
+          rm -f "apk-out/analyzerx-${VERSION}.apk"
           ls -la apk-out
           git config user.email "ci@analyzerx.local"
           git config user.name "AnalyzerX CI"
