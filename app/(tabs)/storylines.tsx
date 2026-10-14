@@ -86,7 +86,7 @@ export default function StorylinesScreen() {
   const [mode, setMode] = useState<"news" | "storylines">("news");
 
   const eventsQuery = trpc.events.latest.useQuery(
-    { limit: 200, lookbackDays: selectedWindow },
+    { marketId: market.id, limit: 200, lookbackDays: selectedWindow },
     { staleTime: 60_000, retry: false },
   );
 
