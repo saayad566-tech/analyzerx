@@ -32,6 +32,7 @@ import { comparePeers, getOfficialFilingLinks } from "./advanced-research";
 import { fundamentalAnalysisToMarkdown, fundamentalAnalysisToPdf, reportFileName } from "./research-report";
 import { fetchDerivativesSnapshot, getDerivativesSourceCatalog } from "./derivatives";
 import { getMultiAssetTimingSignals, getMultibaggerSignals, type MultibaggerStrategyId } from "./research-signals";
+import { priceHistory } from "../lib/open-data/engine";
 import { discoverLiveSmartAlerts, persistSmartAlertDiscovery } from "./live-smart-alerts";
 import { getAutonomousRecommendation, getEventProjectionsForStoryline, getEventProjectionsForSymbol, getFundamentalObservationsForSymbol, getLatestEventProjections, getMarketObservationsForSymbol, getSmartAlertHistory, getUserAlertResult, listUserAlertResultsPage, getResearchRun, listResearchRuns, listResearchAgentRuns, getUserNotificationPreferences, listProviderHealthHistory, getEnabledUserPushTokens, listUserAlertResults, listUserAlertRules, listUserSavedResearch, listUserSavedScreens, listUserWatchlistItems, revokeUserAlertRule, revokeUserPushToken, revokeUserSavedResearch, revokeUserSavedScreen, revokeUserWatchlistItem, upsertUserAlertRule, upsertUserNotificationPreferences, upsertUserPushToken, upsertUserSavedResearch, upsertUserSavedScreen, upsertUserWatchlistItem, cancelResearchRun } from "./db";
 import { normalizeMonitoringQuery, type SmartAlertDiscovery } from "./smart-event-alerts";
@@ -587,6 +588,7 @@ export const appRouter = router({
     universe: publicProcedure.query(async () => fetchNseUniverse()),
     positioning: publicProcedure.input(symbolInput).query(async ({ input }) => getPositioningCoverage(input.symbol)),
     sectorNames: publicProcedure.query(() => getAvailableSectorNames()),
+    history: publicProcedure.input(z.object({ marketId: marketIdSchema, symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/), range: z.string().trim().min(1).max(12).default("6mo"), interval: z.string().trim().min(1).max(12).default("1d") })).query(({ input }) => priceHistory(input.symbol, input.range, input.interval, input.marketId)),
     sectorConstituents: publicProcedure.input(z.object({ marketId: marketIdSchema, sector: z.string().trim().min(1).max(80), sort: z.enum(["score", "fii", "dii", "marketCap", "changePercent", "pe"]).default("score"), direction: z.enum(["asc", "desc"]).default("desc"), range: z.enum(["TODAY", "THREE_DAYS", "ONE_WEEK", "ONE_MONTH", "QTD"]).default("TODAY"), limit: z.number().int().min(1).max(100).default(100) })).query(({ input }) => getSectorConstituents(input.sector, { sort: input.sort as SectorSort, direction: input.direction, range: input.range, limit: input.limit })),
     indiaStockMcpStatus: publicProcedure.query(() => getIndiaStockMcpStatus()),
     indiaStockMcpSnapshot: publicProcedure.input(symbolInput).query(({ input }) => getIndiaStockMcpSnapshot(input.symbol)),
