@@ -204,16 +204,16 @@ export default function ScreenerScreen() {
   const legacyAnalysisTarget = analysisTarget as NonNullable<typeof analysisTarget>;
   const indianSnapshot = trpc.market.indianSnapshot.useQuery({ symbol: resolveMarketScopedSymbol(selectedSymbol, marketId) ?? "" }, { enabled: Boolean(selectedSymbol), retry: false });
   const fundamentalAnalysis = trpc.market.fundamentals.useQuery(
-    { symbol: selectedSymbol ?? "RELIANCE" },
+    { marketId: market.id, symbol: selectedSymbol ?? market.tickerExamples[0] ?? "" },
     { enabled: Boolean(selectedSymbol), retry: 1, retryDelay: 1_200, staleTime: 60_000 },
   );
   const analyzedMarketCapBand = classifyMarketCap(marketId, fundamentalAnalysis.data?.marketCap.value);
-  const derivatives = trpc.market.derivatives.useQuery({ symbol: selectedSymbol ?? "RELIANCE" }, { enabled: Boolean(selectedSymbol), retry: false, staleTime: 30_000 });
-  const multibaggerSignals = trpc.market.multibaggerSignals.useQuery({ strategyId: selectedStrategyId }, { retry: false, staleTime: 900_000, refetchInterval: 300_000, refetchIntervalInBackground: false });
-  const multiAssetTiming = trpc.market.multiAssetTiming.useQuery(undefined, { retry: false, staleTime: 120_000, refetchInterval: 180_000, refetchIntervalInBackground: false });
-  const reportExport = trpc.market.report.useQuery({ symbol: selectedSymbol ?? "RELIANCE", marketId }, { enabled: false, retry: false });
+  const derivatives = trpc.market.derivatives.useQuery({ marketId: market.id, symbol: selectedSymbol ?? market.tickerExamples[0] ?? "" }, { enabled: Boolean(selectedSymbol), retry: false, staleTime: 30_000 });
+  const multibaggerSignals = trpc.market.multibaggerSignals.useQuery({ marketId: market.id, strategyId: selectedStrategyId }, { retry: false, staleTime: 900_000, refetchInterval: 300_000, refetchIntervalInBackground: false });
+  const multiAssetTiming = trpc.market.multiAssetTiming.useQuery({ marketId: market.id }, { retry: false, staleTime: 120_000, refetchInterval: 180_000, refetchIntervalInBackground: false });
+  const reportExport = trpc.market.report.useQuery({ symbol: selectedSymbol ?? market.tickerExamples[0] ?? "", marketId }, { enabled: false, retry: false });
   const { width: viewportWidth } = useWindowDimensions();
-  const peerComparison = trpc.market.peerComparison.useQuery({ symbol: selectedSymbol ?? "RELIANCE" }, { enabled: Boolean(selectedSymbol), retry: false, staleTime: 300_000 });
+  const peerComparison = trpc.market.peerComparison.useQuery({ marketId: market.id, symbol: selectedSymbol ?? market.tickerExamples[0] ?? "" }, { enabled: Boolean(selectedSymbol), retry: false, staleTime: 300_000 });
   const analysisStageState = selectedSymbol ? [
     { label: "Resolving symbol", done: Boolean(selectedStock || selectedSymbol) },
     { label: "Checking market providers", done: Boolean(indianSnapshot.data || indianSnapshot.isError) },
@@ -224,7 +224,7 @@ export default function ScreenerScreen() {
   const analysisProgress = analysisStageState.length ? Math.round((analysisStageState.filter((stage) => stage.done).length / analysisStageState.length) * 100) : 0;
   const activeAnalysisStageIndex = analysisStageState.findIndex((stage) => !stage.done);
   const analysisOperationStages = analysisStageState.map((stage, index) => ({ label: stage.label, state: stage.done ? "complete" as const : index === activeAnalysisStageIndex ? "active" as const : "pending" as const, detail: index === activeAnalysisStageIndex ? "Checking source-backed data; unavailable lanes will be shown clearly" : undefined }));
-  const officialFilingLinks = trpc.market.officialFilingLinks.useQuery({ symbol: selectedSymbol ?? "RELIANCE" }, { enabled: Boolean(selectedSymbol), retry: false, staleTime: 300_000 });
+  const officialFilingLinks = trpc.market.officialFilingLinks.useQuery({ marketId: market.id, symbol: selectedSymbol ?? market.tickerExamples[0] ?? "" }, { enabled: Boolean(selectedSymbol), retry: false, staleTime: 300_000 });
   const toggleWatchlist = () => { if (!selectedSymbol) return; const next = watchlist.includes(selectedSymbol) ? watchlist.filter((item) => item !== selectedSymbol) : [selectedSymbol, ...watchlist].slice(0, 30); setWatchlist(next); void saveWatchlist(next); };
   const saveCurrentScreen = () => { const name = screenName.trim(); if (!name || enabledFilters.length === 0) return; const screen = { name, filters: enabledFilters, createdAt: new Date().toISOString() }; setSavedScreens((current) => [screen, ...current.filter((item) => item.name !== name)].slice(0, 10)); void saveSavedScreen(screen, savedScreens); setScreenName(""); };
   const formatValue = (value: number | null | undefined, suffix = "") => typeof value === "number" ? `${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}${suffix}` : "Unavailable";
