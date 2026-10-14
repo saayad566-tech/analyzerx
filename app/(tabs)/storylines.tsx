@@ -80,11 +80,12 @@ function sentimentTone(value: ArchiveArticle["sentiment"]): { color: string; lab
 }
 
 export default function StorylinesScreen() {
+  const { market } = useMarketContext();
   const [selectedWindow, setSelectedWindow] = useState<number>(30);
   const [mode, setMode] = useState<"news" | "storylines">("news");
 
   const eventsQuery = trpc.events.latest.useQuery(
-    { marketId: market.id, limit: 200, lookbackDays: selectedWindow },
+    { limit: 200, lookbackDays: selectedWindow },
     { staleTime: 60_000, retry: false },
   );
 
