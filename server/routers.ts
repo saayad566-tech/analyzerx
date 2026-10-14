@@ -579,7 +579,7 @@ export const appRouter = router({
     }),
     snapshot: publicProcedure.input(symbolInput).query(({ input }) => fetchMarketSnapshot(input.symbol, input.marketId)),
     observations: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol, limit: z.number().int().min(1).max(500).default(100) })).query(async ({ input }) => ({ symbol: input.symbol, market: await getMarketObservationsForSymbol(input.symbol, input.limit), fundamentals: await getFundamentalObservationsForSymbol(input.symbol, input.limit) })),
-    watchlistEvidence: publicProcedure.input(z.object({ symbols: z.array(symbolInput.shape.symbol).min(1).max(50) })).query(async ({ input }) => { const rows = await getLatestEventProjections(input.marketId, 500); return input.symbols.map((symbol) => ({ symbol, events: rows.filter((row) => row.symbol === symbol).slice(0, 20) })); }),
+    watchlistEvidence: publicProcedure.input(z.object({ marketId: marketIdSchema, symbols: z.array(symbolInput.shape.symbol).min(1).max(50) })).query(async ({ input }) => { const rows = await getLatestEventProjections(input.marketId, 500); return input.symbols.map((symbol) => ({ symbol, events: rows.filter((row) => row.symbol === symbol).slice(0, 20) })); }),
     universe: publicProcedure.query(async () => fetchNseUniverse()),
     positioning: publicProcedure.input(symbolInput).query(async ({ input }) => getPositioningCoverage(input.symbol)),
     sectorNames: publicProcedure.query(() => getAvailableSectorNames()),
