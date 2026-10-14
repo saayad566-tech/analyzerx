@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useMarketContext } from "@/lib/market-context";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -28,6 +29,7 @@ function gradeColor(grade: string): string {
 }
 
 export default function DeepScoreScreen() {
+  const { market } = useMarketContext();
   const params = useLocalSearchParams<{ symbol?: string }>();
   const initialSymbol = typeof params.symbol === "string" ? params.symbol.trim().toUpperCase() : "";
   const [symbol, setSymbol] = useState(initialSymbol);
@@ -36,14 +38,14 @@ export default function DeepScoreScreen() {
 
   // Score the symbol handed over from the company screen on first open.
   useEffect(() => {
-    if (initialSymbol) deepScore.mutate({ symbol: initialSymbol });
+    if (initialSymbol) deepScore.mutate({ symbol: initialSymbol, marketId: market.id });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const run = () => {
     const clean = symbol.trim().toUpperCase();
     if (!clean) return;
-    deepScore.mutate({ symbol: clean });
+    deepScore.mutate({ symbol: clean, marketId: market.id });
   };
 
   return (
