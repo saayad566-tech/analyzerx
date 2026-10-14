@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { useMarketContext } from "@/lib/market-context";
 import { useAuth } from "@/hooks/use-auth";
 import { trpc } from "@/lib/trpc";
 import { loadAlertNotificationPreferences, loadAlertState, loadSavedScreens, loadWatchlist } from "@/lib/local-preferences";
 import { getWorkspaceSyncSnapshot, hydrateWorkspaceSyncSnapshot, setWorkspaceSyncSnapshot, subscribeWorkspaceSync } from "@/lib/workspace-sync-state";
 
 export function WorkspaceSync() {
+  const { marketId } = useMarketContext();
   const { user, isAuthenticated } = useAuth();
   const syncedForUser = useRef<number | null>(null);
   const [retryNonce, setRetryNonce] = useState(getWorkspaceSyncSnapshot().retryNonce);
