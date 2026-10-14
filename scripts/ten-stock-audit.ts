@@ -27,7 +27,7 @@ function countUnavailable(markdown: string) {
 async function main() {
   await mkdir(outputDir, { recursive: true });
   const results = await mapWithConcurrency(symbols, 3, async (symbol) => {
-    const report = await analyzeFundamentals(symbol);
+    const report = await analyzeFundamentals(symbol, "IN");
     const news = { articles: [], freshArticleCount: 0, stale: false };
     const markdown = fundamentalAnalysisToMarkdown(report, news.articles);
     const filePath = path.join(outputDir, reportFileName(report));
