@@ -31,7 +31,7 @@ import {
   type SectorConstituent,
 } from "./engine";
 import { NSE_INDEX_FILES, type NewsArticle } from "./sources";
-import { requireMarketId } from "../market-regions";
+import { requireMarketId, getMarketProfile } from "../market-regions";
 import { seedUniverseForMarket } from "../market-universe";
 import { queryArchive, storeStats } from "./store";
 import { FALLBACK_UNIVERSE } from "./universe-fallback";
@@ -503,7 +503,7 @@ const HANDLERS: Record<string, Handler> = {
     unavailable: (Array.isArray(input?.symbols) ? (input?.symbols as string[]) : []).map((symbol) => ({ symbol: symbol.toUpperCase(), reason: "SEC XBRL comparison needs a validated structured filing adapter for this market." })),
     refreshedAt: nowIso(),
     marketId: market(input),
-    marketLabel: "United States",
+    marketLabel: getMarketProfile(market(input)).country,
   }),
   "market.secFilingComparisonExport": async (input) => {
     const symbols = (Array.isArray(input?.symbols) ? (input?.symbols as string[]) : []).map((s) => s.toUpperCase());
@@ -511,7 +511,7 @@ const HANDLERS: Record<string, Handler> = {
     return {
       fileName: `${base}.md`, pdfFileName: `${base}.pdf`, csvFileName: `${base}.csv`, chartFileName: `${base}.svg`,
       mimeType: "text/markdown", pdfMimeType: "application/pdf", csvMimeType: "text/csv", chartMimeType: "image/svg+xml",
-      marketId: market(input), marketLabel: "United States",
+      marketId: market(input), marketLabel: getMarketProfile(market(input)).country,
       content: `# Filing comparison\n\nUnavailable: no validated structured filing adapter for the selected symbols (${symbols.join(", ")}).\n`,
       csvContent: "symbol,reason\n" + symbols.map((s) => `${s},no validated structured filing adapter`).join("\n"),
       chartContent: "",
@@ -738,7 +738,7 @@ const HANDLERS: Record<string, Handler> = {
     const rows = payload.articles;
     const header = "date,headline,source,sentiment,url";
     const csv = [header, ...rows.map((a) => [a.publishedAt ?? "", `"${a.headline.replace(/"/g, '""')}"`, a.source, a.sentiment, a.url].join(","))].join("\n");
-    return { fileName: "analyzerx-news-archive.csv", mimeType: "text/csv", rowCount: rows.length, content: csv, marketId: market(input), marketLabel: "India" };
+    return { fileName: "analyzerx-news-archive.csv", mimeType: "text/csv", rowCount: rows.length, content: csv, marketId: market(input), marketLabel: getMarketProfile(market(input)).country };
   },
 
   /* ---- events ---- */
@@ -995,7 +995,7 @@ async function researchRun(input: Input) {
   const result = {
     runId: `local-${Date.now().toString(36)}`,
     marketId,
-    marketLabel: "India",
+    marketLabel: getMarketProfile(market(input)).country,
     symbol: symbol || null,
     status: "completed",
     runtime: "deterministic",
