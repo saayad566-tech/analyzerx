@@ -67,7 +67,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: |
-            set -euo pipefail
+            set -eu
             PKG=com.app.marketeventintelligence
 
             echo "=== 1. device is up ==="
@@ -77,7 +77,8 @@ jobs:
 
             echo "=== 2. install the real APK ==="
             adb install -r app-release.apk
-            adb shell pm list packages | grep "$PKG"
+            adb shell pm list packages > packages.txt
+            grep "$PKG" packages.txt
 
             echo "=== 3. clear logcat and launch the app ==="
             adb logcat -c
