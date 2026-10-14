@@ -289,7 +289,7 @@ export const appRouter = router({
     health: publicProcedure.query(() => getRuntimeHealth()),
   }),
   graph: router({
-    projection: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol.optional(), maxHops: z.number().int().min(1).max(2).default(2), limit: z.number().int().min(1).max(100).default(80) }).optional()).query(({ input }) => getRelationshipGraph(input?.symbol, input?.maxHops ?? 2, input?.limit ?? 80)),
+    projection: publicProcedure.input(z.object({ marketId: marketIdSchema, symbol: symbolInput.shape.symbol.optional(), maxHops: z.number().int().min(1).max(2).default(2), limit: z.number().int().min(1).max(100).default(80) })).query(({ input }) => getRelationshipGraph(input.marketId, input.symbol, input.maxHops, input.limit)),
   }),
   events: router({
     latest: publicProcedure.input(z.object({ marketId: marketIdSchema, limit: z.number().int().min(1).max(500).default(100), lookbackDays: z.number().int().min(1).max(730).default(365) })).query(({ input }) => getLatestEventProjections(input.marketId, input.limit, input.lookbackDays)),
@@ -525,7 +525,7 @@ export const appRouter = router({
     history: publicProcedure.input(z.object({ ruleId: z.string().trim().min(1).max(96), marketId: z.enum(["ALL", "IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("ALL"), limit: z.number().int().min(1).max(100).default(50) })).query(({ input }) => getSmartAlertHistory(input.ruleId, input.limit, input.marketId)),
   }),
   market: router({
-    secFilings: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol, form: z.string().trim().max(20).optional(), from: z.string().date().optional(), to: z.string().date().optional() })).query(async ({ input }) => {
+    secFilings: publicProcedure.input(z.object({ marketId: marketIdSchema, symbol: symbolInput.shape.symbol, form: z.string().trim().max(20).optional(), from: z.string().date().optional(), to: z.string().date().optional() })).query(async ({ input }) => {
       const records = await getSourceRecordsForSymbol(input.marketId, input.symbol, 2_000);
       const secRecords = records.filter((record) => /^sec-edgar|^sec-company-facts/i.test(record.sourceKey));
       const filings = filterFilingsForSymbol(secRecords, input.symbol).filter((filing) => !input.form || filing.filingType.toLowerCase().includes(input.form.toLowerCase())).filter((filing) => !input.from || !filing.publishedAt || filing.publishedAt.slice(0, 10) >= input.from).filter((filing) => !input.to || !filing.publishedAt || filing.publishedAt.slice(0, 10) <= input.to);
