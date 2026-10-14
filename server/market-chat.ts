@@ -120,12 +120,12 @@ export type GroundedMarketContext = {
   context: string;
 };
 
-export async function collectGroundedMarketContext(message: string, explicitSymbol?: string, marketId: MarketId = "IN"): Promise<GroundedMarketContext> {
+export async function collectGroundedMarketContext(message: string, explicitSymbol: string | undefined, marketId: MarketId): Promise<GroundedMarketContext> {
   const cleanMessage = message.trim().slice(0, 2_000);
   if (!cleanMessage) throw new Error("A market question is required");
   const symbol = inferSymbol(cleanMessage, explicitSymbol);
   const settled = await Promise.allSettled([
-    symbol ? analyzeFundamentals(symbol) : Promise.resolve(null),
+    symbol ? analyzeFundamentals(symbol, marketId) : Promise.resolve(null),
     symbol ? fetchStockNewsNow(symbol, false, marketId) : Promise.resolve(null),
     getLatestTrackedNews(20, undefined, marketId),
     getMultiAssetTimingSignals(),
@@ -139,7 +139,7 @@ export async function collectGroundedMarketContext(message: string, explicitSymb
   return { symbol, analysis, news, globalNews, assets, sources, dataAsOf, context: buildContext(symbol, analysis, news, globalNews, assets, marketId) };
 }
 
-export async function answerMarketChat(message: string, explicitSymbol?: string, history: MarketChatMessage[] = [], attachments: MarketChatAttachment[] = [], marketId: MarketId = "IN"): Promise<MarketChatResponse> {
+export async function answerMarketChat(message: string, explicitSymbol?: string, history: MarketChatMessage[] = [], attachments: MarketChatAttachment[] = [], marketId: MarketId): Promise<MarketChatResponse> {
   const cleanMessage = message.trim().slice(0, 2_000) || (attachments.length ? "Please analyze the attached image or audio in AnalyzerX." : "");
   if (!cleanMessage) throw new Error("A market question is required, or attach an image/audio input");
   const symbol = inferSymbol(cleanMessage, explicitSymbol);
