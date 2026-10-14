@@ -1,4 +1,5 @@
 import { isProviderCircuitOpen, getProviderHealthFor, markProviderHealthy, markProviderRejected } from "./provider-health";
+import { type MarketId } from "../lib/market-regions";
 import { fetchProviderNow, type ProviderArticle } from "./optional-providers";
 import { fetchIndianOpenStock } from "./indian-open-api";
 import { getIndiaStockMcpSnapshot } from "./india-stock-mcp";
