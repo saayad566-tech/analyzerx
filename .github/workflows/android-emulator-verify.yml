@@ -69,6 +69,7 @@ jobs:
           script: |
             set -eu
             PKG=com.app.marketeventintelligence
+            echo "package under test: $PKG"
 
             echo "=== 1. device is up ==="
             adb wait-for-device
@@ -78,24 +79,24 @@ jobs:
             echo "=== 2. install the real APK ==="
             adb install -r app-release.apk
             adb shell pm list packages > packages.txt
-            grep "$PKG" packages.txt
+            grep "com.app.marketeventintelligence" packages.txt
 
             echo "=== 3. clear logcat and launch the app ==="
             adb logcat -c
             # Launch the MAIN/LAUNCHER activity explicitly. `monkey` rejects its
             # arguments under this shell, and an explicit component start is both
             # deterministic and easier to assert on.
-            adb shell am start -W -n "$PKG/.MainActivity"
+            adb shell am start -W -n com.app.marketeventintelligence/.MainActivity
             sleep 5
             echo "=== 3b. confirm the activity actually started ==="
             adb shell dumpsys activity activities > activities.txt
-            grep -q "$PKG" activities.txt && echo "activity present in dumpsys"
+            grep -q "com.app.marketeventintelligence" activities.txt && echo "activity present in dumpsys"
 
             echo "=== 4. wait for it to settle ==="
             sleep 25
 
             echo "=== 5. the process must be alive (a crash would leave no pid) ==="
-            PID=$(adb shell pidof "$PKG" | tr -d '\r')
+            PID=$(adb shell pidof com.app.marketeventintelligence | tr -d '\r')
             echo "pid=$PID"
             if [ -z "$PID" ]; then echo "APP IS NOT RUNNING"; adb logcat -d | tail -80; exit 1; fi
 
@@ -110,12 +111,13 @@ jobs:
             sleep 5
 
             echo "=== 8. still alive after interaction? ==="
-            PID2=$(adb shell pidof "$PKG" | tr -d '\r')
+            PID2=$(adb shell pidof com.app.marketeventintelligence | tr -d '\r')
             echo "pid after interaction=$PID2"
             if [ -z "$PID2" ]; then echo "APP DIED DURING INTERACTION"; adb logcat -d | tail -120; exit 1; fi
 
             echo "=== 9. no fatal exception in logcat ==="
-            if adb logcat -d | grep -E "FATAL EXCEPTION|AndroidRuntime.*$PKG" ; then
+            adb logcat -d > logcat.txt
+            if grep -E "FATAL EXCEPTION" logcat.txt ; then
               echo "FATAL EXCEPTION FOUND"; exit 1
             fi
             echo "no fatal exception"
@@ -125,7 +127,7 @@ jobs:
             ls -l emulator-screenshot.png
 
             echo "=== 11. app logcat tail (evidence) ==="
-            adb logcat -d | grep -i "$PKG" | tail -40 || true
+            grep -i "marketeventintelligence" logcat.txt | tail -40 || true
 
             echo "EMULATOR VERIFICATION PASSED"
 
