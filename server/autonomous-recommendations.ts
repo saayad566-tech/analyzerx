@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { type MarketId } from "../lib/market-regions";
 import { analyzeFundamentals, type FundamentalAnalysis } from "./fundamental-analysis";
 import { getLatestSourceRecords, getAutonomousRecommendation, getAutonomousRecommendations, markAutonomousRecommendationNotified, upsertAutonomousRecommendation } from "./db";
 import { notifyOwner } from "./_core/notification";
