@@ -82,7 +82,14 @@ jobs:
 
             echo "=== 3. clear logcat and launch the app ==="
             adb logcat -c
-            adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1
+            # Launch the MAIN/LAUNCHER activity explicitly. `monkey` rejects its
+            # arguments under this shell, and an explicit component start is both
+            # deterministic and easier to assert on.
+            adb shell am start -W -n "$PKG/.MainActivity"
+            sleep 5
+            echo "=== 3b. confirm the activity actually started ==="
+            adb shell dumpsys activity activities > activities.txt
+            grep -q "$PKG" activities.txt && echo "activity present in dumpsys"
 
             echo "=== 4. wait for it to settle ==="
             sleep 25
