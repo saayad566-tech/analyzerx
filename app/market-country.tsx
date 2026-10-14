@@ -29,7 +29,7 @@ export default function MarketCountryScreen() {
     });
     return () => subscription.remove();
   }, [marketChanged]);
-  const regionalCollectors = trpc.sources.regionalCollectors.useQuery(undefined, { staleTime: 60_000, retry: false });
+  const regionalCollectors = trpc.sources.regionalCollectors.useQuery({ marketId: market.id }, { staleTime: 60_000, retry: false });
   const activeHealth = regionalCollectors.data?.find((item) => item.marketId === marketId);
   const healthStatus = activeHealth?.state === "validated" ? "live" : activeHealth?.state === "catalog-validated" ? "delayed" : "unavailable";
   const healthColor = healthStatus === "live" ? teal : healthStatus === "delayed" ? amber : muted;
