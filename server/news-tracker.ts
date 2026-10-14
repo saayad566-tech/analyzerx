@@ -49,7 +49,7 @@ type TrackerStatus = {
   articlesStored: number;
   articlesHeld: number;
   notificationsSent: number;
-  coverageMode: "configured" | "nse-universe" | "fallback";
+  coverageMode: "configured" | "nse-universe" | "market-seed" | "fallback";
   universeCount: number;
   coveredSymbols: number;
   batchSize: number;
