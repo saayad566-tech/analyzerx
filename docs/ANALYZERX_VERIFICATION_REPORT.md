@@ -113,17 +113,29 @@ scoping), 67 (duplicate `style` attribute and unreachable platform comparison), 
 (country search ranked Australia above the United States for "US"), 91 (a screen used
 `market.id` without binding `market`).
 
-**Build 94: VERIFIED green** — `pnpm install --frozen-lockfile`, `release:verify`,
-`pnpm check`, the strict market-isolation gate, `pnpm test -- --run`, build, sign and
-publish all succeeded. **Emulator run 33: VERIFIED green.**
+**Build 95: VERIFIED green** — all 23 steps: `pnpm install --frozen-lockfile`,
+`release:verify`, the strict market-isolation gate, `pnpm check`, `pnpm test -- --run`
+(1184 passed, 7 skipped), build, sign, checksum, publish, artifact upload and the
+artifact-branch staging. **Emulator run 45: VERIFIED green.**
+
+Build 94 was marked failed even though every real step passed. The failing step was the
+last one, and the log gave the cause: the step commits the APK to an orphan branch in
+4 MB parts to stay under GitHub's 100 MB file limit, but `git add -f apk-out` also
+staged the unsplit 105.9 MB file, so the push was rejected with "pre-receive hook
+declined". This was latent — packaging x86_64 alongside arm64 grew the APK from ~64 MB
+to 106 MB, past the ceiling. Only the parts and the checksum are staged now.
+
+One emulator dispatch (run 44) failed for infrastructure reasons, not app reasons: the
+runner could not prepare the x86_64 system image ("Error on ZipFile unknown archive"),
+so the emulator never booted ("could not connect to TCP port 5554"). The retry passed.
 
 ## 5. Release artifact
 
 | Field | Value |
 |---|---|
-| File | `analyzerx-3.24.0-94.apk` |
+| File | `analyzerx-3.24.0-95.apk` |
 | Size | 111,039,673 bytes |
-| SHA-256 | `8682d0b113e6ae077c01fd958c890d564d84c04109ee658eb02ee4e04a99a32e` |
+| SHA-256 | `d9fddfbfcc1968a2e7902f237e258cae19f14a16ef9bf0a1a05787bf3bb55fe7` |
 | Version | 3.24.0 / versionCode 32400 |
 | Native ABIs | `arm64-v8a`, `x86_64` — `libreactnative.so` present in both |
 | versionName / versionCode | `3.24.0` / `32400`, read from the binary manifest |
@@ -134,7 +146,7 @@ publish all succeeded. **Emulator run 33: VERIFIED green.**
 
 Size and SHA-256 were re-computed locally after download and matched the release asset.
 The certificate was extracted from the APK's own signing block and matches builds
-57–94, so the signing identity has not drifted across 38 releases.
+57–95, so the signing identity has not drifted across 39 releases.
 
 ### 5a. Signing is stable but it is a DEBUG key — not a publishable release
 
