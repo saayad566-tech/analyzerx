@@ -507,11 +507,13 @@ export async function markAutonomousRecommendationNotified(id: string): Promise<
   return true;
 }
 
-export async function getAutonomousRecommendations(lookbackDays = 30, limit = 50) {
+export async function getAutonomousRecommendations(marketId: MarketId, lookbackDays = 30, limit = 50) {
   const db = await getDb();
   if (!db) return [];
   const cutoff = new Date(Date.now() - Math.min(180, Math.max(1, lookbackDays)) * 86_400_000);
-  return db.select().from(autonomousRecommendations).where(sql`${autonomousRecommendations.eventTimestamp} >= ${cutoff}`).orderBy(desc(autonomousRecommendations.impactScore), desc(autonomousRecommendations.eventTimestamp)).limit(Math.min(100, Math.max(1, limit)));
+  // Market-scoped. This previously filtered only on the event timestamp, so every
+  // market's autonomous recommendations were returned for every market.
+  return db.select().from(autonomousRecommendations).where(and(eq(autonomousRecommendations.marketId, marketId), sql`${autonomousRecommendations.eventTimestamp} >= ${cutoff}`)).orderBy(desc(autonomousRecommendations.impactScore), desc(autonomousRecommendations.eventTimestamp)).limit(Math.min(100, Math.max(1, limit)));
 }
 
 
