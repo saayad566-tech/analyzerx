@@ -514,7 +514,7 @@ export default function LiveEventsScreen() {
     retry: false,
   });
   const latestSourceRecords = trpc.sources.latest.useQuery(
-    { marketId: market.id, limit: 5 },
+    { limit: 5 },
     { staleTime: 60_000, retry: false },
   );
   const nseCollectors = trpc.sources.nseCollectors.useQuery({ marketId: market.id }, {
