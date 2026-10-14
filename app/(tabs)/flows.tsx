@@ -59,7 +59,7 @@ export default function MarketFlowsScreen() {
   const flowCoverage = coverageForMarket(market.id).categories.find((entry) => entry.category === "flows");
   const flowsAvailable = flowCoverage?.status === "available";
   const currencySymbol = formatForMarket(market.id).currencySymbol;
-  const institutionalQuery = trpc.market.institutionalFlows.useQuery({ marketId: market.id, range: rangeApiValue[dateRange] }, { retry: false, staleTime: 60_000, refetchInterval: 120_000, refetchIntervalInBackground: false, enabled: flowsAvailable });
+  const institutionalQuery = trpc.market.institutionalFlows.useQuery({ range: rangeApiValue[dateRange] }, { retry: false, staleTime: 60_000, refetchInterval: 120_000, refetchIntervalInBackground: false, enabled: flowsAvailable });
   const institutionalRows = useMemo(() => institutionalQuery.data?.rows ?? [], [institutionalQuery.data?.rows]);
   const liveFii = institutionalRows.find((row) => row.participant === "FII/FPI")?.net ?? null;
   const liveDii = institutionalRows.find((row) => row.participant === "DII")?.net ?? null;
