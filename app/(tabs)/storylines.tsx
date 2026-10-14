@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { MarketDataFallback } from "@/components/market-unavailable-card";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -148,6 +149,14 @@ export default function StorylinesScreen() {
   return (
     <ScreenContainer className="px-5">
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+<MarketDataFallback
+  subject="Storylines"
+  isLoading={eventsQuery.isLoading}
+  isError={eventsQuery.isError}
+  isEmpty={!eventsQuery.isLoading && !eventsQuery.isError && (eventsQuery.data ?? []).length === 0}
+  onRetry={() => void eventsQuery.refetch()}
+  reason="No verified event chain has resolved for this market yet. Nothing from another market is shown in its place."
+/>
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.eyebrow}>NEWS & RELATIONSHIPS</Text>
