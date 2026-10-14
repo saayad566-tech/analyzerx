@@ -38,7 +38,7 @@ export default function AlertsScreen() {
   useEffect(() => { setHistoryCursor(null); }, [historyRuleId, historyMarketId]);
   const liveDiscovery = trpc.smartAlerts.discover.useQuery(selectedRule ? { query: selectedRule.query, marketId, lookbackDays, limit: 50, sort } : { query: "unused", marketId, lookbackDays: 30, limit: 50, sort: "match-score" }, { enabled: Boolean(selectedRule), retry: false, refetchInterval: 60_000, staleTime: 30_000 });
   const selectedDiscovery = selectedRule ? liveDiscovery.data : null;
-  const autonomousDiscovery = trpc.autonomousRecommendations.discover.useQuery({ lookbackDays, limit: 20 }, { retry: false, refetchInterval: 60_000, staleTime: 30_000 });
+  const autonomousDiscovery = trpc.autonomousRecommendations.discover.useQuery({ marketId, lookbackDays, limit: 20 }, { retry: false, refetchInterval: 60_000, staleTime: 30_000 });
   const autonomousRecommendations = autonomousDiscovery.data?.recommendations ?? [];
   const alertHistory = trpc.account.alertResultsPage.useQuery({ ruleId: historyRuleId, marketId: historyMarketId, cursor: historyCursor, limit: 25 }, { enabled: isAuthenticated, retry: false, staleTime: 30_000 });
   const openEligible = (rule: MonitoringRule) => { void recordResearchEvent({ type: "alert", route: "alerts", title: rule.title, detail: "Viewed eligible-stock discovery" }); setSelectedRule(rule); setComposerOpen(false); };
