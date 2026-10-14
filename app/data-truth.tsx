@@ -30,7 +30,7 @@ function evidenceCopy(category: string) {
 export default function DataTruthScreen() {
   const { market } = useMarketContext();
   const capabilities = trpc.capabilities.list.useQuery(undefined, { staleTime: 60_000, retry: false });
-  const sources = trpc.sources.list.useQuery({ marketId: market.id }, { staleTime: 60_000, retry: false });
+  const sources = trpc.sources.list.useQuery(undefined, { staleTime: 60_000, retry: false });
   const rows = useMemo(() => capabilities.data ?? [], [capabilities.data]);
   const ready = rows.filter((item) => item.status === "ready").length;
   const partial = rows.filter((item) => item.status === "partial" || item.status === "page-snapshot").length;
