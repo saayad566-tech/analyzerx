@@ -17,7 +17,8 @@ import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { WebCalendarRangePicker } from "@/components/web-calendar-range-picker";
 import { ScreenContainer } from "@/components/screen-container";
-import { events, filters, type MarketEvent } from "@/lib/market-data";
+import { filters, type MarketEvent } from "@/lib/market-data";
+import { eventProjectionsToMarketEvents } from "@/lib/event-projection-view";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
 import { scanDeepResearchDetailed } from "@/lib/deep-research";
@@ -449,6 +450,13 @@ export default function LiveEventsScreen() {
   const newsRefresh = trpc.news.refresh.useMutation();
   const flagIrrelevant = trpc.news.flagIrrelevant.useMutation();
   const undoIrrelevant = trpc.news.undoIrrelevant.useMutation();
+  // The Live feed is the selected market's OWN persisted event projections. It used to
+  // render a hardcoded Indian demo array, which is why every market showed L&T, Waaree
+  // and rupee values.
+  const eventProjections = trpc.events.latest.useQuery(
+    { marketId: market.id, limit: 100, lookbackDays: 365 },
+    { staleTime: 60_000, refetchInterval: 120_000, refetchOnWindowFocus: true, retry: false },
+  );
   const trackedNews = trpc.news.stock.useQuery(
     { marketId: market.id, symbol: newsLookupSymbol },
     {
@@ -756,9 +764,14 @@ export default function LiveEventsScreen() {
     }
   };
 
+  const marketEvents = useMemo(
+    () => eventProjectionsToMarketEvents((eventProjections.data ?? []) as never),
+    [eventProjections.data],
+  );
+
   const visibleEvents = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return events.filter((event) => {
+    return marketEvents.filter((event) => {
       const matchesQuery =
         !q ||
         [
@@ -784,7 +797,7 @@ export default function LiveEventsScreen() {
         (activeFilter === "High confidence" && event.confidence === "High");
       return matchesQuery && matchesFilter;
     });
-  }, [activeFilter, query]);
+  }, [activeFilter, query, marketEvents]);
 
   return (
     <ScreenContainer containerClassName="bg-background" className="px-5">
@@ -2252,9 +2265,15 @@ export default function LiveEventsScreen() {
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="scan-outline" size={30} color={amber} />
-            <Text style={styles.emptyTitle}>No matching events</Text>
+            <Text style={styles.emptyTitle}>
+              {marketEvents.length === 0
+                ? `No tracked events for ${market.country} yet`
+                : "No matching events"}
+            </Text>
             <Text style={styles.emptyText}>
-              Try a different company, symbol, or filter.
+              {marketEvents.length === 0
+                ? `Nothing has been verified for ${market.country} from this market's own sources. AnalyzerX shows nothing here rather than another market's events.`
+                : "Try a different company, symbol, or filter."}
             </Text>
           </View>
         }
