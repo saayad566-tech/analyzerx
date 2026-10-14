@@ -55,7 +55,7 @@ async function runIndianApi(symbol: string) {
   return response.json();
 }
 
-export async function runProviderNow(providerId: string, requestedSymbol?: string): Promise<ProviderRunResult> {
+export async function runProviderNow(providerId: string, requestedSymbol: string | undefined, marketId: MarketId): Promise<ProviderRunResult> {
   const symbol = asSymbol(requestedSymbol);
   if (isProviderCircuitOpen(providerId)) {
     const health = getProviderHealthFor(providerId);
@@ -71,7 +71,7 @@ export async function runProviderNow(providerId: string, requestedSymbol?: strin
       case "newsapi":
       case "newsdata":
       case "gnews":
-        articles = await fetchProviderNow(providerId, [symbol]);
+        articles = await fetchProviderNow(providerId, [symbol], marketId);
         return { providerId, symbol, status: "used", records: articles.length, summary: `${articles.length} article records returned`, articles, health: getProviderHealthFor(providerId) };
       case "finnhub":
         payload = await runFinnhub(symbol);
