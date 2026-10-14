@@ -7,6 +7,7 @@
  * ever fabricated.
  */
 import { getMarketProfile } from "../market-regions";
+import { benchmarksForMarket } from "../market-benchmarks";
 import {
   cached,
   clamp,
@@ -888,16 +889,12 @@ export async function priceHistory(symbol: string, range = "6mo", interval = "1d
 export type TimingSignal = { name: string; type: "technical" | "macro"; action: string; score: number; changePct: number | null; source: string; freshness: string | null };
 
 export async function multiAssetTiming(marketId: MarketId): Promise<{ generatedAt: string; signals: TimingSignal[]; unavailable: string[] }> {
-  const targets: Array<{ name: string; symbol: string; type: "technical" | "macro" }> = [
-    { name: "NIFTY 50", symbol: "^NSEI", type: "technical" },
-    { name: "SENSEX", symbol: "^BSESN", type: "technical" },
-    { name: "BANK NIFTY", symbol: "^NSEBANK", type: "technical" },
-    { name: "S&P 500", symbol: "^GSPC", type: "technical" },
-    { name: "Bitcoin", symbol: "BTC-USD", type: "macro" },
-    { name: "Gold", symbol: "GC=F", type: "macro" },
-    { name: "Brent crude", symbol: "BZ=F", type: "macro" },
-    { name: "USD/INR", symbol: "INR=X", type: "macro" },
-  ];
+  // The selected market's OWN headline indices and currency pair, plus the three
+  // genuinely global assets. Previously this list was hardcoded to NIFTY 50, SENSEX,
+  // BANK NIFTY and USD/INR for every market, so Australia, Japan and Germany all showed
+  // Indian benchmarks. marketId was used only for the cache key.
+  const targets: Array<{ name: string; symbol: string; type: "technical" | "macro" }> =
+    benchmarksForMarket(marketId).map((asset) => ({ name: asset.name, symbol: asset.symbol, type: asset.type }));
   const unavailable: string[] = [];
   const signals = (
     await Promise.all(
