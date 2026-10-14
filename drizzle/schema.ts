@@ -123,6 +123,9 @@ export type InsertPushToken = typeof pushTokens.$inferInsert;
 
 export const sourceRecords = mysqlTable("source_records", {
   id: varchar("id", { length: 96 }).primaryKey(),
+  // Market scope. Existing rows default to UNKNOWN and are hidden from every market
+  // view rather than being assumed to be India; the backfill classifies what it can.
+  marketId: varchar("marketId", { length: 8 }).notNull().default("UNKNOWN"),
   sourceKey: varchar("sourceKey", { length: 64 }).notNull(),
   sourceUrl: text("sourceUrl").notNull(),
   documentName: varchar("documentName", { length: 255 }),
@@ -165,6 +168,9 @@ export type InsertProviderHealthHistory = typeof providerHealthHistory.$inferIns
 
 export const smartAlertResults = mysqlTable("smart_alert_results", {
   id: varchar("id", { length: 160 }).primaryKey(),
+  // Market scope. Existing rows default to UNKNOWN and are hidden from every market
+  // view rather than being assumed to be India; the backfill classifies what it can.
+  marketId: varchar("marketId", { length: 8 }).notNull().default("UNKNOWN"),
   ruleId: varchar("ruleId", { length: 96 }).notNull(),
   ruleTitle: varchar("ruleTitle", { length: 255 }).notNull(),
   symbol: varchar("symbol", { length: 32 }).notNull(),
@@ -184,6 +190,9 @@ export type InsertSmartAlertResult = typeof smartAlertResults.$inferInsert;
 
 export const autonomousRecommendations = mysqlTable("autonomous_recommendations", {
   id: varchar("id", { length: 160 }).primaryKey(),
+  // Market scope. Existing rows default to UNKNOWN and are hidden from every market
+  // view rather than being assumed to be India; the backfill classifies what it can.
+  marketId: varchar("marketId", { length: 8 }).notNull().default("UNKNOWN"),
   eventKey: varchar("eventKey", { length: 160 }).notNull().unique(),
   symbol: varchar("symbol", { length: 32 }).notNull(),
   companyName: varchar("companyName", { length: 255 }).notNull(),
@@ -216,6 +225,9 @@ export type InsertAutonomousRecommendation = typeof autonomousRecommendations.$i
 
 export const entities = mysqlTable("entities", {
   id: varchar("id", { length: 96 }).primaryKey(),
+  // Market scope. Existing rows default to UNKNOWN and are hidden from every market
+  // view rather than being assumed to be India; the backfill classifies what it can.
+  marketId: varchar("marketId", { length: 8 }).notNull().default("UNKNOWN"),
   canonicalSymbol: varchar("canonicalSymbol", { length: 32 }).notNull().unique(),
   canonicalName: varchar("canonicalName", { length: 255 }).notNull(),
   entityType: mysqlEnum("entityType", ["company", "index", "fund", "crypto", "commodity", "currency", "unknown"]).notNull(),
@@ -238,6 +250,9 @@ export type InsertEntity = typeof entities.$inferInsert;
 
 export const marketObservations = mysqlTable("market_observations", {
   id: varchar("id", { length: 128 }).primaryKey(),
+  // Market scope. Existing rows default to UNKNOWN and are hidden from every market
+  // view rather than being assumed to be India; the backfill classifies what it can.
+  marketId: varchar("marketId", { length: 8 }).notNull().default("UNKNOWN"),
   entityId: varchar("entityId", { length: 96 }).notNull(),
   symbol: varchar("symbol", { length: 32 }).notNull(),
   observationType: varchar("observationType", { length: 64 }).notNull(),
@@ -264,6 +279,9 @@ export type InsertMarketObservation = typeof marketObservations.$inferInsert;
 
 export const fundamentalObservations = mysqlTable("fundamental_observations", {
   id: varchar("id", { length: 128 }).primaryKey(),
+  // Market scope. Existing rows default to UNKNOWN and are hidden from every market
+  // view rather than being assumed to be India; the backfill classifies what it can.
+  marketId: varchar("marketId", { length: 8 }).notNull().default("UNKNOWN"),
   entityId: varchar("entityId", { length: 96 }).notNull(),
   symbol: varchar("symbol", { length: 32 }).notNull(),
   metricKey: varchar("metricKey", { length: 96 }).notNull(),
@@ -287,6 +305,9 @@ export type InsertFundamentalObservation = typeof fundamentalObservations.$infer
 
 export const eventProjections = mysqlTable("event_projections", {
   id: varchar("id", { length: 160 }).primaryKey(),
+  // Market scope. Existing rows default to UNKNOWN and are hidden from every market
+  // view rather than being assumed to be India; the backfill classifies what it can.
+  marketId: varchar("marketId", { length: 8 }).notNull().default("UNKNOWN"),
   eventKey: varchar("eventKey", { length: 160 }).notNull().unique(),
   entityId: varchar("entityId", { length: 96 }),
   symbol: varchar("symbol", { length: 32 }),
@@ -318,6 +339,7 @@ export type InsertEventProjection = typeof eventProjections.$inferInsert;
 export const userWatchlistItems = mysqlTable("user_watchlist_items", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
+  marketId: varchar("marketId", { length: 8 }).notNull().default("UNKNOWN"),
   symbol: varchar("symbol", { length: 32 }).notNull(),
   entityId: varchar("entityId", { length: 96 }),
   enabled: boolean("enabled").default(true).notNull(),
@@ -330,6 +352,7 @@ export type InsertUserWatchlistItem = typeof userWatchlistItems.$inferInsert;
 export const userSavedScreens = mysqlTable("user_saved_screens", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
+  marketId: varchar("marketId", { length: 8 }).notNull().default("UNKNOWN"),
   name: varchar("name", { length: 120 }).notNull(),
   filtersJson: text("filtersJson").notNull(),
   revokedAt: timestamp("revokedAt"),
@@ -342,6 +365,7 @@ export type InsertUserSavedScreen = typeof userSavedScreens.$inferInsert;
 export const userAlertRules = mysqlTable("user_alert_rules", {
   id: varchar("id", { length: 96 }).primaryKey(),
   userId: int("userId").notNull(),
+  marketId: varchar("marketId", { length: 8 }).notNull().default("UNKNOWN"),
   title: varchar("title", { length: 255 }).notNull(),
   query: text("query").notNull(),
   enabled: boolean("enabled").default(true).notNull(),
@@ -426,6 +450,7 @@ export type InsertUserPushToken = typeof userPushTokens.$inferInsert;
 export const userSavedResearch = mysqlTable("user_saved_research", {
   id: varchar("id", { length: 128 }).primaryKey(),
   userId: int("userId").notNull(),
+  marketId: varchar("marketId", { length: 8 }).notNull().default("UNKNOWN"),
   symbol: varchar("symbol", { length: 32 }).notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   reportType: varchar("reportType", { length: 64 }).notNull(),
