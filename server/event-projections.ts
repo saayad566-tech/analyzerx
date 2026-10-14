@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { type MarketId } from "../lib/market-regions";
 import { getLatestSourceRecords, upsertEventProjection } from "./db";
 import { resolveEntity } from "./entities";
 import { officialRecordToArticle } from "./live-smart-alerts";
