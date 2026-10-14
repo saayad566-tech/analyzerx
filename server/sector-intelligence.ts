@@ -46,7 +46,7 @@ export async function getSectorConstituents(sector: string, options: { sort?: Se
   const flow = await fetchNseInstitutionalFlows({ range: options.range ?? "TODAY" });
   const securityWise = await fetchSecurityWiseFlows();
   const sectorRows = await Promise.allSettled(candidates.map(async (candidate): Promise<SectorConstituent> => {
-    const [quoteResult, reportResult] = await Promise.allSettled([fetchIndianOpenStock(candidate.symbol), analyzeFundamentals(candidate.symbol)]);
+    const [quoteResult, reportResult] = await Promise.allSettled([fetchIndianOpenStock(candidate.symbol), analyzeFundamentals(candidate.symbol, "IN")]);
     const quote = quoteResult.status === "fulfilled" ? normalizeIndianOpenQuote(quoteResult.value) : null;
     const report = reportResult.status === "fulfilled" ? reportResult.value : null;
     const score = report ? scoreFor(report) : null;
