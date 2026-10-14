@@ -24,6 +24,61 @@ export type MarketProfile = {
 
 export const DEFAULT_MARKET_ID: MarketId = "IN";
 
+/**
+ * The single market source of truth (Phase 1 of the isolation fix).
+ *
+ * MARKET_IDS is derived from the profiles, so adding a market cannot leave an enum
+ * copy behind. Every tRPC input, DB query and cache key is expected to use
+ * `marketIdSchema` rather than a hand-written z.enum literal.
+ */
+export const MARKET_IDS = ["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"] as const;
+
+/**
+ * The value used when a market genuinely cannot be determined.
+ *
+ * Per the isolation rules, an unclassifiable record is never assumed to be India — it
+ * is marked UNKNOWN and hidden from every market view. This constant exists so that
+ * "unknown" is a named, testable outcome rather than a silent fallback.
+ */
+export const UNKNOWN_MARKET = "UNKNOWN";
+
+/** True only for one of the ten configured markets. Never true for UNKNOWN. */
+export function isMarketId(value: string | null | undefined): value is MarketId {
+  const id = (value ?? "").trim().toUpperCase();
+  return (MARKET_IDS as readonly string[]).includes(id);
+}
+
+/**
+ * Resolve a possibly-missing market to a real market id, or to UNKNOWN.
+ *
+ * This replaces the `?? "IN"` pattern. A missing market no longer becomes India; it
+ * becomes UNKNOWN, which no market filter matches, so the data is hidden rather than
+ * mislabelled.
+ */
+export function resolveMarketId(value: string | null | undefined): MarketId | typeof UNKNOWN_MARKET {
+  const id = (value ?? "").trim().toUpperCase();
+  return isMarketId(id) ? id : UNKNOWN_MARKET;
+}
+
+/**
+ * Resolve a market that MUST be present. Throws rather than guessing.
+ *
+ * Use this where serving another market's data would be a correctness failure, and a
+ * loud error is preferable to a wrong answer.
+ */
+export function requireMarketId(value: string | null | undefined): MarketId {
+  const id = (value ?? "").trim().toUpperCase();
+  if (!isMarketId(id)) {
+    throw new Error(`A valid market id is required; received ${JSON.stringify(value ?? null)}.`);
+  }
+  return id;
+}
+
+/** The profile for a market, or null when the id is not a configured market. */
+export function getMarketProfileOrNull(id: string | null | undefined): MarketProfile | null {
+  return MARKET_PROFILES.find((market) => market.id === id) ?? null;
+}
+
 type BaseProfile = Omit<MarketProfile, "coverage" | "liveCategories" | "coverageSummary">;
 
 const BASE_PROFILES: BaseProfile[] = [
