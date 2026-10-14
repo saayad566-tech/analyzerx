@@ -163,7 +163,7 @@ export type MarketSnapshot = {
 
 type QuoteLinkValue = { quote: Quote; url: string; latencyMs: number; onBse: boolean; host: YahooHost; providerKey: string; providerName: string };
 
-export async function snapshot(symbol: string, marketId: MarketId = "IN"): Promise<MarketSnapshot> {
+export async function snapshot(symbol: string, marketId: MarketId): Promise<MarketSnapshot> {
   const primary = toYahooSymbol(symbol, marketId);
   const clean = symbol.trim().toUpperCase();
   const hasSuffix = /\.(NS|BO|L|T|DE|PA|AS|MI|HK|SI|AX|TO|V|F)$/.test(clean) || clean.startsWith("^") || clean.includes("-");
@@ -245,7 +245,7 @@ export async function snapshot(symbol: string, marketId: MarketId = "IN"): Promi
   };
 }
 
-export async function quotes(symbols: string[], marketId: MarketId = "IN"): Promise<MarketSnapshot[]> {
+export async function quotes(symbols: string[], marketId: MarketId): Promise<MarketSnapshot[]> {
   return Promise.all(symbols.slice(0, 12).map((symbol) => snapshot(symbol, marketId)));
 }
 
@@ -274,7 +274,7 @@ export type SearchPayload = {
 
 const marketLabelOf = (marketId: MarketId) => getMarketProfile(marketId).country;
 
-export async function search(query: string, marketId: MarketId = "IN"): Promise<SearchPayload> {
+export async function search(query: string, marketId: MarketId): Promise<SearchPayload> {
   const q = query.trim();
   let yahooError: string | null = null;
   let nseError: string | null = null;
@@ -432,9 +432,9 @@ export type NewsPayload = {
   chain?: ChainAttempt[];
 };
 
-export async function stockNews(symbol: string, limit = 40): Promise<NewsPayload> {
-  const clean = toDisplaySymbol(toYahooSymbol(symbol, "IN"));
-  const yahooSymbol = toYahooSymbol(symbol, "IN");
+export async function stockNews(symbol: string, limit: number, marketId: MarketId): Promise<NewsPayload> {
+  const clean = toDisplaySymbol(toYahooSymbol(symbol, marketId));
+  const yahooSymbol = toYahooSymbol(symbol, marketId);
 
   // Three independent news providers. If one feed is down or rate-limited the
   // others still supply coverage, and every provider's contribution is recorded.
@@ -804,8 +804,8 @@ export type PeerComparison = {
   unavailable: string[];
 };
 
-export async function peerComparison(symbol: string): Promise<PeerComparison> {
-  const clean = toDisplaySymbol(toYahooSymbol(symbol, "IN"));
+export async function peerComparison(symbol: string, marketId: MarketId): Promise<PeerComparison> {
+  const clean = toDisplaySymbol(toYahooSymbol(symbol, marketId));
   const unavailable: string[] = [];
   // Find the sector the symbol belongs to using the NSE index lists we can fetch.
   const indexKeys = ["NIFTY50", "NIFTYBANK", "NIFTYIT", "NIFTYAUTO", "NIFTYPHARMA", "NIFTYFMCG", "NIFTYMETAL", "NIFTYENERGY", "NIFTYREALTY", "NIFTYFINSERVICE"];
@@ -818,7 +818,7 @@ export async function peerComparison(symbol: string): Promise<PeerComparison> {
         const withPe = await Promise.all(
           peers.map(async (peer) => {
             try {
-              const snap = await snapshot(peer.symbol, "IN");
+              const snap = await snapshot(peer.symbol, marketId);
               const eps = latestEpsCache.get(peer.symbol) ?? null;
               return { symbol: peer.symbol, name: peer.name, pe: snap.quote?.current && eps ? round(snap.quote.current / eps, 2) : null, marketCap: null as null, source: "Yahoo Finance" };
             } catch {
@@ -844,12 +844,12 @@ export async function peerComparison(symbol: string): Promise<PeerComparison> {
 /** Small cache so peer P/E derivation does not refetch EPS repeatedly. */
 const latestEpsCache = new Map<string, number | null>();
 
-export async function primeEps(symbols: string[]) {
+export async function primeEps(symbols: string[], marketId: MarketId) {
   await Promise.all(
     symbols.map(async (symbol) => {
       if (latestEpsCache.has(symbol)) return;
       try {
-        const result = await cached(`fund:${toYahooSymbol(symbol, "IN")}`, TTL.fundamentals, () => tracked("yahoo-fundamentals", () => yahooFundamentals(toYahooSymbol(symbol, "IN"))));
+        const result = await cached(`fund:${toYahooSymbol(symbol, marketId)}`, TTL.fundamentals, () => tracked("yahoo-fundamentals", () => yahooFundamentals(toYahooSymbol(symbol, marketId))));
         const points = result.value.data.metrics.annualDilutedEPS ?? [];
         const latest = points.length ? [...points].sort((a, b) => a.asOfDate.localeCompare(b.asOfDate)).slice(-1)[0] : null;
         latestEpsCache.set(symbol, latest?.raw ?? null);
@@ -864,7 +864,7 @@ export async function primeEps(symbols: string[]) {
  * History (for charts)
  * ------------------------------------------------------------------ */
 
-export async function priceHistory(symbol: string, range = "6mo", interval = "1d", marketId: MarketId = "IN") {
+export async function priceHistory(symbol: string, range = "6mo", interval = "1d", marketId: MarketId) {
   const yahooSymbol = toYahooSymbol(symbol, marketId);
   const outcome = await runChain(
     (["query1", "query2"] as YahooHost[]).map((host) => ({
