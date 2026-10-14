@@ -131,7 +131,7 @@ export function discoverAutonomousRecommendationsFromChains(events: SmartEventCh
 }
 
 export async function discoverAutonomousRecommendations(marketId: MarketId, lookbackDays = 30, limit = 50): Promise<AutonomousRecommendationDiscovery> {
-  const [trackedNews, records] = await Promise.all([getLatestTrackedNews(300), getLatestSourceRecords(500)]);
+  const [trackedNews, records] = await Promise.all([getLatestTrackedNews(300), getLatestSourceRecords(marketId, 500)]);
   const officialArticles = records.map((record) => officialRecordToArticle(record, marketId)).filter((item): item is ExtractedNews => Boolean(item));
   const articles = [...trackedNews, ...officialArticles].filter((article) => Date.parse(article.published_at) >= Date.now() - Math.min(180, Math.max(1, lookbackDays)) * 86_400_000);
   const symbols = [...new Set(articles.map((article) => article.symbol).filter(Boolean))].slice(0, 40);
