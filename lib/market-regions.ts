@@ -112,6 +112,43 @@ export const MARKET_PROFILES: MarketProfile[] = BASE_PROFILES.map((profile) => {
   };
 });
 
+/**
+ * Resolve a market from a country display name, using the registry as the only source.
+ *
+ * This exists because two call sites in the fundamentals path carried their own inline
+ * country-to-market maps. Those drifted from the registry, and the drift had a real
+ * consequence: an unrecognised country silently became "UNKNOWN", which then produced the
+ * wrong market-cap convention and the wrong market-cap band for that company.
+ *
+ * Matching is case-insensitive and trims, so a provider returning "united states" or
+ * " United States " resolves the same as "United States".
+ */
+export function marketIdForCountryName(country: string | null | undefined): ResolvedMarketId {
+  const needle = (country ?? "").trim().toLowerCase();
+  if (!needle) return UNKNOWN_MARKET;
+  const match = MARKET_PROFILES.find((profile) => profile.country.trim().toLowerCase() === needle);
+  return match ? match.id : UNKNOWN_MARKET;
+}
+
+/**
+ * Resolve a market from an exchange code, using the registry's exchange lists.
+ *
+ * Providers return exchange codes in several shapes (NASDAQ, NYQ, JPX, TOR). The
+ * registry lists the exchange NAMES, so this matches on either the exact name or the
+ * common short code recorded alongside it.
+ */
+export function marketIdForExchange(exchange: string | null | undefined): ResolvedMarketId {
+  const needle = (exchange ?? "").trim().toLowerCase();
+  if (!needle) return UNKNOWN_MARKET;
+  const match = MARKET_PROFILES.find((profile) =>
+    profile.exchanges.some((name) => {
+      const candidate = name.trim().toLowerCase();
+      return candidate === needle || candidate.split(/[\s/]+/).includes(needle);
+    }),
+  );
+  return match ? match.id : UNKNOWN_MARKET;
+}
+
 export function getMarketProfile(id: string | null | undefined): MarketProfile {
   return MARKET_PROFILES.find((market) => market.id === id) ?? MARKET_PROFILES[0];
 }
