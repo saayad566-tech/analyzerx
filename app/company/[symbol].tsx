@@ -44,7 +44,7 @@ export default function CompanyTimelineScreen() {
   const [selectedWindow, setSelectedWindow] = useState(30);
   const company = companyDirectory[selectedSymbol as CompanyKey] ?? { name: selectedSymbol, sector: "Verified market entity", exchange: `${marketProfile.exchanges[0] ?? marketProfile.country} · ${marketProfile.country}`, initials: selectedSymbol.slice(0, 2), color: amber };
   const profileQuery = trpc.market.profile.useQuery({ marketId: market.id, symbol: selectedSymbol }, { staleTime: 60_000, retry: false });
-  const timelineQuery = trpc.events.timeline.useQuery({ symbol: selectedSymbol, limit: 100, lookbackDays: selectedWindow }, { staleTime: 60_000, retry: false });
+  const timelineQuery = trpc.events.timeline.useQuery({ marketId: market.id, symbol: selectedSymbol, limit: 100, lookbackDays: selectedWindow }, { staleTime: 60_000, retry: false });
   const profile = profileQuery.data;
   const quote = profile?.market?.quote as { current?: number | null; changePercent?: number | null; timestamp?: string | null } | null | undefined;
   const realNewsCount = profile?.news?.articles?.length ?? 0;
