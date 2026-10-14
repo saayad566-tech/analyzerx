@@ -3,7 +3,7 @@ import { analyzeFundamentals } from "../server/fundamental-analysis";
 async function main() {
   const symbols = ["AAPL", "SAP.DE", "7203.T"];
   const results = await Promise.all(symbols.map(async (symbol) => {
-    const report = await analyzeFundamentals(symbol);
+    const report = await analyzeFundamentals(symbol, "IN");
     return {
       requested: symbol,
       resolved: report.resolvedSymbol,
