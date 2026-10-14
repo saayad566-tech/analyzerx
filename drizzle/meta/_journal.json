@@ -134,6 +134,13 @@
       "when": 1787266629142,
       "tag": "0018_light_stardust",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791971988549,
+      "tag": "0019_market_scope",
+      "breakpoints": true
     }
   ]
 }
