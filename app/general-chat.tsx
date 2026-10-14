@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
+import { keyboardAvoidingBehavior } from "@/lib/keyboard-avoidance";
 import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenContainer } from "@/components/screen-container";
@@ -18,6 +20,12 @@ const colors = { background: "#07101F", panel: "#111C2D", border: "#26364D", tex
 type GeneralItem = LocalChatMessage & { id: string; error?: boolean };
 
 export default function GeneralChatScreen() {
+  // This composer used `behavior={Platform.OS === "ios" ? "padding" : undefined}`,
+  // the pre-edge-to-edge assumption: with edge-to-edge the Android window no longer
+  // resizes, so KAV received no behaviour and the composer sat UNDER the keyboard.
+  // The real keyboard height is read from the Keyboard API and applied as padding,
+  // exactly as the market chat composer already does.
+  const keyboardInset = useKeyboardInset();
   const [messages, setMessages] = useState<GeneralItem[]>([]);
   const [draft, setDraft] = useState("");
   const [runtimeMode, setRuntimeMode] = useState<MarketChatRuntimeMode>("auto");
@@ -110,7 +118,7 @@ export default function GeneralChatScreen() {
 
   return (
     <ScreenContainer edges={["top", "left", "right"]} containerClassName="bg-background" className="px-4" keyboardAware={false}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <KeyboardAvoidingView style={[styles.flex, keyboardInset > 0 && { paddingBottom: keyboardInset }]} behavior={keyboardAvoidingBehavior(Platform.OS)} keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}>
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} style={styles.iconButton} accessibilityLabel="Go back"><Ionicons name="chevron-back" size={22} color={colors.text} /></Pressable>
           <View style={styles.headerCopy}><Text style={styles.eyebrow}>ANALYZERX GENERAL CHAT</Text><Text style={styles.title}>Ask anything</Text></View>
