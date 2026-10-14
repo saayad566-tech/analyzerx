@@ -211,3 +211,22 @@ export function localPromptNotice(wasTrimmed: boolean, contextTokens?: number | 
   if (!wasTrimmed) return undefined;
   return `Local mode shortened the context to stay within this model's ${localInputBudget(contextTokens).tokens.toLocaleString("en-IN")}-token input budget.`;
 }
+
+/**
+ * The status line shown while an answer streams.
+ *
+ * The defect this fixes: the line read "Streaming from <model> over grounded
+ * evidence…" for EVERY local answer, including general ones. A general question is
+ * deliberately not grounded, so the label claimed evidence that was never used.
+ */
+export function streamingStatusLabel(input: {
+  engine: "local" | "connected";
+  model?: string | null;
+  grounded: boolean;
+}): string {
+  if (input.engine === "connected") return "Reading connected evidence and preparing a concise answer\u2026";
+  const model = (input.model ?? "").trim() || "the local model";
+  return input.grounded
+    ? `Streaming from ${model} over grounded evidence\u2026`
+    : `Streaming from ${model}\u2026`;
+}
