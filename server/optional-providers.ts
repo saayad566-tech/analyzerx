@@ -1,4 +1,7 @@
 import { getConfiguredProviders } from "./provider-registry";
+import { type MarketId } from "../lib/market-regions";
+import { newsEditionFor } from "../lib/market-news-edition";
+
 
 import { classifyIndianNewsRelevance, globalIndiaNewsQuery } from "./indian-news-relevance";
 import { isProviderCircuitOpen, markProviderHealthy, markProviderRejected } from "./provider-health";
@@ -94,12 +97,14 @@ async function fetchGdeltQuery(query: string, symbol: string): Promise<ProviderA
   }
 }
 
-async function fetchGoogleNewsRssQuery(query: string, symbol: string): Promise<ProviderArticle[]> {
+async function fetchGoogleNewsRssQuery(query: string, symbol: string, marketId: MarketId): Promise<ProviderArticle[]> {
   const url = new URL("https://news.google.com/rss/search");
   url.searchParams.set("q", query);
-  url.searchParams.set("hl", process.env.GOOGLE_NEWS_RSS_LANGUAGE ?? "en-IN");
-  url.searchParams.set("gl", process.env.GOOGLE_NEWS_RSS_COUNTRY ?? "IN");
-  url.searchParams.set("ceid", process.env.GOOGLE_NEWS_RSS_EDITION ?? "IN:en");
+  const edition = newsEditionFor(marketId);
+  if (!edition) throw new Error(`No news edition is configured for market ${marketId}.`);
+  url.searchParams.set("hl", edition.hl);
+  url.searchParams.set("gl", edition.gl);
+  url.searchParams.set("ceid", edition.ceid);
   const startedAt = Date.now();
   try {
     const response = await fetch(url, { headers: { Accept: "application/rss+xml, application/xml, text/xml", "User-Agent": "MarketEventIntelligence/1.0" }, signal: AbortSignal.timeout(10_000) });
@@ -143,7 +148,7 @@ export function getNewsSearchQuery(symbol: string, marketId?: string, lookbackDa
   const base = normalized.replace(/[-_/](USD|USDT|USDC)$/i, "");
   const alias = cryptoNewsAliases[base];
   const entity = alias ? `("${normalized}" OR "${base}" OR "${alias}")` : `"${normalized}"`;
-  const marketTerms = marketId ? MARKET_QUERY_TERMS[marketId] ?? MARKET_QUERY_TERMS.IN : null;
+  const marketTerms = marketId ? MARKET_QUERY_TERMS[marketId] ?? "" : null;
   const safeDays = Math.min(3650, Math.max(1, Math.floor(lookbackDays)));
   return `${entity}${marketTerms ? ` AND ${marketTerms}` : ""} when:${safeDays}d`;
 }
@@ -157,18 +162,18 @@ export function isWrongMarketGovernmentArticle(article: ProviderArticle, marketI
   return false;
 }
 
-export async function fetchGoogleNewsRss(symbol: string): Promise<ProviderArticle[]> {
-  return fetchGoogleNewsRssQuery(getNewsSearchQuery(symbol), symbol);
+export async function fetchGoogleNewsRss(symbol: string, marketId: MarketId): Promise<ProviderArticle[]> {
+  return fetchGoogleNewsRssQuery(getNewsSearchQuery(symbol, marketId, 1), symbol, marketId);
 }
 
-function keepRelevantMarketArticle(article: ProviderArticle, symbols: string[], marketId = "IN") {
+function keepRelevantMarketArticle(article: ProviderArticle, symbols: string[], marketId: MarketId) {
   if (isWrongMarketGovernmentArticle(article, marketId)) return false;
   if (article.symbol !== "MARKET") return true;
   if (marketId !== "IN") return true;
   return classifyIndianNewsRelevance({ headline: article.headline, summary: article.summary, symbols }).include;
 }
 
-function articlesFromPayload(payload: Record<string, unknown>, symbols: string[], providerName: string, articleKey: "articles" | "data" | "results", marketId = "IN"): ProviderArticle[] {
+function articlesFromPayload(payload: Record<string, unknown>, symbols: string[], providerName: string, articleKey: "articles" | "data" | "results", marketId: MarketId): ProviderArticle[] {
   const data = Array.isArray(payload[articleKey]) ? payload[articleKey] : [];
   return data.flatMap((item) => {
     const row = item as Record<string, unknown>;
@@ -203,17 +208,17 @@ async function safeProviderArticles(providerId: string, run: () => Promise<Provi
   }
 }
 
-export async function fetchProviderNow(providerId: string, symbols: string[], marketId = "IN", lookbackDays = 1): Promise<ProviderArticle[]> {
+export async function fetchProviderNow(providerId: string, symbols: string[], marketId: MarketId, lookbackDays = 1): Promise<ProviderArticle[]> {
   switch (providerId) {
     case "gdelt": {
       const results = await Promise.allSettled(symbols.slice(0, 5).map((symbol) => fetchGdeltQuery(getNewsSearchQuery(symbol, marketId, lookbackDays).replace(/ when:\d+d$/, ""), symbol)));
       return results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
     }
     case "google-news-rss": {
-      const symbolResults = await Promise.allSettled(symbols.slice(0, Number(process.env.GOOGLE_NEWS_RSS_MAX_SYMBOLS ?? 20)).map((symbol) => fetchGoogleNewsRssQuery(getNewsSearchQuery(symbol, marketId, lookbackDays), symbol)));
+      const symbolResults = await Promise.allSettled(symbols.slice(0, Number(process.env.GOOGLE_NEWS_RSS_MAX_SYMBOLS ?? 20)).map((symbol) => fetchGoogleNewsRssQuery(getNewsSearchQuery(symbol, marketId, lookbackDays), symbol, marketId)));
       const articles = symbolResults.flatMap((result) => result.status === "fulfilled" ? result.value : []);
       if (process.env.ENABLE_GLOBAL_INDIAN_NEWS_RSS !== "false") {
-        const globalArticles = await fetchGoogleNewsRssQuery(`${MARKET_QUERY_TERMS[marketId] ?? MARKET_QUERY_TERMS.IN} AND ${globalIndiaNewsQuery} when:${Math.min(3650, Math.max(1, Math.floor(lookbackDays)))}d`, "MARKET");
+        const globalArticles = await fetchGoogleNewsRssQuery(`${MARKET_QUERY_TERMS[marketId] ?? ""}${marketId === "IN" ? ` AND ${globalIndiaNewsQuery}` : ""} when:${Math.min(3650, Math.max(1, Math.floor(lookbackDays)))}d`, "MARKET", marketId);
         articles.push(...globalArticles);
       }
       return articles.filter((article) => keepRelevantMarketArticle(article, symbols, marketId));
@@ -233,7 +238,7 @@ export async function fetchProviderNow(providerId: string, symbols: string[], ma
       if (!process.env.NEWS_API_KEY) throw new Error("NewsAPI is not configured");
       const url = new URL("https://newsapi.org/v2/everything");
       url.searchParams.set("apiKey", process.env.NEWS_API_KEY);
-      url.searchParams.set("q", `(${symbols.join(" OR ")}) AND ${MARKET_QUERY_TERMS[marketId] ?? MARKET_QUERY_TERMS.IN}`);
+      url.searchParams.set("q", `(${symbols.join(" OR ")}) AND ${MARKET_QUERY_TERMS[marketId] ?? ""}`);
       url.searchParams.set("language", "en");
       url.searchParams.set("sortBy", "publishedAt");
       url.searchParams.set("pageSize", "50");
@@ -242,7 +247,7 @@ export async function fetchProviderNow(providerId: string, symbols: string[], ma
     case "gnews": {
       if (!process.env.GNEWS_API_KEY) throw new Error("GNews is not configured");
       const url = new URL("https://gnews.io/api/v4/search");
-      url.searchParams.set("q", `(${symbols.join(" OR ")}) AND ${MARKET_QUERY_TERMS[marketId] ?? MARKET_QUERY_TERMS.IN}`);
+      url.searchParams.set("q", `(${symbols.join(" OR ")}) AND ${MARKET_QUERY_TERMS[marketId] ?? ""}`);
       url.searchParams.set("lang", "en");
       url.searchParams.set("max", "50");
       url.searchParams.set("apikey", process.env.GNEWS_API_KEY);
@@ -252,7 +257,7 @@ export async function fetchProviderNow(providerId: string, symbols: string[], ma
       if (!process.env.NEWSDATA_API_KEY) throw new Error("NewsData.io is not configured");
       const url = new URL("https://newsdata.io/api/1/latest");
       url.searchParams.set("apikey", process.env.NEWSDATA_API_KEY);
-      url.searchParams.set("q", `(${symbols.join(" OR ")}) AND ${MARKET_QUERY_TERMS[marketId] ?? MARKET_QUERY_TERMS.IN}`);
+      url.searchParams.set("q", `(${symbols.join(" OR ")}) AND ${MARKET_QUERY_TERMS[marketId] ?? ""}`);
       url.searchParams.set("language", "en");
       return articlesFromPayload(await requestJson(url, "newsdata"), symbols, "NewsData.io", "results", marketId);
     }
@@ -261,7 +266,7 @@ export async function fetchProviderNow(providerId: string, symbols: string[], ma
   }
 }
 
-export async function fetchOptionalNews(symbols: string[], marketId = "IN", lookbackDays = 1): Promise<ProviderArticle[]> {
+export async function fetchOptionalNews(symbols: string[], marketId: MarketId, lookbackDays = 1): Promise<ProviderArticle[]> {
   const configured = new Set(getConfiguredProviders("news").map((provider) => provider.id));
   const tasks: Array<Promise<ProviderArticle[]>> = [];
 
@@ -273,10 +278,10 @@ export async function fetchOptionalNews(symbols: string[], marketId = "IN", look
   if (process.env.ENABLE_GOOGLE_NEWS_RSS !== "false") {
     const maxSymbols = Number(process.env.GOOGLE_NEWS_RSS_MAX_SYMBOLS ?? 20);
     tasks.push(safeProviderArticles("google-news-rss", async () => {
-      const symbolResults = await Promise.allSettled(symbols.slice(0, maxSymbols).map((symbol) => fetchGoogleNewsRssQuery(getNewsSearchQuery(symbol, marketId, lookbackDays), symbol)));
+      const symbolResults = await Promise.allSettled(symbols.slice(0, maxSymbols).map((symbol) => fetchGoogleNewsRssQuery(getNewsSearchQuery(symbol, marketId, lookbackDays), symbol, marketId)));
       const articles = symbolResults.flatMap((result) => result.status === "fulfilled" ? result.value : []);
       if (process.env.ENABLE_GLOBAL_INDIAN_NEWS_RSS !== "false") {
-        const globalArticles = await safeProviderArticles("google-news-rss", () => fetchGoogleNewsRssQuery(`${MARKET_QUERY_TERMS[marketId] ?? MARKET_QUERY_TERMS.IN} AND ${globalIndiaNewsQuery} when:${Math.min(3650, Math.max(1, Math.floor(lookbackDays)))}d`, "MARKET"));
+        const globalArticles = await safeProviderArticles("google-news-rss", () => fetchGoogleNewsRssQuery(`${MARKET_QUERY_TERMS[marketId] ?? ""}${marketId === "IN" ? ` AND ${globalIndiaNewsQuery}` : ""} when:${Math.min(3650, Math.max(1, Math.floor(lookbackDays)))}d`, "MARKET", marketId));
         articles.push(...globalArticles);
       }
       return articles;
@@ -300,7 +305,7 @@ export async function fetchOptionalNews(symbols: string[], marketId = "IN", look
     tasks.push(safeProviderArticles("newsapi", async () => {
       const url = new URL("https://newsapi.org/v2/everything");
       url.searchParams.set("apiKey", process.env.NEWS_API_KEY!);
-      url.searchParams.set("q", `(${symbols.join(" OR ")}) AND ${MARKET_QUERY_TERMS[marketId] ?? MARKET_QUERY_TERMS.IN}`);
+      url.searchParams.set("q", `(${symbols.join(" OR ")}) AND ${MARKET_QUERY_TERMS[marketId] ?? ""}`);
       url.searchParams.set("language", "en");
       url.searchParams.set("sortBy", "publishedAt");
       url.searchParams.set("pageSize", "50");
@@ -311,7 +316,7 @@ export async function fetchOptionalNews(symbols: string[], marketId = "IN", look
   if (configured.has("gnews") && process.env.GNEWS_API_KEY) {
     tasks.push(safeProviderArticles("gnews", async () => {
       const url = new URL("https://gnews.io/api/v4/search");
-      url.searchParams.set("q", `(${symbols.join(" OR ")}) AND ${MARKET_QUERY_TERMS[marketId] ?? MARKET_QUERY_TERMS.IN}`);
+      url.searchParams.set("q", `(${symbols.join(" OR ")}) AND ${MARKET_QUERY_TERMS[marketId] ?? ""}`);
       url.searchParams.set("lang", "en");
       url.searchParams.set("max", "50");
       url.searchParams.set("apikey", process.env.GNEWS_API_KEY!);
@@ -323,7 +328,7 @@ export async function fetchOptionalNews(symbols: string[], marketId = "IN", look
     tasks.push(safeProviderArticles("newsdata", async () => {
       const url = new URL("https://newsdata.io/api/1/latest");
       url.searchParams.set("apikey", process.env.NEWSDATA_API_KEY!);
-      url.searchParams.set("q", `(${symbols.join(" OR ")}) AND ${MARKET_QUERY_TERMS[marketId] ?? MARKET_QUERY_TERMS.IN}`);
+      url.searchParams.set("q", `(${symbols.join(" OR ")}) AND ${MARKET_QUERY_TERMS[marketId] ?? ""}`);
       url.searchParams.set("language", "en");
       return articlesFromPayload(await requestJson(url, "newsdata"), symbols, "NewsData.io", "results", marketId);
     }));
