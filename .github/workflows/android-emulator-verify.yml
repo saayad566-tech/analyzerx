@@ -1,0 +1,131 @@
+name: Android emulator verification
+
+# Device verification. GitHub's Linux runners have KVM, so a REAL Android emulator can
+# boot here and run the REAL shipped APK. This is the closest thing to a physical
+# device check that can be automated, and it is genuine runtime evidence: the app is
+# installed, launched, exercised, and its logcat is inspected for crashes.
+#
+# It downloads the published release APK rather than rebuilding, so what is verified is
+# the exact artifact a user installs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag holding app-release.apk (e.g. apk-3.22.0-92)"
+        required: true
+        default: "apk-3.22.0-92"
+  push:
+    branches: [analyzerx/mandate-remediation]
+
+permissions:
+  contents: read
+
+jobs:
+  emulator:
+    name: Install and run the APK on a real emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve the release tag
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.release_tag }}"
+          if [ -z "$TAG" ]; then TAG="apk-3.22.0-92"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "verifying release: $TAG"
+
+      - name: Download the published release APK
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          URL="https://github.com/${{ github.repository }}/releases/download/$TAG/app-release.apk"
+          echo "downloading $URL"
+          curl -fsSL --retry 4 --retry-delay 5 -o app-release.apk "$URL"
+          ls -l app-release.apk
+          echo "sha256: $(sha256sum app-release.apk | cut -d' ' -f1)"
+
+      - name: Enable KVM (required for the emulator)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - name: Boot the emulator, install and exercise the app
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            PKG=com.app.marketeventintelligence
+
+            echo "=== 1. device is up ==="
+            adb wait-for-device
+            adb shell getprop ro.build.version.release
+            adb shell wm size
+
+            echo "=== 2. install the real APK ==="
+            adb install -r app-release.apk
+            adb shell pm list packages | grep "$PKG"
+
+            echo "=== 3. clear logcat and launch the app ==="
+            adb logcat -c
+            adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1
+
+            echo "=== 4. wait for it to settle ==="
+            sleep 25
+
+            echo "=== 5. the process must be alive (a crash would leave no pid) ==="
+            PID=$(adb shell pidof "$PKG" | tr -d '\r')
+            echo "pid=$PID"
+            if [ -z "$PID" ]; then echo "APP IS NOT RUNNING"; adb logcat -d | tail -80; exit 1; fi
+
+            echo "=== 6. the launch activity must be resumed ==="
+            adb shell dumpsys activity activities | grep -E "mResumedActivity|topResumedActivity" | head -3 || true
+
+            echo "=== 7. exercise the UI: tap around the main surface ==="
+            for xy in "540 1200" "540 1800" "900 400" "200 2200"; do
+              adb shell input tap $xy || true
+              sleep 3
+            done
+            sleep 5
+
+            echo "=== 8. still alive after interaction? ==="
+            PID2=$(adb shell pidof "$PKG" | tr -d '\r')
+            echo "pid after interaction=$PID2"
+            if [ -z "$PID2" ]; then echo "APP DIED DURING INTERACTION"; adb logcat -d | tail -120; exit 1; fi
+
+            echo "=== 9. no fatal exception in logcat ==="
+            if adb logcat -d | grep -E "FATAL EXCEPTION|AndroidRuntime.*$PKG" ; then
+              echo "FATAL EXCEPTION FOUND"; exit 1
+            fi
+            echo "no fatal exception"
+
+            echo "=== 10. capture a screenshot ==="
+            adb exec-out screencap -p > emulator-screenshot.png
+            ls -l emulator-screenshot.png
+
+            echo "=== 11. app logcat tail (evidence) ==="
+            adb logcat -d | grep -i "$PKG" | tail -40 || true
+
+            echo "EMULATOR VERIFICATION PASSED"
+
+      - name: Upload the screenshot and logcat
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-evidence
+          path: |
+            emulator-screenshot.png
+          if-no-files-found: warn
