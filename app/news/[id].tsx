@@ -59,7 +59,7 @@ export default function NewsDetailScreen() {
   // market it belongs to.
   const { marketId } = useMarketContext();
   const archiveQuery = trpc.news.archive.useQuery(
-    { days: 365, limit: 500, archiveOrder: "Newest first", page: 0, marketId },
+    { marketId: market.id, days: 365, limit: 500, archiveOrder: "Newest first", page: 0 },
     { staleTime: 60_000, retry: false },
   );
   const articleQuery = archiveQuery;
