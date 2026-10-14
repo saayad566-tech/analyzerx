@@ -203,15 +203,15 @@ export default function ScreenerScreen() {
   const handleSearchChange = (value: string) => { setAnalysisQuery(value); setSelectedSymbol(null); setSelectedStock(null); };
   const analysisTarget = selectedSymbol ? researchCandidates.find((candidate) => candidate.symbol === selectedSymbol) ?? { symbol: selectedSymbol, name: selectedStock?.name ?? "Requested company", sector: selectedStock?.sector ?? "Indian equities", metricsAvailable: false, redFlags: [], evidence: [], expansionSignal: false, triggerKeys: [] } : null;
   const legacyAnalysisTarget = analysisTarget as NonNullable<typeof analysisTarget>;
-  const indianSnapshot = trpc.market.indianSnapshot.useQuery({ symbol: resolveMarketScopedSymbol(selectedSymbol, marketId) ?? "" }, { enabled: Boolean(selectedSymbol), retry: false });
+  const indianSnapshot = trpc.market.indianSnapshot.useQuery({ marketId: market.id, symbol: resolveMarketScopedSymbol(selectedSymbol, marketId) ?? "" }, { enabled: Boolean(selectedSymbol), retry: false });
   const fundamentalAnalysis = trpc.market.fundamentals.useQuery(
     { marketId: market.id, symbol: selectedSymbol ?? market.tickerExamples[0] ?? "" },
     { enabled: Boolean(selectedSymbol), retry: 1, retryDelay: 1_200, staleTime: 60_000 },
   );
   const analyzedMarketCapBand = classifyMarketCap(marketId, fundamentalAnalysis.data?.marketCap.value);
   const derivatives = trpc.market.derivatives.useQuery({ marketId: market.id, symbol: selectedSymbol ?? market.tickerExamples[0] ?? "" }, { enabled: Boolean(selectedSymbol), retry: false, staleTime: 30_000 });
-  const multibaggerSignals = trpc.market.multibaggerSignals.useQuery({ strategyId: selectedStrategyId }, { retry: false, staleTime: 900_000, refetchInterval: 300_000, refetchIntervalInBackground: false });
-  const multiAssetTiming = trpc.market.multiAssetTiming.useQuery({ marketId: market.id }, { retry: false, staleTime: 120_000, refetchInterval: 180_000, refetchIntervalInBackground: false });
+  const multibaggerSignals = trpc.market.multibaggerSignals.useQuery({ marketId: market.id, strategyId: selectedStrategyId }, { retry: false, staleTime: 900_000, refetchInterval: 300_000, refetchIntervalInBackground: false });
+  const multiAssetTiming = trpc.market.multiAssetTiming.useQuery(undefined, { retry: false, staleTime: 120_000, refetchInterval: 180_000, refetchIntervalInBackground: false });
   const reportExport = trpc.market.report.useQuery({ symbol: selectedSymbol ?? market.tickerExamples[0] ?? "", marketId }, { enabled: false, retry: false });
   const { width: viewportWidth } = useWindowDimensions();
   const peerComparison = trpc.market.peerComparison.useQuery({ marketId: market.id, symbol: selectedSymbol ?? market.tickerExamples[0] ?? "" }, { enabled: Boolean(selectedSymbol), retry: false, staleTime: 300_000 });
