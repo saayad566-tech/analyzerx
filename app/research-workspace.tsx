@@ -25,8 +25,8 @@ export default function ResearchWorkspaceScreen() {
   const [watchlist, setWatchlist] = useState<string[]>([]);
   const [savedScreens, setSavedScreens] = useState<SavedScreen[]>([]);
   const { isAuthenticated } = useAuth();
-  const ownedWatchlist = trpc.account.watchlist.useQuery(undefined, { enabled: isAuthenticated, retry: false, staleTime: 60_000 });
-  const ownedScreens = trpc.account.savedScreens.useQuery(undefined, { enabled: isAuthenticated, retry: false, staleTime: 60_000 });
+  const ownedWatchlist = trpc.account.watchlist.useQuery({ marketId }, { enabled: isAuthenticated, retry: false, staleTime: 60_000 });
+  const ownedScreens = trpc.account.savedScreens.useQuery({ marketId }, { enabled: isAuthenticated, retry: false, staleTime: 60_000 });
   const serverWatchlist = (ownedWatchlist.data ?? []).map((item) => item.symbol);
   const effectiveWatchlist = isAuthenticated && ownedWatchlist.data ? serverWatchlist : watchlist;
   const effectiveSavedScreens = isAuthenticated && ownedScreens.data ? ownedScreens.data : savedScreens;
