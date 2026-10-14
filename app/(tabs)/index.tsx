@@ -406,7 +406,7 @@ export default function LiveEventsScreen() {
   useEffect(() => {
     setFeaturedSymbol(defaultSymbolForMarket(market.id) ?? "");
   }, [market.id]);
-  const newsTrackerStatus = trpc.news.status.useQuery({ marketId: market.id }, {
+  const newsTrackerStatus = trpc.news.status.useQuery(undefined, {
     refetchInterval: 1_000,
     retry: false,
   });
@@ -505,11 +505,11 @@ export default function LiveEventsScreen() {
     staleTime: 300_000,
     retry: false,
   });
-  const sourceCatalog = trpc.sources.list.useQuery({ marketId: market.id }, {
+  const sourceCatalog = trpc.sources.list.useQuery(undefined, {
     staleTime: 300_000,
     retry: false,
   });
-  const nseUniverse = trpc.market.universe.useQuery({ marketId: market.id }, {
+  const nseUniverse = trpc.market.universe.useQuery(undefined, {
     staleTime: 3_600_000,
     retry: false,
   });
@@ -517,11 +517,11 @@ export default function LiveEventsScreen() {
     { limit: 5 },
     { staleTime: 60_000, retry: false },
   );
-  const nseCollectors = trpc.sources.nseCollectors.useQuery({ marketId: market.id }, {
+  const nseCollectors = trpc.sources.nseCollectors.useQuery(undefined, {
     staleTime: 300_000,
     retry: false,
   });
-  const collectorHealth = trpc.sources.health.useQuery({ marketId: market.id }, {
+  const collectorHealth = trpc.sources.health.useQuery(undefined, {
     refetchInterval: 30_000,
     retry: false,
   });
