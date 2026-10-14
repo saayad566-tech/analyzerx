@@ -477,7 +477,7 @@ export async function stockNews(symbol: string, limit: number, marketId: MarketI
   };
 }
 
-export async function marketNews(limit = 60): Promise<NewsPayload> {
+export async function marketNews(marketId: MarketId, limit = 60): Promise<NewsPayload> {
   const merge = await runMerge<NewsArticle>(
     [
       {
@@ -887,7 +887,7 @@ export async function priceHistory(symbol: string, range = "6mo", interval = "1d
 
 export type TimingSignal = { name: string; type: "technical" | "macro"; action: string; score: number; changePct: number | null; source: string; freshness: string | null };
 
-export async function multiAssetTiming(): Promise<{ generatedAt: string; signals: TimingSignal[]; unavailable: string[] }> {
+export async function multiAssetTiming(marketId: MarketId): Promise<{ generatedAt: string; signals: TimingSignal[]; unavailable: string[] }> {
   const targets: Array<{ name: string; symbol: string; type: "technical" | "macro" }> = [
     { name: "NIFTY 50", symbol: "^NSEI", type: "technical" },
     { name: "SENSEX", symbol: "^BSESN", type: "technical" },
