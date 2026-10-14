@@ -1,5 +1,5 @@
 import { callIndiaStockMcpTool } from "./india-stock-mcp";
-import { type MarketId } from "../lib/market-regions";
+import { type MarketId, marketIdForCountryName, marketIdForExchange, getMarketProfile } from "../lib/market-regions";
 
 import { runProvidersInParallel } from "./parallel-providers";
 import { fetchIndianOpenStock, normalizeIndianOpenQuote } from "./indian-open-api";
@@ -83,7 +83,7 @@ export type FundamentalAnalysis = {
   resolvedSymbol: string;
   companyName: string;
   market: { exchange: string; currency: string; country: string; primaryFocus: boolean };
-  marketCap: { value: number | null; band: MarketCapBand; label: string; currency: string; convention: ReturnType<typeof getMarketCapConvention>; basis: "reported" | "unavailable" };
+  marketCap: { value: number | null; band: MarketCapBand; label: string; currency: string; convention: ReturnType<typeof getMarketCapConvention> | null; basis: "reported" | "unavailable" };
   redirect: { from: string; to: string; reason: string } | null;
   score: number;
   verdict: string;
@@ -704,12 +704,20 @@ export function buildAnalysis(requestedSymbol: string, resolvedSymbol: string, r
   const baseline = sectorBaselines[sector] ?? sectorBaselines["Global equities"];
   const exchange = raw.exchange ?? (resolvedSymbol.endsWith(".NS") ? "NSE" : resolvedSymbol.endsWith(".BO") ? "BSE" : /^[A-Z]+$/.test(resolvedSymbol) && ["RELIANCE", "TATAMOTORS", "TATAPOWER", "ADANIENT", "ADANIPORTS", "JIOFIN"].includes(resolvedSymbol) ? "NSE" : "Global / unresolved exchange");
   const currency = raw.currency ?? (exchange === "NSE" || exchange === "BSE" ? "INR" : "Local currency unavailable");
-  const exchangeCountry: Record<string, string> = { NASDAQ: "United States", "NASDAQ NMS - GLOBAL MARKET": "United States", NYQ: "United States", NYSE: "United States", GER: "Germany", FRA: "Germany", JPX: "Japan", TSE: "Japan", LSE: "United Kingdom", TOR: "Canada", ASX: "Australia", HKG: "Hong Kong", KSC: "South Korea", SHG: "China", SZS: "China", SET: "Thailand", BSE: "India", NSE: "India" };
-  const country = raw.country ?? exchangeCountry[exchange] ?? (exchange === "NSE" || exchange === "BSE" ? "India" : "Country unavailable");
-  const marketKey = country === "India" ? "IN" : Object.entries({ "United States": "US", "United Kingdom": "GB", Canada: "CA", Australia: "AU", Japan: "JP", Singapore: "SG", "Hong Kong": "HK", Germany: "DE", France: "FR" }).find(([label]) => label === country)?.[1] ?? "UNKNOWN";
-  const marketCapConvention = getMarketCapConvention(marketKey);
+  // Both maps used to be inlined here. They drifted from the market registry, and an
+  // unrecognised value silently became "UNKNOWN", which then produced the wrong
+  // market-cap convention and band for the company. The registry is now the only source:
+  // the market is resolved from the exchange code, and the country label is read back
+  // from the resolved profile rather than being guessed independently.
+  const marketKey = raw.country
+    ? marketIdForCountryName(raw.country)
+    : marketIdForExchange(exchange);
+  const country = marketKey === "UNKNOWN"
+    ? (raw.country ?? "Country unavailable")
+    : getMarketProfile(marketKey).country;
+  const marketCapConvention = marketKey === "UNKNOWN" ? null : getMarketCapConvention(marketKey);
   const marketCapValue = raw.marketCap === undefined ? null : country === "India" && raw.marketCap > 1_000_000 ? quotient(raw.marketCap, 10_000_000) ?? raw.marketCap : raw.marketCap;
-  const marketCapBand = classifyMarketCap(marketKey, marketCapValue);
+  const marketCapBand = marketKey === "UNKNOWN" ? "unknown" : classifyMarketCap(marketKey, marketCapValue);
   const metrics: Record<string, Metric> = {};
   const history = raw.history ?? emptyHistoricalTrends();
   const quantitativeMetrics = calculateQuantitativeMetrics({
