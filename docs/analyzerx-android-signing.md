@@ -48,6 +48,19 @@ Either way the certificate is identical on every build, so upgrades work in
 place. The step also prints the signer certificate (`apksigner verify
 --print-certs`) so key stability is auditable in the build log.
 
+## Current state of the published artifacts
+
+As of build 94 (`analyzerx-3.24.0-94.apk`) the release keystore secrets are **not**
+configured, so both fallbacks apply and every published APK is signed with the committed
+`android/app/debug.keystore`. Inspecting the signing block of the shipped artifact
+confirms this: the signer certificate subject is `CN=Android Debug, O=Android, C=US`,
+and the APK carries a single `v2` block with no v3 entry and no v1 JAR signature.
+
+This is stable — the certificate has not changed across builds 57–94, so in-place
+upgrades work — but a debug key is not acceptable for public distribution, and Google
+Play rejects it. Setting the secrets below is what moves the artifact to a proper
+release signature.
+
 ## Using a proper release key (recommended for public distribution)
 
 1. Create a keystore once and keep it safe — losing it means you can never update
