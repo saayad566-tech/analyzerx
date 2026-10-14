@@ -241,7 +241,11 @@ async function fetchMarketSnapshot(symbol: string, requestedMarketId?: string) {
   // assumed to be Indian.
   const snapshotMarketId = (requestedMarketId ?? (/(\.NS|\.BO)$/i.test(symbol) ? "IN" : undefined)) as
     | "IN" | "US" | "GB" | "CA" | "AU" | "JP" | "SG" | "HK" | "DE" | "FR" | undefined;
-  const isIndianMarket = snapshotMarketId === "IN" || snapshotMarketId === undefined;
+  // An ABSENT market is not an Indian market. This used to read
+  // `snapshotMarketId === "IN" || snapshotMarketId === undefined`, so any caller that
+  // omitted the market was served the India-only NSE/Indian-API snapshot, which is the
+  // silent substitution the comment above says must never happen.
+  const isIndianMarket = snapshotMarketId === "IN";
   const to = now.toISOString().slice(0, 10);
   const fromDate = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
   const from = fromDate.toISOString().slice(0, 10);
@@ -495,8 +499,8 @@ export const appRouter = router({
     }),
   }),
   autonomousRecommendations: router({
-    discover: publicProcedure.input(z.object({ lookbackDays: z.number().int().min(1).max(180).default(30), limit: z.number().int().min(1).max(100).default(50) }).optional()).query(({ input }) => discoverAutonomousRecommendations("IN", input?.lookbackDays ?? 30, input?.limit ?? 50)),
-    latest: publicProcedure.input(z.object({ lookbackDays: z.number().int().min(1).max(180).default(30), limit: z.number().int().min(1).max(100).default(50), sort: z.enum(["impact", "confidence", "latest"]).default("impact") }).optional()).query(({ input }) => getPersistedAutonomousRecommendations(input ?? {})),
+    discover: publicProcedure.input(z.object({ marketId: marketIdSchema, lookbackDays: z.number().int().min(1).max(180).default(30), limit: z.number().int().min(1).max(100).default(50) })).query(({ input }) => discoverAutonomousRecommendations(input.marketId, input.lookbackDays, input.limit)),
+    latest: publicProcedure.input(z.object({ marketId: marketIdSchema, lookbackDays: z.number().int().min(1).max(180).default(30), limit: z.number().int().min(1).max(100).default(50), sort: z.enum(["impact", "confidence", "latest"]).default("impact") })).query(({ input }) => getPersistedAutonomousRecommendations(input)),
     detail: publicProcedure.input(z.object({ id: z.string().trim().min(1).max(160) })).query(async ({ input }) => {
       const record = await getAutonomousRecommendation(input.id);
       if (!record) return null;
