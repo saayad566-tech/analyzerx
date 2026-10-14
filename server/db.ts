@@ -646,7 +646,7 @@ export async function listUserAlertResultsPage(userId: number, input: { limit?: 
 export async function upsertUserAlertResult(userId: number, result: InsertUserAlertResult) {
   const db = await getDb();
   if (!db) return false;
-  await db.insert(userAlertResults).values({ ...result, userId, marketId: result.marketId ?? "IN" }).onDuplicateKeyUpdate({ set: { status: result.status, evidenceJson: result.evidenceJson, marketId: result.marketId ?? "IN", updatedAt: new Date(), revokedAt: null } });
+  await db.insert(userAlertResults).values({ ...result, userId, marketId: requireMarketId(result.marketId) }).onDuplicateKeyUpdate({ set: { status: result.status, evidenceJson: result.evidenceJson, marketId: requireMarketId(result.marketId), updatedAt: new Date(), revokedAt: null } });
   return true;
 }
 
