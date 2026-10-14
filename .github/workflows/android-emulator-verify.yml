@@ -69,7 +69,7 @@ jobs:
           script: |
             echo "=== 1. device is up ==="; adb wait-for-device; adb shell getprop ro.build.version.release; adb shell wm size
             echo "=== 2. install the real APK ==="; adb install -r app-release.apk
-            echo "=== 2b. the package must be listed ==="; adb shell pm list packages > packages.txt; grep "com.app.marketeventintelligence" packages.txt || (echo "PACKAGE NOT INSTALLED"; exit 1)
+            echo "=== 2b. the package must be listed ==="; adb shell pm list packages > packages.txt; grep "com.app.marketeventintelligence" packages.txt || { echo "PACKAGE NOT INSTALLED"; exit 1; }
             echo "=== 3. launch the MAIN/LAUNCHER activity ==="; adb logcat -c; adb shell am start -W -n com.app.marketeventintelligence/.MainActivity
             echo "=== 4. let it settle ==="; sleep 30
             echo "=== 5. liveness diagnostics (full detail is captured for the artifact) ==="; adb shell ps -A > ps.txt 2>&1 || true; grep marketeventintelligence ps.txt || echo "not present in ps -A"
@@ -83,7 +83,7 @@ jobs:
             echo "=== 7b. still alive after interaction? ==="; adb shell pidof com.app.marketeventintelligence || echo "pidof empty after interaction"
             echo "=== 7c. logcat after interaction ==="; adb logcat -d > logcat2.txt 2>&1 || true; grep -n "FATAL EXCEPTION" logcat2.txt || echo "no FATAL EXCEPTION after interaction"
             echo "=== 8. capture a screenshot ==="; adb exec-out screencap -p > emulator-screenshot.png; ls -l emulator-screenshot.png
-            echo "=== 9. VERDICT ==="; adb shell pidof com.app.marketeventintelligence | grep -q . || (echo "VERDICT: APP NOT RUNNING AFTER 30s + INTERACTION"; exit 1); echo "VERDICT: APP IS RUNNING AND SURVIVED INTERACTION"
+            echo "=== 9. VERDICT ==="; adb shell pidof com.app.marketeventintelligence | grep -q . || { echo "VERDICT: APP NOT RUNNING AFTER 30s + INTERACTION"; exit 1; }; echo "VERDICT: APP IS RUNNING AND SURVIVED INTERACTION"
             echo "EMULATOR VERIFICATION PASSED"
 
 
