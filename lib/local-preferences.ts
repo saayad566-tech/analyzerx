@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { DEFAULT_MARKET_ID, isMarketId } from "@/lib/market-regions";
+import { DEFAULT_MARKET_ID, isMarketId } from "./market-regions";
 
 const ALERTS_KEY = "market-event-intelligence.alerts.enabled";
 const RECENT_SEARCHES_KEY = "market-event-intelligence.screener.recent-searches";
