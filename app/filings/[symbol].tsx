@@ -18,7 +18,7 @@ const surface = "#111C2D";
 export default function FilingDetailsScreen() {
   const { symbol: rawSymbol } = useLocalSearchParams<{ symbol?: string }>();
   const symbol = (rawSymbol ?? "AAPL").toUpperCase();
-  const { marketId } = useMarketContext();
+  const { market, marketId } = useMarketContext();
   const [form, setForm] = useState<string | undefined>();
   const [comparisonInput, setComparisonInput] = useState("");
   const [from, setFrom] = useState("");
