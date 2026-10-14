@@ -946,7 +946,9 @@ export function buildAnalysis(requestedSymbol: string, resolvedSymbol: string, r
     resolvedSymbol,
     companyName: normalizedCompanyName,
     market: { exchange, currency, country, primaryFocus: country === "India" },
-    marketCap: { value: marketCapValue, band: marketCapBand, label: marketCapBandLabel(marketCapBand), currency: marketCapConvention.currency, convention: marketCapConvention, basis: marketCapValue === null ? "unavailable" : "reported" },
+    marketCap: { value: marketCapValue, band: marketCapBand, label: marketCapBandLabel(marketCapBand), // When the market is unknown there is no convention, so the currency falls back to the
+    // one already resolved for this symbol rather than being guessed from a market.
+    currency: marketCapConvention?.currency ?? currency, convention: marketCapConvention, basis: marketCapValue === null ? "unavailable" : "reported" },
     redirect,
     score,
     verdict: rating === "Exceptional" || rating === "Strong" ? "Strong research profile" : rating === "High Risk" ? "High-risk / incomplete evidence" : "Mixed research profile",
