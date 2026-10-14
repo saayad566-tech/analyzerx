@@ -24,7 +24,7 @@ export default function FilingDetailsScreen() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [exportFormat, setExportFormat] = useState<"markdown" | "csv" | "pdf" | "chart">("pdf");
-  const query = trpc.market.secFilings.useQuery({ symbol, form }, { staleTime: 60_000, retry: false });
+  const query = trpc.market.secFilings.useQuery({ marketId: market.id, symbol, form }, { staleTime: 60_000, retry: false });
   const filings = query.data?.records ?? [];
   const metricGroups = useMemo(() => {
     const facts = query.data?.facts ?? [];
