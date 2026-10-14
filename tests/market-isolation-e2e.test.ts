@@ -74,23 +74,38 @@ describe("France and US isolation — no Indian item appears", () => {
 });
 
 describe("India-only features are unavailable for France and the US", () => {
-  it.each(NON_INDIA)("institutional flows are not available for %s", (market) => {
-    const flows = coverageForMarket(market).categories.find((entry) => entry.category === "flows");
-    // India's NSE FII/DII feed is India-only. For every other market the honest state
-    // is licensed or partial — never "available" off the Indian feed.
+  it("France has no free institutional-flow source, and says so", () => {
+    const flows = coverageForMarket("FR").categories.find((entry) => entry.category === "flows");
+    // India's NSE FII/DII feed is India-only. France has no free equivalent, so the
+    // honest state is licensed — never "available" off the Indian feed.
     expect(flows?.status).not.toBe("available");
-    expect(flows?.note ?? "").toMatch(/licensed|not published free|adapter/i);
+    expect(flows?.note ?? "").toMatch(/licensed|not published free/i);
+    // And the FR note must not cite the NSE feed.
+    expect(flows?.sources.join(" ")).not.toMatch(/\b(?:NSE|FII|DII)\b/i);
   });
 
-  it("France and the US have no India-only category marked available", () => {
+  it("the US flow source is its OWN (SEC 13F), never India's NSE feed", () => {
+    const flows = coverageForMarket("US").categories.find((entry) => entry.category === "flows");
+    // The US genuinely has free institutional data via SEC 13F, so "available" is
+    // correct here — but it must be backed by the SEC, not the Indian feed.
+    expect(flows?.status).toBe("available");
+    expect(flows?.sources.join(" ")).toMatch(/SEC/);
+    expect(flows?.sources.join(" ")).not.toMatch(/\b(?:NSE|FII|DII)\b/i);
+  });
+
+  it("no non-India market's flow note cites the Indian feed", () => {
+    for (const market of NON_INDIA) {
+      const flows = coverageForMarket(market).categories.find((entry) => entry.category === "flows");
+      expect(flows?.sources.join(" ") ?? "").not.toMatch(/\b(?:NSE|FII|DII)\b/i);
+    }
+  });
+
+  it("France and the US still get quotes, news and macro", () => {
     for (const market of ["FR", "US"]) {
       const live = availableCategories(market);
-      // Quotes, news and macro are genuinely available; flows and options are not
-      // India-style available for these markets.
       expect(live).toContain("quotes");
       expect(live).toContain("news");
       expect(live).toContain("macro");
-      expect(live).not.toContain("flows");
     }
   });
 
