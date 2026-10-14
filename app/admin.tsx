@@ -25,8 +25,8 @@ function freshness(lastSuccessAt: string | null) {
 
 export default function AdminScreen() {
   const { market } = useMarketContext();
-  const collectors = trpc.sources.nseCollectors.useQuery({ marketId: market.id }, { staleTime: 60_000, retry: false });
-  const health = trpc.sources.health.useQuery({ marketId: market.id }, { refetchInterval: 30_000, retry: false });
+  const collectors = trpc.sources.nseCollectors.useQuery(undefined, { staleTime: 60_000, retry: false });
+  const health = trpc.sources.health.useQuery(undefined, { refetchInterval: 30_000, retry: false });
   const providers = trpc.providers.list.useQuery(undefined, { staleTime: 60_000, retry: false });
   const providerHealth = trpc.providers.health.useQuery(undefined, { refetchInterval: 30_000, retry: false });
   const providerHistory = trpc.providers.history.useQuery({ limit: 20 }, { refetchInterval: 60_000, retry: false });
