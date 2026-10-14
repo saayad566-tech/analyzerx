@@ -22,7 +22,9 @@ const ROOT = process.cwd();
 // Staged enforcement: by default this reports and exits 0, so it can run in CI as a
 // visible, honest count without blocking on work that is still in progress. Pass
 // --strict to make any finding fail the build. Flip CI to --strict once the count is 0.
-const STRICT = process.argv.includes("--strict");
+// STRICT BY DEFAULT: every silent India fallback fails the build. Pass --report to
+// downgrade to a warning (kept for local triage only; CI never uses it).
+const STRICT = !process.argv.includes("--report");
 const SCAN_DIRS = ["server", "lib", "app", "components", "shared", "hooks"];
 const EXT = /\.(ts|tsx|mjs|js)$/;
 
@@ -43,17 +45,7 @@ const ALLOW_ALL = new Set([
  * `marketId: MarketId = "IN"`). A `?? "IN"` in the same file still fails. Each of
  * these is a tracked next step, listed in docs/PLAN.md Phase B.
  */
-const ALLOW_ASSIGNMENT_DEFAULT = new Set([
-  "server/news-tracker.ts",
-  "server/optional-providers.ts",
-  "server/live-smart-alerts.ts",
-  "server/market-chat.ts",
-  "lib/open-data/engine.ts",
-  "lib/open-data/core.ts",
-  "lib/open-data/fundamentals.ts",
-  "lib/open-data/link.ts",
-  "lib/pdf.ts",
-]);
+const ALLOW_ASSIGNMENT_DEFAULT = new Set([]);
 
 /** True when this file+rule pair is explicitly excused. */
 function isAllowed(file, ruleId) {
@@ -66,6 +58,7 @@ const PATTERNS = [
   { id: "nullish-fallback", re: /\?\?\s*["']IN["']/g, note: '?? "IN" silently treats a missing market as India' },
   { id: "falsy-fallback", re: /\|\|\s*["']IN["']/g, note: '|| "IN" silently treats an absent market as India' },
   { id: "assignment-default", re: /(?<![=!<>+\-*/%&|^])=(?!=)\s*["']IN["']/g, note: '= "IN" defaults a market variable to India' },
+  { id: "india-constant-fallback", re: /\?\?\s*[A-Z_][A-Z0-9_]*\.IN\b/g, note: "?? SOMETHING.IN falls back to an India-scoped constant" },
   { id: "schema-default", re: /\.default\(\s*["']IN["']\s*\)/g, note: '.default("IN") makes India the server-side default' },
 ];
 
