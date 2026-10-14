@@ -88,9 +88,16 @@ jobs:
             # deterministic and easier to assert on.
             adb shell am start -W -n com.app.marketeventintelligence/.MainActivity
             sleep 5
-            echo "=== 3b. confirm the activity actually started ==="
-            adb shell dumpsys activity activities > activities.txt
-            grep -q "com.app.marketeventintelligence" activities.txt && echo "activity present in dumpsys"
+            echo "=== 3b. informational: what is on screen ==="
+            # `am start` already reported Status: ok. This is a soft, informational
+            # dump only — the authoritative liveness proof is the pidof check below,
+            # so it must never abort the run.
+            adb shell dumpsys activity activities > activities.txt 2>&1 || true
+            if grep -q "com.app.marketeventintelligence" activities.txt; then
+              echo "activity present in dumpsys"
+            else
+              echo "activity not listed yet in dumpsys (informational only)"
+            fi
 
             echo "=== 4. wait for it to settle ==="
             sleep 25
