@@ -37,7 +37,7 @@ export default function ResearchWorkspaceScreen() {
   const openFinancialAnalysis = (symbol: string) => router.push({ pathname: "/screener", params: { symbol } });
 
   useEffect(() => {
-    void Promise.all([loadRecentSearches(), loadWatchlist(), loadSavedScreens()]).then(([recent, savedWatchlist, screens]) => {
+    void Promise.all([loadRecentSearches(marketId), loadWatchlist(marketId), loadSavedScreens(marketId)]).then(([recent, savedWatchlist, screens]) => {
       setRecentSearches(recent);
       setWatchlist(savedWatchlist);
       setSavedScreens(screens);
