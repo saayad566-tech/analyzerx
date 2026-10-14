@@ -31,6 +31,8 @@ import {
   type SectorConstituent,
 } from "./engine";
 import { NSE_INDEX_FILES, type NewsArticle } from "./sources";
+import { requireMarketId } from "../market-regions";
+import { seedUniverseForMarket } from "../market-universe";
 import { queryArchive, storeStats } from "./store";
 import { FALLBACK_UNIVERSE } from "./universe-fallback";
 import { catalogSummary, collectorStats, runCollectionCycle } from "./collector";
@@ -54,10 +56,20 @@ function str(input: Input, key: string, fallback = ""): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+/**
+ * Resolve the market for a local procedure.
+ *
+ * This previously defaulted to "IN" and fell back to "IN" for any unrecognised value.
+ * That is the root cause of the cross-market leak: the Screener called
+ * `market.multiAssetTiming` with no input, so this helper returned India, and every
+ * market was served Indian benchmarks and Indian news regardless of the selection.
+ *
+ * A market is now REQUIRED. A missing or invalid one throws rather than being silently
+ * replaced with India, because showing one market's data as another's is a correctness
+ * failure, not a degradation.
+ */
 function market(input: Input): MarketId {
-  const value = str(input, "marketId", "IN").toUpperCase();
-  const valid = ["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"];
-  return (valid.includes(value) ? value : "IN") as MarketId;
+  return requireMarketId(str(input, "marketId", ""));
 }
 
 /* ------------------------------------------------------------------ *
@@ -151,11 +163,11 @@ function projectionFromArticle(article: NewsArticle) {
  * that shape, so the on-device layer must emit exactly it. Emitting camelCase
  * here left `impact_score` and `published_at` undefined on the news tracker.
  */
-function toArchiveArticle(article: NewsArticle & { collectedAt?: string | null }) {
+function toArchiveArticle(article: NewsArticle & { collectedAt?: string | null }, marketId: MarketId) {
   const published = article.publishedAt ?? article.collectedAt ?? nowIso();
   return {
     id: article.id,
-    marketId: "IN" as const,
+    marketId,
     symbol: article.symbol,
     headline: article.headline,
     summary: article.summary,
@@ -347,7 +359,7 @@ const HANDLERS: Record<string, Handler> = {
     const scored = await Promise.all(
       base.constituents.slice(0, SCORED_LIMIT).map(async (row) => {
         try {
-          const [analysis, snap] = await Promise.all([fundamentals(row.symbol, "IN"), snapshot(row.symbol, "IN")]);
+          const [analysis, snap] = await Promise.all([fundamentals(row.symbol, constituentsMarketId), snapshot(row.symbol, constituentsMarketId)]);
           return {
             symbol: row.symbol,
             name: row.name,
@@ -515,8 +527,8 @@ const HANDLERS: Record<string, Handler> = {
       symbol: report.resolvedSymbol,
       marketId,
       marketLabel: report.market.country,
-      fileName: `analyzerx-${report.resolvedSymbol}-3.24.0.pdf`,
-      markdownFileName: `analyzerx-${report.resolvedSymbol}-3.24.0.md`,
+      fileName: `analyzerx-${report.resolvedSymbol}-3.25.0.pdf`,
+      markdownFileName: `analyzerx-${report.resolvedSymbol}-3.25.0.md`,
       format: "pdf",
       content: markdown,
       pdfBase64: "",
@@ -533,13 +545,19 @@ const HANDLERS: Record<string, Handler> = {
       fisher: "Fisher scuttlebutt",
       "small-cap-compounder": "Small-cap compounder",
     };
-    const universe = await nseUniverse();
+    // Was the NSE universe with fundamentals pinned to "IN", so this screen screened
+    // Indian companies for every market. It now screens the requested market's own
+    // universe.
+    const requestedMarket = market(input);
+    const universe = requestedMarket === "IN"
+      ? await nseUniverse()
+      : { securities: seedUniverseForMarket(requestedMarket).map((symbol) => ({ symbol, name: symbol, industry: null })), errors: [] as string[] };
     const sample = universe.securities.slice(0, 15);
     const signals = (
       await Promise.all(
         sample.map(async (security) => {
           try {
-            const analysis = await fundamentals(security.symbol, "IN");
+            const analysis = await fundamentals(security.symbol, requestedMarket);
             return {
               symbol: security.symbol,
               name: security.name,
@@ -566,7 +584,7 @@ const HANDLERS: Record<string, Handler> = {
       sectors,
       signals,
       candidates: signals,
-      note: "Rule-based screen over reported annual fundamentals for a sample of the NSE universe; not a prediction of returns.",
+      note: `Rule-based screen over reported annual fundamentals for a sample of the ${requestedMarket} universe; not a prediction of returns.`,
     };
   },
   "market.derivatives": async (input) => ({
@@ -608,10 +626,10 @@ const HANDLERS: Record<string, Handler> = {
     if (!id) return null;
     const archived = await queryArchive({ limit: 2000 });
     const found = archived.articles.find((article) => article.id === id);
-    if (found) return toArchiveArticle(found);
+    if (found) return toArchiveArticle(found, market(input));
     const live = await marketNews(market(input), 200).catch(() => ({ articles: [] as NewsArticle[] }));
     const liveMatch = live.articles.find((article) => article.id === id);
-    return liveMatch ? toArchiveArticle(liveMatch) : null;
+    return liveMatch ? toArchiveArticle(liveMatch, market(input)) : null;
   },
   "news.archive": async (input) => {
     const days = Number(input?.days ?? 30) || 30;
@@ -637,7 +655,7 @@ const HANDLERS: Record<string, Handler> = {
       offset: (Number(input?.page ?? 0) || 0) * (Math.min(500, Number(input?.limit ?? 200) || 200)),
     });
 
-    let articles = stored.articles.map(toArchiveArticle);
+    let articles = stored.articles.map((article) => toArchiveArticle(article, market(input)));
     let total = stored.total;
     let returned = stored.returned;
     let hasMore = stored.hasMore;
@@ -652,7 +670,7 @@ const HANDLERS: Record<string, Handler> = {
       const live = symbol
         ? payload.articles.filter((a) => a.symbol === symbol || a.headline.toUpperCase().includes(symbol.toUpperCase()))
         : payload.articles;
-      articles = live.map((a) => toArchiveArticle({ ...a, collectedAt: nowIso() }));
+      articles = live.map((a) => toArchiveArticle({ ...a, collectedAt: nowIso() }, market(input)));
       total = live.length;
       returned = live.length;
       hasMore = false;
