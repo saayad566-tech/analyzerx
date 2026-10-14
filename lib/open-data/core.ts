@@ -383,7 +383,7 @@ export function isIndexSymbol(symbol: string) {
 }
 
 /** Map an app symbol to the Yahoo Finance ticker for a given market. */
-export function toYahooSymbol(symbol: string, marketId: MarketId = "IN"): string {
+export function toYahooSymbol(symbol: string, marketId: MarketId): string {
   const clean = symbol.trim().toUpperCase();
   if (!clean) return clean;
   if (isIndexSymbol(clean)) return clean;
