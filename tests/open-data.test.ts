@@ -184,7 +184,7 @@ describe("open-data live sources (contract + availability)", () => {
   }, NETWORK_TIMEOUT);
 
   it("returns well-formed news", async () => {
-    const news = await stockNews("RELIANCE", 10);
+    const news = await stockNews("RELIANCE", 10, "IN");
     expect(Array.isArray(news.articles)).toBe(true);
     expect(news).toHaveProperty("freshArticleCount");
     for (const article of news.articles.slice(0, 3)) {
@@ -362,7 +362,7 @@ describe("local tRPC link resolves every screen path without a server", () => {
   }, NETWORK_TIMEOUT);
 
   it("records which news providers answered (multi-feed redundancy)", async () => {
-    const news = await stockNews("RELIANCE", 20);
+    const news = await stockNews("RELIANCE", 20, "IN");
     expect(Array.isArray(news.chain)).toBe(true);
     expect((news.chain ?? []).length).toBeGreaterThanOrEqual(3);
     // Every configured feed is attempted; at least one must supply coverage.
