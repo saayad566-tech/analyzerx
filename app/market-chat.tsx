@@ -13,6 +13,7 @@ import { trpc } from "@/lib/trpc";
 import { clearMarketChatHistory, loadMarketChatHistory, loadMarketChatRuntimeMode, saveMarketChatHistory, saveMarketChatRuntimeMode, type LocalChatMessage, type MarketChatRuntimeMode } from "@/lib/local-preferences";
 import type { AnalyzerXAction, MarketChatAttachment } from "@/server/market-chat";
 import { getActiveLocalAIModelId, getLocalAIModel, getLocalAIRuntime, type LocalAIModelId } from "@/lib/local-ai";
+import { buildAppAwarenessAnswer } from "@/lib/assistant-app-awareness";
 import { buildBoundedLocalPrompt, formatAssistantFailure, isConnectedEngineConfigured, isGeneralChatQuestion, isCurrentDataQuestion, localPromptNotice, resolveMarketChatEngine, trimLocalHistory } from "@/lib/market-chat-runtime";
 import { createStreamingSanitizer, sanitizeAssistantOutput } from "@/lib/assistant-output";
 import { humanize } from "@/lib/safe-text";
@@ -192,6 +193,27 @@ export default function MarketChatScreen() {
     const next = retryFailureId ? baseMessages : [...baseMessages, userMessage];
     setMessages(next); setDraft(""); setAttachments([]);
     try {
+      // App questions — where a feature is, how to open it, what it does — are answered
+      // from the verified app inventory, with no model call and no data request. This is
+      // what stops "Show me where Market Flows is" being routed to the data path and
+      // answered with "live market data required". A data question returns null here and
+      // continues down the normal pipeline untouched.
+      const appAnswer = attachmentSnapshot.length ? null : buildAppAwarenessAnswer(question);
+      if (appAnswer) {
+        const assistantMessage: ChatItem = {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: appAnswer.answer,
+          confidence: "high",
+          limitations: ["Answered from AnalyzerX's own screen inventory, so it needs no market data."],
+        };
+        const completed = [...next, assistantMessage];
+        setMessages(completed);
+        await saveMarketChatHistory(completed);
+        // "Open Market Flows" navigates directly, because the route is verified.
+        if (appAnswer.route) router.push(appAnswer.route as never);
+        return;
+      }
       if (useLocal) {
         const generalQuestion = isGeneralChatQuestion(question);
         const grounded = generalQuestion ? null : await ground.mutateAsync({ message: question || "Summarize the supplied market context.", marketId });
