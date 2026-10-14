@@ -126,7 +126,7 @@ function technicalsFrom(closes: number[], currentPrice: number | null): Technica
  * Main builder
  * ------------------------------------------------------------------ */
 
-export async function buildFundamentalAnalysis(symbol: string, marketId: MarketId = "IN"): Promise<FundamentalAnalysis> {
+export async function buildFundamentalAnalysis(symbol: string, marketId: MarketId): Promise<FundamentalAnalysis> {
   const yahooSymbol = toYahooSymbol(symbol, marketId);
   const market = getMarketProfile(marketId);
   const currency = currencyForMarket(marketId);
