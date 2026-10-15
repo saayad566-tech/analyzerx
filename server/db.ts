@@ -1,9 +1,10 @@
 import mysql from "mysql2";
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
-import { and, desc, eq, gte, like, lt, or, sql } from "drizzle-orm";
-import { AutonomousRecommendation, Entity, EventProjection, InsertAutonomousRecommendation, InsertEntity, InsertEventProjection, InsertFundamentalObservation, InsertMarketObservation, InsertNewsEvent, InsertPushToken, InsertSmartAlertResult, InsertSourceRecord, InsertUser, InsertUserAlertResult, InsertUserNotificationPreferences, InsertUserSavedResearch, autonomousRecommendations, entities, eventProjections, fundamentalObservations, heldNewsArticles, marketObservations, newsEvents, newsRelevanceFeedback, pushTokens, smartAlertResults, sourceRecords, providerHealthHistory, users, userAlertResults, userAlertRules, userNotificationPreferences, userPushTokens, userSavedResearch, userSavedScreens, userWatchlistItems, userMarketPreferences, researchRuns, researchAgentRuns, type UserMarketPreference, type InsertResearchRun, type InsertResearchAgentRun, type InsertProviderHealthHistory, type InsertNewsRelevanceFeedback, type InsertHeldNewsArticle, type UserNotification, type InsertUserNotification, userNotifications } from "../drizzle/schema";
+import { and, asc, desc, eq, gte, like, lt, or, sql } from "drizzle-orm";
+import { AutonomousRecommendation, Entity, EventProjection, InsertAutonomousRecommendation, InsertEntity, InsertEventProjection, InsertFundamentalObservation, InsertMarketObservation, InsertNewsEvent, InsertPushToken, InsertSmartAlertResult, InsertSourceRecord, InsertUser, InsertUserAlertResult, InsertUserNotificationPreferences, InsertUserSavedResearch, autonomousRecommendations, entities, eventProjections, fundamentalObservations, heldNewsArticles, marketObservations, newsEvents, newsRelevanceFeedback, pushTokens, smartAlertResults, sourceRecords, providerHealthHistory, users, userAlertResults, userAlertRules, userNotificationPreferences, userPushTokens, userSavedResearch, userSavedScreens, userWatchlistItems, userMarketPreferences, researchRuns, researchAgentRuns, type UserMarketPreference, type InsertResearchRun, type InsertResearchAgentRun, type InsertProviderHealthHistory, type InsertNewsRelevanceFeedback, type InsertHeldNewsArticle, type UserNotification, type InsertUserNotification, type PushToken, userNotifications } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { normalizePushTokenPage } from "./push-batching";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: mysql.Pool | null = null;
@@ -283,10 +284,18 @@ export async function upsertPushToken(token: InsertPushToken): Promise<boolean> 
   return true;
 }
 
-export async function getEnabledPushTokens() {
+/**
+ * Enabled push tokens, read in bounded pages.
+ *
+ * This used to load every enabled token across every user in one unbounded query. It is now
+ * paginated so memory stays flat as the device count grows; callers loop over the pages.
+ * Ordered by the token primary key so pages are stable between calls.
+ */
+export async function getEnabledPushTokens(options: { limit?: number; offset?: number } = {}): Promise<PushToken[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(pushTokens).where(eq(pushTokens.enabled, true));
+  const { limit, offset } = normalizePushTokenPage(options);
+  return db.select().from(pushTokens).where(eq(pushTokens.enabled, true)).orderBy(asc(pushTokens.token)).limit(limit).offset(offset);
 }
 
 export async function upsertSmartAlertResult(result: InsertSmartAlertResult): Promise<boolean> {
