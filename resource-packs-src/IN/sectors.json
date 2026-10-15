@@ -1,0 +1,30 @@
+[
+  {
+    "name": "Renewable energy",
+    "score": 92,
+    "activity": "6 linked events",
+    "color": "#F4B860",
+    "note": "Order-to-capex chains accelerating"
+  },
+  {
+    "name": "Capital goods",
+    "score": 84,
+    "activity": "4 linked events",
+    "color": "#4FD1C5",
+    "note": "Government order momentum"
+  },
+  {
+    "name": "Defence",
+    "score": 78,
+    "activity": "9 linked events",
+    "color": "#A78BFA",
+    "note": "Supplier discovery widening"
+  },
+  {
+    "name": "Railways",
+    "score": 74,
+    "activity": "3 linked events",
+    "color": "#FB7185",
+    "note": "Execution signals improving"
+  }
+]
