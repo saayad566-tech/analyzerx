@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";
 import { useMarketContext } from "@/lib/market-context";
+import { fireAndForget } from "@/lib/fire-and-forget";
 
 const amber = "#F4B860";
 const teal = "#4FD1C5";
@@ -157,8 +158,8 @@ export default function StorylinesScreen() {
             accessibilityRole="button"
             accessibilityLabel="Refresh news"
             onPress={() => {
-              void archiveQuery.refetch();
-              void eventsQuery.refetch();
+              fireAndForget(archiveQuery.refetch(), "archiveQuery.refetch");
+              fireAndForget(eventsQuery.refetch(), "eventsQuery.refetch");
             }}
           >
             <Ionicons name="refresh-outline" size={19} color="#F4F7FB" />
