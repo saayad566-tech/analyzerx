@@ -1,0 +1,44 @@
+[
+  {
+    "id": "story-1",
+    "title": "L&T ↔ Waaree: green hydrogen chain",
+    "subtitle": "Partnership → order → capacity → investment",
+    "score": 94,
+    "eventCount": 4,
+    "window": "24h",
+    "entities": [
+      "LT",
+      "WAAREEENER",
+      "Kandla",
+      "Sanand"
+    ],
+    "status": "Developing"
+  },
+  {
+    "id": "story-2",
+    "title": "Titagarh: rail execution cycle",
+    "subtitle": "Government order → manufacturing throughput",
+    "score": 89,
+    "eventCount": 2,
+    "window": "7d",
+    "entities": [
+      "TITAGARH",
+      "Indian Railways"
+    ],
+    "status": "Confirmed"
+  },
+  {
+    "id": "story-3",
+    "title": "Defence suppliers: order spillover",
+    "subtitle": "Prime contractor → tier-2 beneficiaries",
+    "score": 81,
+    "eventCount": 6,
+    "window": "30d",
+    "entities": [
+      "HAL",
+      "BEL",
+      "MIDHANI"
+    ],
+    "status": "Watch"
+  }
+]
