@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 import { router } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { WebCalendarRangePicker } from "@/components/web-calendar-range-picker";
 import { ScreenContainer } from "@/components/screen-container";
