@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -7,6 +7,10 @@ import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { useMarketContext } from "@/lib/market-context";
+import { getMarketProfile } from "@/lib/market-regions";
+import { entriesFromRun, type LedgerSummary } from "@/lib/quant/ledger";
+import { loadLedger, recordEntries, summarize } from "@/lib/quant-ledger";
 import { BACKTEST_CAVEAT, COMPLIANCE_NOTICE } from "@/lib/quant/compliance";
 import { DEFAULT_BACKTEST_CONFIG, runBacktestAsync, type BacktestProgress, type BacktestResult } from "@/lib/quant/backtest";
 import { describeSeries, parseOhlcv } from "@/lib/quant/ohlcv";
@@ -55,6 +59,8 @@ function demoSeries(bars = 600): Candle[] {
 export default function QuantLabScreen() {
   // A strategy chosen in the Book Strategy Library arrives here as a prompt.
   const params = useLocalSearchParams<{ prompt?: string }>();
+  const { marketId } = useMarketContext();
+  const [ledgerSummary, setLedgerSummary] = useState<LedgerSummary | null>(null);
   const [rawData, setRawData] = useState("");
   const [prompt, setPrompt] = useState(typeof params.prompt === "string" && params.prompt.trim() ? params.prompt : "ema 20/50 crossover");
   const [startingCapital, setStartingCapital] = useState(String(DEFAULT_BACKTEST_CONFIG.startingCapital));
@@ -69,6 +75,18 @@ export default function QuantLabScreen() {
   const [tracker, setTracker] = useState<TrackerRun | null>(null);
   const [error, setError] = useState<string | null>(null);
   const lastPaint = useRef(0);
+
+  // Load the durable ledger for the active market whenever that market changes.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const entries = await loadLedger();
+      if (!cancelled) setLedgerSummary(summarize(entries, marketId));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [marketId]);
 
   const spec = useMemo(() => generateStrategyFromPrompt(prompt), [prompt]);
   const series = useMemo(() => (candles ? describeSeries(candles) : null), [candles]);
@@ -163,7 +181,19 @@ export default function QuantLabScreen() {
       });
       setResult(outcome);
       // The tracker follows the same strategy output under the dynamic trailing stop-loss ladder.
-      setTracker(trackStrategy(candles, spec, DEFAULT_TRACKER_CONFIG, config));
+      const tracked = trackStrategy(candles, spec, DEFAULT_TRACKER_CONFIG, config);
+      setTracker(tracked);
+      // Record the tracked output in the durable ledger, scoped to the active market.
+      const recorded = await recordEntries(
+        entriesFromRun(tracked, {
+          strategyId: spec.name,
+          strategyName: spec.name,
+          marketId,
+          symbol: "SERIES",
+          times: candles.map((candle) => candle.time),
+        }),
+      );
+      setLedgerSummary(summarize(recorded, marketId));
       setLiveLog(outcome.log.slice(-8).map((entry) => `#${entry.index} ${entry.event}: ${entry.detail}`));
     } catch (caught) {
       setError(`The backtest could not complete: ${caught instanceof Error ? caught.message : String(caught)}`);
@@ -363,6 +393,38 @@ export default function QuantLabScreen() {
                     </View>
                   ))
                 )}
+              </View>
+            ) : null}
+
+            {ledgerSummary && ledgerSummary.overall.trades > 0 ? (
+              <View style={styles.card}>
+                <Text style={styles.cardLabel}>6 · LEDGER — ACROSS STRATEGIES ({getMarketProfile(marketId).country})</Text>
+                <Text style={styles.meta}>
+                  {ledgerSummary.overall.trades} tracked position(s) across {ledgerSummary.strategyCount} strateg{ledgerSummary.strategyCount === 1 ? "y" : "ies"} and {ledgerSummary.symbolCount} symbol(s). This ledger persists between sessions and is scoped to the active market.
+                </Text>
+                <View style={styles.metricGrid}>
+                  <Metric label="Win rate" value={`${ledgerSummary.overall.winRatePct.toFixed(1)}%`} tone={ledgerSummary.overall.winRatePct >= 50 ? teal : coral} />
+                  <Metric label="Avg return" value={`${ledgerSummary.overall.averageReturnPct.toFixed(2)}%`} />
+                  <Metric label="Median" value={`${ledgerSummary.overall.medianReturnPct.toFixed(2)}%`} />
+                  <Metric label="Profit factor" value={ledgerSummary.overall.profitFactor === null ? "n/a" : ledgerSummary.overall.profitFactor.toFixed(2)} />
+                  <Metric label="Best" value={`${ledgerSummary.overall.bestReturnPct.toFixed(2)}%`} tone={teal} />
+                  <Metric label="Worst" value={`${ledgerSummary.overall.worstReturnPct.toFixed(2)}%`} tone={coral} />
+                  <Metric label="Avg bars" value={ledgerSummary.overall.averageBarsHeld.toFixed(1)} />
+                  <Metric label="Avg MFE" value={`${ledgerSummary.overall.averageMfePct.toFixed(1)}%`} />
+                  <Metric label="Avg MAE" value={`${ledgerSummary.overall.averageMaePct.toFixed(1)}%`} tone={coral} />
+                </View>
+                {ledgerSummary.byStrategy.map((row) => (
+                  <View key={row.strategyId} style={styles.tradeRow}>
+                    <Text style={[styles.tradeSide, { color: row.averageReturnPct >= 0 ? teal : coral }]}>{row.trades}</Text>
+                    <Text style={styles.tradeText} numberOfLines={2}>
+                      {row.strategyName} · {row.winRatePct.toFixed(0)}% win · avg {row.averageReturnPct.toFixed(2)}% · best {row.bestReturnPct.toFixed(1)}% · worst {row.worstReturnPct.toFixed(1)}%
+                    </Text>
+                    <Text style={[styles.tradePnl, { color: row.averageReturnPct >= 0 ? teal : coral }]}>
+                      {row.averageReturnPct >= 0 ? "+" : ""}
+                      {row.averageReturnPct.toFixed(2)}%
+                    </Text>
+                  </View>
+                ))}
               </View>
             ) : null}
 
