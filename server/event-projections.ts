@@ -40,6 +40,7 @@ export async function projectArticle(article: ExtractedNews, sourceRecordId?: st
     sourceRecordId: sourceRecordId ?? null,
     sourceUrl: article.url,
     sourceKey: article.source.slice(0, 64),
+    marketId: article.marketId ?? "IN",
     eventAt: safeEventAt,
     detectedAt,
     staleAt: new Date(safeEventAt.getTime() + 30 * 86_400_000),
