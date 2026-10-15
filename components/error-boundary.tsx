@@ -2,6 +2,7 @@ import React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { logCrash } from "@/lib/activity-log";
+import { fireAndForget } from "@/lib/fire-and-forget";
 
 /**
  * Crash containment and self-recovery.
@@ -54,9 +55,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
     };
     this.setState({ componentStack: crash.componentStack, crash });
     // Persist for later inspection; never let logging itself throw.
-    void AsyncStorage.setItem(CRASH_KEY, JSON.stringify(crash)).catch(() => undefined);
+    fireAndForget(AsyncStorage.setItem(CRASH_KEY, JSON.stringify(crash)).catch(() => undefined), "AsyncStorage.setItem");
     // Record the failure in the plain-English activity log so it can be read in Diagnostics.
-    void logCrash(crash.message, crash.componentStack ?? crash.stack ?? undefined).catch(() => undefined);
+    fireAndForget(logCrash(crash.message, crash.componentStack ?? crash.stack ?? undefined).catch(() => undefined), "logCrash");
   }
 
   private reset = () => {
