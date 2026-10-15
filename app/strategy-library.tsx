@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import * as Clipboard from "expo-clipboard";
+import * as Clipboard from "@/lib/platform/clipboard";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useMarketContext } from "@/lib/market-context";
