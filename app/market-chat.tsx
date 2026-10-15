@@ -4,7 +4,7 @@ import { router, useFocusEffect } from "expo-router";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import * as ImagePicker from "expo-image-picker";
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
-import * as FileSystem from "expo-file-system/legacy";
+import * as FileSystem from "@/lib/platform/file-system";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";
 import { clearMarketChatHistory, loadMarketChatHistory, loadMarketChatRuntimeMode, saveMarketChatHistory, saveMarketChatRuntimeMode, type LocalChatMessage, type MarketChatRuntimeMode } from "@/lib/local-preferences";
