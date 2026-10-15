@@ -41,3 +41,46 @@
 ### Next
 - On a device/CI: install the packs end-to-end, then run the market-switch smoke path
   (IN → US → GB) on Live, Sectors, Flows, Screener and Graph.
+
+## 2026-10-15 — Session 2 (A-to-Z audit pass)
+Triggered by the "Ultimate Full-Stack Audit" brief.
+
+### Audit results
+- **Lazy/placeholder code:** 0 `TODO`/`FIXME`/`@ts-ignore`/`@ts-nocheck` in app code. Clean.
+- **Safe area / layout:** every screen uses `ScreenContainer`/SafeArea; no missing insets. The one
+  apparent gap (`app/(tabs)/assistant.tsx`) is a re-export of `market-chat.tsx`, which is correct.
+  `width: 318` is a horizontal-carousel card, not a root container — not a defect.
+- **Error containment:** `ErrorBoundary` is wired into the root layout and is well built.
+- **Hardcoded secrets:** none found.
+- **`any`:** 13 occurrences, all in vendor-style scaffolding (`lib/_core/*`, `server/_core/*`) parsing
+  external payloads. Left alone deliberately (see KNOWN_ISSUES K10).
+
+### Defects found and fixed
+1. **Security — credential in logs.** `lib/_core/auth.ts` logged a **20-character prefix of the
+   session token**, contradicting the file's own policy comment. Removed: presence only.
+2. **Security — PII in logs.** The same file logged the **entire user object** (which carries
+   `email`) on read and write. Now logs a non-identifying fact only.
+3. **Broken UI promise.** `components/error-boundary.tsx` told the user a crash "can be reviewed in
+   Diagnostics", but **no Diagnostics screen existed** and `loadLastCrash` had no consumer. Built it.
+4. **Missing plain-English logging.** No `AI_RND_Activity_Log.txt` and no activity log existed.
+
+### Added
+- `lib/activity-log-core.ts` — pure: redaction, plain-English error phrasing, formatting, bounded
+  ring buffer, issue-report builder. 15 tests.
+- `lib/activity-log.ts` — device layer: AsyncStorage + `AI_RND_Activity_Log.txt` mirror (debounced),
+  export, clear. Never throws.
+- `app/diagnostics.tsx` — the Diagnostics screen: last crash, the activity log, export, copy bug
+  report, clear, and the on-device file path. Reachable from Account → Diagnostics.
+- ErrorBoundary now records crashes into the plain-English log.
+
+### Verified (evidence)
+- `tsc --noEmit`: **0 errors**.
+- activity-log **15/15**, resource-packs 22/22, market-dataset-isolation 12/12, market-data 8/8,
+  market-isolation 32/32, market-regions 4/4, sector-intelligence 4/4, news-market-isolation-dedup 3/3.
+- The redaction tests caught two real gaps in my own first attempt (2-segment JWTs and bare
+  20–39-character tokens leaked) — rules strengthened until green.
+
+### Note on the brief
+"Sandbox bypass via simulation" is **not** applied to results: nothing simulated is presented as a
+real fix. Mocks are used only inside tests, where they belong. Physical-device APK QA and live
+credentialed providers remain environment-gated and are reported as such, not faked.
