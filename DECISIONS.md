@@ -49,3 +49,24 @@ into the original record, so a published suggestion stays exactly as published.
 Moved from `lib/resource-packs/hash.ts` to `packages/quant-engine/src/hash.ts` so the resource-pack
 integrity path and the signal chain share one implementation, and so the dependency direction stays
 one-way (app → packages). The old path is a shim; its tests passing is the proof the move is clean.
+
+## D-015 — Expo removal is a migration, not a cleanup (scoped, not executed)
+**Measured state.** 28 expo-family dependencies; 58 files importing expo/@expo; expo-router drives
+navigation across 39 screens; expo-file-system backs the ledger, activity log, resource packs and
+signal history; expo-secure-store backs auth; expo-notifications backs push.
+
+**The cost premise does not hold.** No EAS command appears in any workflow or script. The APK is built
+by `./gradlew assembleRelease` against the committed `android/` project — a bare Gradle build with no
+Expo account and no paid service. `eas.json` is inert (referenced only by a config-validation script).
+The expo npm packages are MIT-licensed libraries, not services.
+
+**Why it was not executed.** Deleting these packages without bare replacements leaves a codebase that
+cannot build. A partial removal is worse than either end state, so it is not performed.
+
+**Migration outline if it is still wanted.** 1) Replace expo-router with React Navigation (every screen
+and the file-based route tree). 2) Replace expo-file-system / expo-secure-store with react-native-fs /
+MMKV or AsyncStorage + a keystore module. 3) Replace expo-notifications with a direct FCM client.
+4) Swap metro.config.js off `expo/metro-config`, babel off `babel-preset-expo`, and nativewind off
+`nativewind/metro`. 5) Replace `expo lint` with a plain ESLint config. 6) Re-point the build workflow
+and remove app.config.ts/eas.json. This is a multi-session migration that must be verified on a runner
+with an Android toolchain.
