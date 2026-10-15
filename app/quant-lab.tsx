@@ -3,6 +3,8 @@ import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, T
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { DEFAULT_BACKTEST_CONFIG, runBacktestAsync, type BacktestProgress, type BacktestResult } from "@/lib/quant/backtest";
@@ -93,6 +95,26 @@ export default function QuantLabScreen() {
     loadText(value, "Pasted data");
   };
 
+  const onPickFile = async () => {
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({
+        type: ["text/csv", "text/plain", "application/json", "text/comma-separated-values", "*/*"],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (picked.canceled) return;
+      const asset = picked.assets?.[0];
+      if (!asset?.uri) {
+        setError("No file was selected.");
+        return;
+      }
+      const content = await FileSystem.readAsStringAsync(asset.uri);
+      loadText(content, asset.name ?? "Selected file");
+    } catch (caught) {
+      setError(`Could not read that file: ${caught instanceof Error ? caught.message : String(caught)}`);
+    }
+  };
+
   const onDemo = () => {
     const series = demoSeries();
     setCandles(series);
@@ -165,7 +187,7 @@ export default function QuantLabScreen() {
           <TextInput
             value={rawData}
             onChangeText={(value) => loadText(value, "Pasted data")}
-            placeholder="Paste CSV or JSON: time,open,high,low,close,volume"
+            placeholder="Paste CSV or JSON, or choose a file: time,open,high,low,close,volume"
             placeholderTextColor="#5C6B80"
             multiline
             style={styles.textArea}
@@ -173,6 +195,7 @@ export default function QuantLabScreen() {
             autoCorrect={false}
           />
           <View style={styles.row}>
+            <SmallButton icon="document-outline" label="Choose CSV / JSON" onPress={() => void onPickFile()} tone={teal} />
             <SmallButton icon="clipboard-outline" label="Paste from clipboard" onPress={() => void onPaste()} />
             <SmallButton icon="flask-outline" label="Load demo series" onPress={onDemo} tone={violet} />
           </View>
