@@ -32,6 +32,7 @@ import {
 } from "./engine";
 import { NSE_INDEX_FILES, type NewsArticle } from "./sources";
 import { requireMarketId, getMarketProfile } from "../market-regions";
+import { sectorNamesForMarket } from "../market-sector-universe";
 import { seedUniverseForMarket } from "../market-universe";
 import { queryArchive, storeStats } from "./store";
 import { FALLBACK_UNIVERSE } from "./universe-fallback";
@@ -443,7 +444,8 @@ const HANDLERS: Record<string, Handler> = {
     return { ...result, note: result.peers.length ? result.comparisonBasis : "No peer set was found for this symbol from the NSE index lists." };
   },
   "market.multiAssetTiming": (input) => multiAssetTiming(market(input)),
-  "market.sectorNames": () => Object.keys(NSE_INDEX_FILES).map((key) => key.replace(/^NIFTY/, "").replace(/([A-Z]+)/g, (m) => m[0] + m.slice(1).toLowerCase())),
+  // Was NSE-only for every market. Now derived from the requested market's own universe.
+  "market.sectorNames": (input) => sectorNamesForMarket(market(input)),
   "market.officialFilingLinks": (input) => ({ links: officialFilingLinks(str(input, "symbol")), note: "Official regulator and exchange filing entry points; no scraping is performed." }),
   "market.filings": async (input) => ({ symbol: str(input, "symbol"), records: [], entryLinks: officialFilingLinks(str(input, "symbol")) }),
   "market.history": (input) => priceHistory(str(input, "symbol"), str(input, "range", "6mo"), str(input, "interval", "1d"), market(input)),
@@ -527,8 +529,8 @@ const HANDLERS: Record<string, Handler> = {
       symbol: report.resolvedSymbol,
       marketId,
       marketLabel: report.market.country,
-      fileName: `analyzerx-${report.resolvedSymbol}-3.33.0.pdf`,
-      markdownFileName: `analyzerx-${report.resolvedSymbol}-3.33.0.md`,
+      fileName: `analyzerx-${report.resolvedSymbol}-3.34.0.pdf`,
+      markdownFileName: `analyzerx-${report.resolvedSymbol}-3.34.0.md`,
       format: "pdf",
       content: markdown,
       pdfBase64: "",
