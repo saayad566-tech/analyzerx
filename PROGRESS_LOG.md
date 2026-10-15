@@ -766,3 +766,36 @@ append to a partial file. Recorded as K46 — a real change, not a silent one.
 ### Verified
 - `tsc --noEmit`: 0 errors in both scopes. **293 tests passing.** `--frozen-lockfile` passes.
 - The frozen check caught that packages were removed from `package.json` before the lockfile was synced.
+
+## 2026-10-15 — Session 20 (Stage 3: expo-router → React Navigation)
+`expo-router` is gone. 43 files consumed it; the approach was a compatibility layer, not a rewrite.
+
+### Why a compatibility layer
+The screens used a small API: `router` (35 uses), `useLocalSearchParams` (9), `useRouter` (3),
+`useFocusEffect` (2), `usePathname`, `Link`, `Href`. Re-expressing 39 screens as a navigator tree would
+have been a large, behaviourally risky rewrite of code that was already correct. Instead
+`lib/navigation/router.tsx` presents that exact API on top of React Navigation, so every screen changed
+only its import line.
+
+### The route tree
+- `lib/navigation/routes.ts` — generated registry. expo-router derived routes from the file tree; RN has
+  no dynamic require, so the URL→screen map is explicit: 39 screens → 47 paths, with `(group)` segments
+  transparent exactly as expo-router treated them.
+- `lib/navigation/root-navigator.tsx` — the NavigationContainer and the root native stack, with the tab
+  navigator mounted as one `tabs` screen (the shape expo-router produced from `app/(tabs)/_layout.tsx`).
+- `app/(tabs)/_layout.tsx` — rewritten as an explicit bottom-tab navigator; tab set, titles, icons and
+  bar styling unchanged.
+- `app/_layout.tsx` — the `<Stack>` tree replaced by `<RootNavigator />`.
+
+### Fidelity details that matter
+- expo-router accepted both `router.push("/x")` and `router.push({ pathname, params })`. The shim accepts
+  both.
+- A tab path (e.g. `/alerts`) navigates **into the tab navigator** rather than pushing a second, non-tab
+  copy of the screen — matching expo-router's behaviour.
+- `CommonActions` has no `replace`; `StackActions.replace` does. Caught by tsc.
+- `lib/research-evidence-navigation.ts` typed a route as `Href` while passing the object form; corrected
+  to `HrefTarget`.
+
+### Verified
+- `tsc --noEmit`: **0 errors** in both scopes. **293 tests passing.** `--frozen-lockfile` passes.
+- **Expo-family dependencies: 25 → 10.**
