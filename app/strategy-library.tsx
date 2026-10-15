@@ -9,7 +9,9 @@ import { useMarketContext } from "@/lib/market-context";
 import { getMarketProfile } from "@/lib/market-regions";
 import { COMPLIANCE_NOTICE } from "@/lib/quant/compliance";
 import { parseFundamentals } from "@/lib/quant/fundamentals-io";
-import { describeRequirements, runLibraryEntry, type LibraryRun, type MarketUniverse } from "@/lib/quant/library-run";
+import { describeRequirements, runLibraryEntry, runModel, RUNNABLE_MODELS, type LibraryRun, type MarketUniverse, type ModelRun } from "@/lib/quant/library-run";
+import { MODEL_CATEGORIES, catalogueStats, modelsByCategory } from "@/lib/quant/model-catalogue";
+import type { Fundamentals } from "@/lib/quant/fundamentals";
 import { SUPPLY_CHAIN_THEMES, screenSupplyChain, themeRolesByLayer } from "@/lib/quant/supply-chain";
 import { FAMILY_LABELS, STRATEGY_LIBRARY, findLibraryEntry, libraryByFamily, libraryStats, type LibraryEntry, type StrategyFamily } from "@/lib/quant/strategy-library";
 
@@ -26,6 +28,13 @@ const divider = "#26364D";
 
 
 /** A small, clearly-labelled synthetic universe so the screens can be exercised offline. */
+function demoPriors(): Record<string, Fundamentals> {
+  return {
+    "DEMO-CHEAP": { symbol: "DEMO-CHEAP", netIncome: 70, totalAssets: 880, operatingCashFlow: 60, longTermDebt: 160, currentAssets: 420, currentLiabilities: 210, sharesOutstanding: 100, revenue: 860, grossProfit: 300, receivables: 180, costOfRevenue: 560, depreciation: 40, sellingGeneralAdmin: 80, propertyPlantEquipment: 260 },
+    "DEMO-COOL": { symbol: "DEMO-COOL", netIncome: 90, totalAssets: 2_100, operatingCashFlow: 80, longTermDebt: 300, currentAssets: 900, currentLiabilities: 400, sharesOutstanding: 40, revenue: 1_900, grossProfit: 700, receivables: 300, costOfRevenue: 1_200, depreciation: 60, sellingGeneralAdmin: 150, propertyPlantEquipment: 500 },
+  };
+}
+
 function demoUniverse(): MarketUniverse["companies"] {
   return [
     { symbol: "DEMO-CHEAP", name: "Demo Cheap Industrials", sector: "Capital goods", description: "industrial machinery and electrical equipment", price: 100, eps: 10, bookValuePerShare: 80, currentAssets: 500, currentLiabilities: 200, totalDebt: 100, equity: 400, marketCap: 1_000, netIncome: 80, ebit: 120, roic: 0.18, revenueGrowth: 0.14, epsGrowth: 0.16, operatingCashFlow: 75, totalAssets: 900 },
@@ -47,8 +56,13 @@ export default function StrategyLibraryScreen() {
   const [themeId, setThemeId] = useState(SUPPLY_CHAIN_THEMES[0].id);
   const [busy, setBusy] = useState(false);
 
+  const [modelId, setModelId] = useState<string>(RUNNABLE_MODELS[0]);
+
   const stats = useMemo(() => libraryStats(), []);
   const groups = useMemo(() => libraryByFamily(), []);
+  const modelStats = useMemo(() => catalogueStats(), []);
+  const modelGroups = useMemo(() => modelsByCategory(), []);
+  const modelRun = useMemo<ModelRun | null>(() => runModel(modelId, { marketId, universe }), [modelId, marketId, universe]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -75,7 +89,7 @@ export default function StrategyLibraryScreen() {
       return;
     }
     // Tag with the market active at load time; if the market later changes, the runner refuses.
-    setUniverse({ marketId, companies: parsed.companies });
+    setUniverse({ marketId, companies: parsed.companies, priors: parsed.priors });
     const parts = [`${label}: ${parsed.companies.length} company record(s), tagged ${getMarketProfile(marketId).country}.`];
     if (parsed.dropped > 0) parts.push(`${parsed.dropped} record(s) dropped.`);
     parts.push(...parsed.notes);
@@ -93,7 +107,7 @@ export default function StrategyLibraryScreen() {
 
   const onDemo = () => {
     setRaw("");
-    setUniverse({ marketId, companies: demoUniverse() });
+    setUniverse({ marketId, companies: demoUniverse(), priors: demoPriors() });
     setError(null);
     setDataNote(`Demo universe: 4 synthetic company records, tagged ${getMarketProfile(marketId).country}. These are NOT real company figures — they exist only to exercise the screens.`);
   };
@@ -170,6 +184,9 @@ export default function StrategyLibraryScreen() {
             <SmallButton icon="clipboard-outline" label="Paste from clipboard" onPress={() => void onPaste()} />
             <SmallButton icon="flask-outline" label="Load demo universe" onPress={onDemo} tone={violet} />
           </View>
+          <Text style={styles.note}>
+            Include a nested `prior` object on a record to enable the period-over-period models (Piotroski F-Score, Beneish M-Score).
+          </Text>
           {dataNote ? <Text style={styles.note}>{dataNote}</Text> : null}
         </View>
 
@@ -232,6 +249,57 @@ export default function StrategyLibraryScreen() {
             ) : null}
           </View>
         ) : null}
+
+        {/* Quantitative model catalogue and runner */}
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>MODEL CATALOGUE — {modelStats.implemented} OF {modelStats.total} RUNNABLE</Text>
+          <Text style={styles.meta}>
+            Every entry carries its actual formula. A model marked NOT IMPLEMENTED is one this engine does not run; it is labelled rather than given a plausible-looking formula.
+          </Text>
+          <View style={styles.chipRow}>
+            {[...RUNNABLE_MODELS].map((id) => (
+              <Chip key={id} label={id} active={id === modelId} onPress={() => setModelId(id)} tone={teal} />
+            ))}
+          </View>
+          {modelRun?.kind === "unavailable" ? <Text style={styles.warn}>{modelRun.reason}</Text> : null}
+          {modelRun?.kind === "scores" ? (
+            <View style={styles.resultBlock}>
+              <Text style={styles.resultHeading}>{modelRun.passed} of {modelRun.evaluated} passed · {modelRun.rows.length} scored</Text>
+              {modelRun.rows.map((row) => (
+                <View key={row.symbol} style={styles.screenRow}>
+                  <View style={styles.screenHead}>
+                    <Text style={styles.screenSymbol}>{row.symbol}</Text>
+                    <Text style={[styles.screenScore, { color: row.passed ? teal : muted }]}>{row.headline}</Text>
+                  </View>
+                  {row.components.slice(0, 9).map((component) => (
+                    <Text key={component.key} style={styles.criterion}>
+                      <Text style={{ color: component.met ? teal : coral }}>{component.met ? "✓" : "✗"} </Text>
+                      {component.label}{component.weight !== undefined ? ` (w ${component.weight})` : ""}
+                      {component.value === null ? " — not evaluable" : ` — ${component.value.toFixed(3)}`}
+                    </Text>
+                  ))}
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {modelGroups.map((group) => (
+            <View key={group.category} style={styles.resultBlock}>
+              <Text style={styles.resultHeading}>{group.category} · {MODEL_CATEGORIES[group.category]}</Text>
+              {group.models.map((model) => (
+                <View key={model.id} style={styles.modelRow}>
+                  <View style={[styles.badge, { borderColor: model.implemented ? teal : "#3A4A61" }]}>
+                    <Text style={[styles.badgeText, { color: model.implemented ? teal : muted }]}>{model.implemented ? "RUNNABLE" : "NOT IMPL"}</Text>
+                  </View>
+                  <Text style={styles.modelText}>
+                    <Text style={styles.modelName}>{model.name}</Text>
+                    {"\n"}{model.formula}
+                    {"\n"}{model.source}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
 
         {/* Picks & shovels */}
         <View style={styles.card}>
@@ -340,6 +408,9 @@ const styles = StyleSheet.create({
   screenSymbol: { color: text, fontSize: 12, fontWeight: "800" },
   screenScore: { fontSize: 11, fontWeight: "800" },
   criterion: { color: "#9FB0C4", fontSize: 9.5, lineHeight: 14, marginTop: 3 },
+  modelRow: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderTopWidth: 1, borderTopColor: "#1E2D42", paddingVertical: 8 },
+  modelText: { flex: 1, color: "#9FB0C4", fontSize: 9.5, lineHeight: 14 },
+  modelName: { color: text, fontSize: 11, fontWeight: "800" },
   errorBox: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#2A1520", borderWidth: 1, borderColor: "#5B2233", borderRadius: 12, padding: 11, marginTop: 14 },
   errorText: { flex: 1, color: "#F3B7C6", fontSize: 11, lineHeight: 16 },
 });
