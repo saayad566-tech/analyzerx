@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/hooks/use-auth";
 import { DEFAULT_MARKET_ID, getMarketProfile, type MarketId, type MarketProfile } from "@/lib/market-regions";
+import { fireAndForget } from "@/lib/fire-and-forget";
 
 const MARKET_PREFERENCE_KEY = "analyzerx.market.primary.v1";
 const MARKET_META_KEY = "analyzerx.market.primary.meta.v1";
@@ -53,7 +54,7 @@ export function MarketProvider({ children }: PropsWithChildren) {
     const remote = remotePreference.data;
     if (!remote) {
       setSyncStatus("syncing");
-      void syncMutation.mutateAsync({ marketId: localMeta.marketId, clientUpdatedAt: localMeta.updatedAt, clientRevision: localMeta.revision, clientWriter: "device" }).then((result) => setSyncStatus(result.conflict ? "conflict" : "synced")).catch(() => setSyncStatus("local"));
+      fireAndForget(syncMutation.mutateAsync({ marketId: localMeta.marketId, clientUpdatedAt: localMeta.updatedAt, clientRevision: localMeta.revision, clientWriter: "device" }).then((result) => setSyncStatus(result.conflict ? "conflict" : "synced")).catch(() => setSyncStatus("local")), "syncMutation.mutateAsync");
       return;
     }
     const remoteTime = new Date(remote.clientUpdatedAt).getTime();
@@ -64,11 +65,11 @@ export function MarketProvider({ children }: PropsWithChildren) {
       const nextMeta = { marketId: nextId, updatedAt: new Date(remote.clientUpdatedAt).toISOString(), revision: remote.revision } satisfies LocalMarketMeta;
       setMarketIdState(nextId);
       setLocalMeta(nextMeta);
-      void AsyncStorage.multiSet([[MARKET_PREFERENCE_KEY, nextId], [MARKET_META_KEY, JSON.stringify(nextMeta)]]);
+      fireAndForget(AsyncStorage.multiSet([[MARKET_PREFERENCE_KEY, nextId], [MARKET_META_KEY, JSON.stringify(nextMeta)]]), "AsyncStorage.multiSet");
       setSyncStatus(remote.conflictCount > 0 ? "conflict" : "synced");
     } else if (remote.marketId !== localMeta.marketId || remote.revision !== localMeta.revision) {
       setSyncStatus("syncing");
-      void syncMutation.mutateAsync({ marketId: localMeta.marketId, clientUpdatedAt: localMeta.updatedAt, clientRevision: localMeta.revision, clientWriter: "device" }).then((result) => setSyncStatus(result.conflict ? "conflict" : "synced")).catch(() => setSyncStatus("local"));
+      fireAndForget(syncMutation.mutateAsync({ marketId: localMeta.marketId, clientUpdatedAt: localMeta.updatedAt, clientRevision: localMeta.revision, clientWriter: "device" }).then((result) => setSyncStatus(result.conflict ? "conflict" : "synced")).catch(() => setSyncStatus("local")), "syncMutation.mutateAsync");
     } else {
       setSyncStatus(remote.conflictCount > 0 ? "conflict" : "synced");
     }
