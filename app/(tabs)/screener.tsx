@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
-import * as FileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
+import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
@@ -177,9 +175,11 @@ export default function ScreenerScreen() {
     const pool = query ? [...remote, ...localSearchDirectory] : localSearchDirectory;
     return rankStockMatches(pool, query, 12);
   }, [analysisQuery, localSearchDirectory, remoteSearch.data?.results]);
+  // `researchCandidates` derives from `marketId`, so it MUST be a dependency: without it, switching
+  // market left the previous market's candidates on screen until a filter changed.
   const filteredCandidates = useMemo(
     () => researchCandidates.filter((candidate) => passesResearchFilter(candidate, enabledFilters) && (!showOnlyEvidence || candidate.evidence.length > 0)),
-    [enabledFilters, showOnlyEvidence],
+    [researchCandidates, enabledFilters, showOnlyEvidence],
   );
   const toggleFilter = (filter: FilterKey) => setEnabledFilters((current) => current.includes(filter) ? current.filter((item) => item !== filter) : [...current, filter]);
   const selectStock = (stock: StockSearchResult) => { const symbol = normalizeStockSymbol(stock.symbol); setAnalysisQuery(symbol); setSelectedSymbol(symbol); setSelectedStock({ ...stock, symbol }); setRecentSearches((current) => [symbol, ...current.filter((item) => item !== symbol)].slice(0, 5)); void saveRecentSearch(symbol, recentSearches); };
@@ -200,7 +200,6 @@ export default function ScreenerScreen() {
   const derivatives = trpc.market.derivatives.useQuery({ symbol: selectedSymbol ?? "RELIANCE" }, { enabled: Boolean(selectedSymbol), retry: false, staleTime: 30_000 });
   const multibaggerSignals = trpc.market.multibaggerSignals.useQuery({ strategyId: selectedStrategyId }, { retry: false, staleTime: 900_000 });
   const multiAssetTiming = trpc.market.multiAssetTiming.useQuery(undefined, { retry: false, staleTime: 120_000 });
-  const reportExport = trpc.market.report.useQuery({ symbol: selectedSymbol ?? "RELIANCE", marketId }, { enabled: false, retry: false });
   const { width: viewportWidth } = useWindowDimensions();
   const peerComparison = trpc.market.peerComparison.useQuery({ symbol: selectedSymbol ?? "RELIANCE" }, { enabled: Boolean(selectedSymbol), retry: false, staleTime: 300_000 });
   const analysisStageState = selectedSymbol ? [
