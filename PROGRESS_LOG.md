@@ -329,3 +329,58 @@ also corrected where the peak bar's own low legitimately breached the new stop o
 (`metro`'s `runBuild`) works and **resolved my modules**, but the transform stage then hits the same
 WASM allocation ceiling on React Native's own polyfills. So: resolution is proven; a full bundle is
 not possible in this pod. The restructure therefore adds no new resolution behaviour.
+
+## 2026-10-15 — Session 9 (master directive: named models, catalogue, CI bundle verification)
+Read `Master_Strategy_Engine_Directive.pdf` (4 digital pages). Two things in it changed the plan:
+it endorses the workspace split, and it states that bundle verification belongs in CI
+(`expo export` on push) — which is the option offered at the end of session 8.
+
+### Built — the concrete models the directive names
+- `packages/quant-engine/src/scores.ts`:
+  - **Piotroski F-Score** — all nine signals (ROA>0, CFO>0, ΔROA>0, CFO>NI, Δleverage<0,
+    Δcurrent ratio>0, no issuance, Δgross margin>0, Δasset turnover>0), reporting how many were
+    actually evaluable.
+  - **Altman Z-Score** — the original five-variable Z plus the Z″ private/non-manufacturer variant,
+    with safe/grey/distress zones.
+  - **Beneish M-Score** — all eight variables (DSRI, GMI, AQI, SGI, DEPI, SGAI, TATA, LVGI) with the
+    published coefficients and the −1.78 flag.
+- `packages/quant-engine/src/risk.ts` (no linear-algebra dependency; solvers written out):
+  Kelly and fractional Kelly; **GARCH(1,1)** by Gaussian maximum likelihood with variance targeting;
+  **HRP** (correlation → distance → single-linkage quasi-diagonalisation → recursive bisection);
+  12-1 momentum; **Shiller CAPE** and its percentile; **yield-curve regime**; **Engle-Granger
+  cointegration** with an ADF test built on a Gaussian-elimination least-squares solver.
+- `packages/quant-engine/src/model-catalogue.ts` — the directive's five categories with the real
+  formula for every entry and an honest `implemented` flag. 49 models: 39 runnable, 10 labelled NOT
+  IMPLEMENTED with the reason (Johansen VECM, Fama-French portfolio construction, MVO, random
+  forests, VCP pattern detection, DCF, capital cycle, commodity cost curve, reflexivity,
+  deleveraging classifier).
+- `runModel()` in `library-run.ts` — runs Piotroski / Altman / Beneish over a market-scoped universe
+  with the same cross-market refusal as the book screens.
+- Prior-period support: `fundamentals-io` now parses a nested `prior` object so the
+  period-over-period models have the second period they need.
+- Supply chain: added the directive's **EV transition** and **energy grid overhaul** themes
+  (lithium/nickel/cobalt, rare-earth magnets, switchgear/transformers, HVDC, copper).
+- `.github/workflows/bundle-verify.yml` — installs with `--frozen-lockfile`, type-checks every
+  package and the app, runs the tests, then runs `pnpm build:web` (`expo export --platform web`) and
+  asserts the bundle produced output. This is the verification a memory-constrained sandbox cannot do.
+- Strategy Lab UI: a model catalogue browser with per-category formulas and RUNNABLE / NOT IMPL
+  badges, and a model runner showing each component with its value and weight.
+
+### Deliberately not done
+- **Moving the app to `apps/analyzerx`.** The directive names that path. The substance it asks for —
+  `packages/quant-engine` decoupled from the client app — is already true (one-way dependency,
+  separate package). Renaming the app directory would touch tsconfig paths, babel, metro config,
+  app.json, eas.json, the APK workflow and every shim, with no behaviour change. That risk buys
+  nothing, so it is recorded in DECISIONS.md rather than executed.
+- **Claiming 1,000 frameworks.** The catalogue is honest: 100 book references plus 49 named models,
+  39 of them runnable. The headline count is not the deliverable; the runnable maths is.
+
+### Verified
+- Per-package strict tsc: 0 errors. App + shims + packages in one scope: 0 errors.
+- **199 quant tests passing** (models + catalogue added 21).
+
+### Bugs my own tests caught
+- The floating-point bug pattern repeated in the model tests: `factorSpread` was asserted with exact
+  equality (`0.03 − 0.01 = 0.019999999999999997`). The test was wrong, not the code.
+- `MarketUniverse` had no `priors` field while the screen passed one; unified `ModelUniverse` into
+  `MarketUniverse` so there is a single universe shape.
