@@ -7,6 +7,7 @@ import {
   shillerCape, solveLeastSquares, yieldCurve,
 } from "../src/risk";
 import type { Fundamentals } from "../src/fundamentals";
+import { correlatedPair, noisyReturns, realisticCandles } from "./fixtures/market";
 
 /** Deterministic PRNG so every generated series is reproducible. */
 function rng(seed: number) {
@@ -274,12 +275,24 @@ describe("Hierarchical Risk Parity", () => {
     expect(weights.every((value) => value > 0)).toBe(true);
   });
 
-  it("builds a valid correlation matrix", () => {
-    const series = [Array.from({ length: 50 }, (_, i) => i), Array.from({ length: 50 }, (_, i) => i * 2)];
-    const correlation = correlationMatrix(series)!;
-    expect(correlation[0][0]).toBe(1);
-    expect(correlation[0][1]).toBeCloseTo(1, 6);
-    expect(correlation[1][0]).toBeCloseTo(1, 6);
+  it("builds a valid correlation matrix on noisy series", () => {
+    // A perfectly linear pair gives a correlation of exactly 1 and proves nothing about the estimator.
+    const { first, second } = correlatedPair(1_234, 250, 0.7);
+    const third = noisyReturns(4_321, 250);
+    const correlation = correlationMatrix([first, second, third])!;
+    for (let i = 0; i < 3; i += 1) expect(correlation[i][i]).toBeCloseTo(1, 10);
+    for (let i = 0; i < 3; i += 1) {
+      for (let j = 0; j < 3; j += 1) {
+        expect(correlation[i][j]).toBeCloseTo(correlation[j][i], 12);
+        expect(Math.abs(correlation[i][j])).toBeLessThanOrEqual(1);
+      }
+    }
+    // The pair shares a factor: high, but not artificially perfect.
+    expect(correlation[0][1]).toBeGreaterThan(0.5);
+    expect(correlation[0][1]).toBeLessThan(0.95);
+    // An independent series must not look correlated with either.
+    expect(Math.abs(correlation[0][2])).toBeLessThan(0.35);
+    expect(Math.abs(correlation[1][2])).toBeLessThan(0.35);
   });
 
   it("gives more weight to the less volatile asset", () => {
@@ -296,14 +309,25 @@ describe("Hierarchical Risk Parity", () => {
 });
 
 describe("momentum, valuation and macro", () => {
-  it("computes 12-1 momentum while skipping the most recent period", () => {
-    const closes = Array.from({ length: 300 }, (_, i) => 100 + i);
-    // start index 47 → 147, end index 278 → 378
-    expect(momentum12_1(closes)).toBeCloseTo(378 / 147 - 1, 6);
+  it("computes 12-1 momentum on a noisy uptrend and really skips the last period", () => {
+    const candles = realisticCandles({ seed: 7, bars: 320, startPrice: 100, drift: 0.002, baseVol: 0.012 });
+    const closes = candles.map((candle) => candle.close);
+    const momentum = momentum12_1(closes)!;
+    expect(momentum).toBeGreaterThan(0); // the drift dominates, but the path is noisy
+
+    // It must equal the definition exactly: from 252 bars back to 21 bars back, skipping the recent month.
+    expect(momentum).toBeCloseTo(closes[closes.length - 1 - 21] / closes[closes.length - 1 - 252] - 1, 10);
+
+    // And the skip must actually change the answer versus the raw 12-month return.
+    const rawTwelveMonth = closes[closes.length - 1] / closes[closes.length - 1 - 252] - 1;
+    expect(Math.abs(momentum - rawTwelveMonth)).toBeGreaterThan(1e-6);
   });
 
-  it("refuses a series that is too short", () => {
+  it("refuses a series that is too short, and accepts the exact boundary", () => {
     expect(momentum12_1([1, 2, 3])).toBeNull();
+    // 252 bars is one short of the minimum; 253 is exactly enough.
+    expect(momentum12_1(Array.from({ length: 252 }, (_, i) => 100 + i))).toBeNull();
+    expect(momentum12_1(Array.from({ length: 253 }, (_, i) => 100 + i))).not.toBeNull();
   });
 
   it("computes Shiller CAPE from ten-year average real earnings", () => {
