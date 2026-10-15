@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import * as Clipboard from "expo-clipboard";
 
 import { ScreenContainer } from "@/components/screen-container";
@@ -16,6 +16,7 @@ import {
 } from "@/lib/activity-log";
 import { ACTIVITY_LOG_FILENAME, formatEntry, type ActivityEntry, type ActivityLevel } from "@/lib/activity-log-core";
 import { fireAndForget } from "@/lib/fire-and-forget";
+import type { IoniconName } from "@/lib/icon-names";
 
 const panel = "#111C2D";
 const raised = "#17253A";
@@ -27,7 +28,7 @@ const coral = "#FB7185";
 const divider = "#26364D";
 
 const LEVEL_COLOR: Record<ActivityLevel, string> = { info: muted, success: teal, warning: amber, error: coral };
-const LEVEL_ICON: Record<ActivityLevel, keyof typeof Ionicons.glyphMap> = {
+const LEVEL_ICON: Record<ActivityLevel, IoniconName> = {
   info: "information-circle-outline",
   success: "checkmark-circle-outline",
   warning: "warning-outline",
@@ -195,7 +196,7 @@ export default function DiagnosticsScreen() {
   );
 }
 
-function ActionButton({ icon, label, onPress, tone = amber }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; tone?: string }) {
+function ActionButton({ icon, label, onPress, tone = amber }: { icon: IoniconName; label: string; onPress: () => void; tone?: string }) {
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.action, { borderColor: `${tone}55` }, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={label}>
       <Ionicons name={icon} size={17} color={tone} />
