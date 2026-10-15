@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import { ScreenContainer } from "@/components/screen-container";
 import { MARKETPLACE_TOOLS, assessMarketplaceTool, createFallbackMarketplaceProfile, type MarketplaceCategory, type MarketplaceHardwareProfile, type MarketplaceTool } from "@/lib/marketplace";
 import { LOCAL_AI_MODELS, downloadLocalAIModel, getLocalAIDeviceProfile, getLocalAIModelState, recommendLocalAIModel, type LocalAIDeviceProfile, type LocalAIModelId } from "@/lib/local-ai";
