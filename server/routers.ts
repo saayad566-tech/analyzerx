@@ -9,7 +9,7 @@ import { getProviderHealth } from "./provider-health";
 import { runProviderNow } from "./provider-actions";
 import { answerMarketChat, collectGroundedMarketContext, type MarketChatAttachment, type MarketChatMessage } from "./market-chat";
 import { answerGeneralChat, type GeneralChatMessage } from "./general-chat";
-import { fetchNseInstitutionalFlows, type FlowRange } from "./nse-flows";
+import { fetchNseInstitutionalFlows, unsupportedInstitutionalFlows, type FlowRange } from "./nse-flows";
 import { getLatestSourceRecords, getSourceRecordsForSymbol, getUserMarketPreference, upsertUserMarketPreference, saveNewsRelevanceFeedback, undoNewsRelevanceFeedback, listUserNewsRelevanceFeedback, listHeldNewsArticles, getHeldNewsArticle, reviewHeldNewsArticle, saveNewsEvent } from "./db";
 import { getSourceCatalog } from "./source-catalog";
 import { listUserNotifications, markUserNotificationRead, markAllUserNotificationsRead } from "./db";
@@ -274,7 +274,7 @@ export const appRouter = router({
     health: publicProcedure.query(() => getRuntimeHealth()),
   }),
   graph: router({
-    projection: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol.optional(), maxHops: z.number().int().min(1).max(2).default(2), limit: z.number().int().min(1).max(100).default(80) }).optional()).query(({ input }) => getRelationshipGraph(input?.symbol, input?.maxHops ?? 2, input?.limit ?? 80)),
+    projection: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol.optional(), maxHops: z.number().int().min(1).max(2).default(2), limit: z.number().int().min(1).max(100).default(80), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).optional() }).optional()).query(({ input }) => getRelationshipGraph(input?.symbol, input?.maxHops ?? 2, input?.limit ?? 80, input?.marketId)),
   }),
   events: router({
     latest: publicProcedure.input(z.object({ limit: z.number().int().min(1).max(500).default(100), lookbackDays: z.number().int().min(1).max(730).default(365) }).optional()).query(({ input }) => getLatestEventProjections(input?.limit ?? 100, input?.lookbackDays ?? 365)),
@@ -570,7 +570,14 @@ export const appRouter = router({
         },
       };
     }),
-    institutionalFlows: publicProcedure.input(z.object({ range: z.enum(["TODAY", "THREE_DAYS", "ONE_WEEK", "ONE_MONTH", "QTD"]).default("TODAY") }).optional()).query(({ input }) => fetchNseInstitutionalFlows({ range: input?.range as FlowRange | undefined })),
+    institutionalFlows: publicProcedure.input(z.object({ range: z.enum(["TODAY", "THREE_DAYS", "ONE_WEEK", "ONE_MONTH", "QTD"]).default("TODAY"), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN") }).optional()).query(({ input }) => {
+      const range = (input?.range ?? "TODAY") as FlowRange;
+      const marketId = input?.marketId ?? "IN";
+      // Market isolation: NSE FII/DII participant flows are India-only. Other markets get an
+      // explicit empty result rather than the Indian numbers.
+      if (marketId !== "IN") return unsupportedInstitutionalFlows(range, getMarketProfile(marketId as MarketId).country);
+      return fetchNseInstitutionalFlows({ range });
+    }),
     fundamentals: publicProcedure.input(symbolInput).query(({ input }) => analyzeFundamentals(input.symbol)),
     report: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol, marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN") })).query(async ({ input }) => {
       const market = getMarketProfile(input.marketId as MarketId);
