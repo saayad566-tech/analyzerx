@@ -1,6 +1,6 @@
 import { analyzeFundamentals } from "./fundamental-analysis";
 import { fetchIndianOpenStock, normalizeIndianOpenQuote } from "./indian-open-api";
-import { fetchNseInstitutionalFlows, type FlowRange } from "./nse-flows";
+import { fetchNseInstitutionalFlows, unavailableInstitutionalFlows, type FlowRange } from "./nse-flows";
 import { sectorUniverseForMarket, sectorNamesForMarket, sectorCandidatesForMarket } from "../lib/market-sector-universe";
 import { type MarketId } from "../lib/market-regions";
 import { fetchSecurityWiseFlows, securityWiseFlowForSymbol } from "./security-wise-flows";
@@ -58,7 +58,7 @@ export async function getSectorConstituents(sector: string, marketId: MarketId, 
   const isIndia = marketId === "IN";
   const flow = isIndia
     ? await fetchNseInstitutionalFlows({ range: options.range ?? "TODAY" })
-    : { status: "unavailable" as const, reportDate: null, freshnessLabel: null, range: options.range ?? "TODAY", rows: [], source: null, history: [] };
+    : unavailableInstitutionalFlows(options.range ?? "TODAY", "The NSE FII/DII report is an Indian source and is not requested for this market.");
   const securityWise = isIndia
     ? await fetchSecurityWiseFlows()
     : { available: false, source: null, reportDate: null, error: "Institutional flows are not available for this market.", rows: [] };
@@ -92,7 +92,7 @@ export async function getSectorConstituents(sector: string, marketId: MarketId, 
       sectorDiiNet: flow.rows.find((row) => row.participant === "DII")?.net ?? null,
       metricCoverage: metricValues.length >= 3 ? "source-backed" : metricValues.length ? "partial" : "unavailable",
       source: [quote?.source, securityFlow ? securityFlow.source : null].filter(Boolean).join(" · ") || "Verified research universe; quote provider unavailable",
-      freshness: securityFlow?.reportDate ?? quote?.asOf ?? flow.freshnessLabel,
+      freshness: securityFlow?.reportDate ?? quote?.asOf ?? flow.freshnessLabel ?? "Unavailable",
       limitations: [securityFlow ? "Security-wise institutional flow is source-backed." : securityWise.error ?? "Security-wise institutional flow unavailable; aggregate NSE flow is not security attribution.", ...(quoteResult.status === "rejected" ? ["Live quote provider unavailable for this symbol."] : []), ...(reportResult.status === "rejected" ? ["Fundamental report unavailable for this symbol."] : [])],
     };
   }));
