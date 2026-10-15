@@ -2,13 +2,13 @@ import "@/global.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, usePathname, router } from "expo-router";
 import { ErrorBoundary } from "@/components/error-boundary";
-import { StatusBar } from "expo-status-bar";
+import { StatusBar } from "react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import { BackHandler, Platform, ToastAndroid } from "react-native";
 import * as Notifications from "expo-notifications";
-import Constants from "expo-constants";
+import Constants from "@/lib/platform/constants";
 import "@/lib/_core/nativewind-pressable";
 import { ThemeProvider } from "@/lib/theme-provider";
 import {
@@ -172,7 +172,7 @@ export default function RootLayout() {
               <Stack.Screen name="oauth/callback" />
             </Stack>
           </ErrorBoundary>
-          <StatusBar style="auto" />
+          <StatusBar barStyle="default" />
           </MarketProvider>
         </QueryClientProvider>
       </trpc.Provider>
