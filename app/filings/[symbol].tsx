@@ -2,7 +2,7 @@ import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, Text
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { useMemo, useState } from "react";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import { useLocalSearchParams } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { DetailHeader } from "@/components/detail-header";
