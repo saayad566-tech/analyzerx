@@ -30,3 +30,9 @@ the bundle. Recorded, not executed.
 `model-catalogue.ts` marks a model `implemented: true` only where tested code exists, and names the
 module. Unimplemented models carry the reason. The catalogue is 100 book references plus 49 named
 models (39 runnable). It is not padded to reach the directive's headline count.
+
+## D-012 — The ledger is bounded and validated on read
+`LEDGER_CAP` bounds the store at 2,000 entries and entries de-duplicate on
+strategy + market + symbol + entry time, so re-recording a position updates it instead of inflating
+the win rate. Every record is shape-validated when read back: a corrupted or older payload is dropped
+rather than silently becoming a metric.
