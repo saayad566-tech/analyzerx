@@ -15,7 +15,7 @@ import { BACKTEST_CAVEAT, COMPLIANCE_NOTICE } from "@/lib/quant/compliance";
 import { DEFAULT_BACKTEST_CONFIG, runBacktestAsync, type BacktestProgress, type BacktestResult } from "@/lib/quant/backtest";
 import { describeSeries, parseOhlcv } from "@/lib/quant/ohlcv";
 import { DEFAULT_TRACKER_CONFIG, trackStrategy, type TrackerRun } from "@/lib/quant/tracker";
-import { DEFAULT_STRATEGY, describeStrategy, generateStrategyFromPrompt } from "@/lib/quant/strategy";
+import { describeStrategy, generateStrategyFromPrompt } from "@/lib/quant/strategy";
 import type { Candle } from "@/lib/quant/types";
 
 const ink = "#09111F";
@@ -215,8 +215,8 @@ export default function QuantLabScreen() {
           </View>
         </View>
         <Text style={styles.subtitle}>
-          Run a real candle-by-candle backtest on your own history. Signals are evaluated on a bar's close and filled on the
-          next bar's open, with commission and slippage charged on every fill.
+          Run a real candle-by-candle backtest on your own history. Signals are evaluated on a bar&apos;s close and filled on
+          the next bar&apos;s open, with commission and slippage charged on every fill.
         </Text>
 
         <View style={styles.compliance}>
