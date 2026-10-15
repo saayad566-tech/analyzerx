@@ -8,7 +8,7 @@ import { getPositioningCoverage } from "../server/positioning";
 
 describe("positioning coverage", () => {
   it("does not convert aggregate flows into a stock-level whale claim", async () => {
-    const result = await getPositioningCoverage("reliance");
+    const result = await getPositioningCoverage("reliance", "IN");
     expect(result.symbol).toBe("RELIANCE");
     expect(result.securityLevelAvailable).toBe(false);
     expect(result.evidence.stockLevel).toBeNull();
