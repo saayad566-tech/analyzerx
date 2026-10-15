@@ -17,7 +17,8 @@ import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { WebCalendarRangePicker } from "@/components/web-calendar-range-picker";
 import { ScreenContainer } from "@/components/screen-container";
-import { events, filters, type MarketEvent } from "@/lib/market-data";
+import { type MarketEvent } from "@/lib/market-data";
+import { datasetForMarket } from "@/lib/market-dataset";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
 import { scanDeepResearchDetailed } from "@/lib/deep-research";
@@ -310,9 +311,20 @@ function EventCard({
   );
 }
 
+const FILTER_KIND_MAP: Record<string, MarketEvent["kind"] | undefined> = {
+  "Large orders": "Large order",
+  Partnerships: "Partnership",
+  Investments: "Strategic investment",
+  Government: "Government order",
+  Guidance: "Results / guidance",
+  Regulatory: "Regulatory action",
+  Capacity: "Capacity expansion",
+};
+
 export default function LiveEventsScreen() {
   const colors = useColors();
   const { market } = useMarketContext();
+  const dataset = useMemo(() => datasetForMarket(market.id), [market.id]);
   const { isAuthenticated } = useAuth();
   const [query, setQuery] = useState("");
   const [remoteLiveQuery, setRemoteLiveQuery] = useState("");
@@ -711,7 +723,7 @@ export default function LiveEventsScreen() {
 
   const visibleEvents = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return events.filter((event) => {
+    return dataset.events.filter((event) => {
       const matchesQuery =
         !q ||
         [
@@ -727,17 +739,17 @@ export default function LiveEventsScreen() {
           .join(" ")
           .toLowerCase()
           .includes(q);
+      const mappedKind = FILTER_KIND_MAP[activeFilter];
       const matchesFilter =
         activeFilter === "All events" ||
-        (activeFilter === "Large orders" && event.kind === "Large order") ||
-        (activeFilter === "Partnerships" && event.kind === "Partnership") ||
-        (activeFilter === "Investments" &&
-          event.kind === "Strategic investment") ||
-        (activeFilter === "Government" && event.kind === "Government order") ||
-        (activeFilter === "High confidence" && event.confidence === "High");
+        (activeFilter === "High confidence"
+          ? event.confidence === "High"
+          : mappedKind
+            ? event.kind === mappedKind
+            : true);
       return matchesQuery && matchesFilter;
     });
-  }, [activeFilter, query]);
+  }, [activeFilter, query, dataset.events]);
 
   return (
     <ScreenContainer containerClassName="bg-background" className="px-5">
@@ -750,7 +762,7 @@ export default function LiveEventsScreen() {
           <>
             <View style={styles.headerRow}>
               <View>
-                <Text style={styles.eyebrow}>NSE / BSE INTELLIGENCE</Text>
+                <Text style={styles.eyebrow}>{market.id === "IN" ? "NSE / BSE INTELLIGENCE" : `${market.exchanges.join(" / ")} INTELLIGENCE`}</Text>
                 <Text style={styles.title}>Live Events</Text>
                 <View
                   style={styles.releaseIdentityRow}
@@ -1159,7 +1171,7 @@ export default function LiveEventsScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.filterRow}
             >
-              {filters.map((filter) => (
+              {dataset.eventFilters.map((filter) => (
                 <Pressable
                   key={filter}
                   onPress={() => setActiveFilter(filter)}
