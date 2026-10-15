@@ -30,3 +30,6 @@
 | K20 | info | App lives at the repo root, not `apps/analyzerx` | The directive's substantive requirement (quant-engine decoupled from the client app) is met by the workspace package. Moving the app directory would touch tsconfig paths, babel, metro config, app.json, eas.json and the APK workflow for no behaviour change. See DECISIONS.md |
 | K21 | info | 10 catalogue models are not implemented | Labelled NOT IMPL in the UI with the reason (Johansen VECM, Fama-French portfolio construction, MVO, random forests, VCP pattern detection, DCF, capital cycle, commodity cost curve, reflexivity, deleveraging classifier). Fabricating them would produce confident nonsense |
 | K22 | info | The Metro bundle is verified in CI, not locally | `.github/workflows/bundle-verify.yml` runs `expo export` on push. The local sandbox cannot complete a Metro transform (WASM allocation) |
+
+| K23 | resolved | Cross-market leakage in the supply-chain screen | Fixed: `screenSupplyChainScoped` enforces the market tag in the engine, with 5 regression tests. The library and model runners already refused mismatched universes; this section did not |
+| K24 | resolved | Dead loading state and a literal "undefined" render in Strategy Lab | Fixed: removed the unreachable `busy` indicator; the candidate name now falls back to its symbol |
