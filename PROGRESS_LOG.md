@@ -637,3 +637,36 @@ that is executable without bricking the app, and re-audited the whole tree.
   `err instanceof "string"`, which throws; and `rejects.toThrow(msg)` handed the already-caught error
   to `toThrow`, which then tried to *call* it — an assertion that could never pass. Fixed all three,
   plus an in-memory AsyncStorage so persistence suites can actually execute.
+
+## 2026-10-15 — Session 16 (exhaustive Expo scan + system integrity audit)
+The directive: deep recursive Expo scan, delete every trace, refactor the workflow to bare commands, audit
+the whole repo for incomplete/leaked/broken blocks, fix everything, and report itemized.
+
+### Step A — Expo scan (measured, not estimated)
+- A naive case-insensitive scan reported **494 files**; that was wrong — `expo` matches **"exponential"**,
+  a word throughout the quant code. A precise scan gives **104 real-trace files**.
+- **Deleted the dead scaffolding**: `template.json` (an Expo template descriptor nothing reads),
+  `scripts/reset-project.js` (a one-time template reset whose own header says to delete it) and
+  `package-lock.json` (a stray npm lockfile in a pnpm repo, referencing expo packages).
+- Result: **101 files** remain, and the only `expo export` / `eas.json` strings left are in the memory
+  files that *document the migration*. No workflow or script contains an Expo or EAS command.
+
+### Step B/C — integrity audit and fixes
+- **A whole test suite was skipped.** `tests/auth.logout.test.ts` was `describe.skip` with a TODO saying
+  "once you implement user authentication" — but `auth.logout` is implemented at `server/routers.ts:314`.
+  Un-skipped it, and running it immediately exposed a real defect.
+- **A real crash at a boundary**: `server/_core/cookies.ts` `getParentDomain` called
+  `isIpAddress(hostname)` → `host.includes(":")` with no guard, so a request carrying no host header
+  **threw instead of degrading**, 500-ing the logout endpoint. Guarded `getParentDomain` and
+  `isIpAddress`, and made the test's request mock carry a hostname the way Express always does.
+- **Two empty catch blocks** in `lib/workstation-runner.ts` (socket close, malformed UDP broadcast) were
+  deliberate but unlabelled — indistinguishable from a swallowed bug. Annotated.
+- Audited for `TODO/FIXME/XXX/HACK`, unbounded loops and swallowed errors: no unbounded loops; the one
+  remaining TODO was the stale auth skip, now removed.
+- **34 `void async()` call sites lack a `.catch`.** `void` marks intent but does not handle rejection, so
+  a failing storage or network call becomes an unhandled rejection. Reported as K42 rather than mass-edited
+  in one pass.
+
+### Verified
+- `tsc --noEmit`: **0 errors** (packages + lib + server).
+- **293 tests passing** (up from 292 — the un-skipped auth suite now runs).
