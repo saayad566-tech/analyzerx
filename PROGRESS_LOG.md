@@ -84,3 +84,41 @@ Triggered by the "Ultimate Full-Stack Audit" brief.
 "Sandbox bypass via simulation" is **not** applied to results: nothing simulated is presented as a
 real fix. Mocks are used only inside tests, where they belong. Physical-device APK QA and live
 credentialed providers remain environment-gated and are reported as such, not faked.
+
+## 2026-10-15 — Session 3 (domain audit: RN/Expo, integrations, logic, security, perf)
+Triggered by the "Zero to Hero" audit brief (health score + flaw matrix format).
+
+### Cleared (verified, not assumed)
+- **Secure storage:** session tokens use `expo-secure-store` only; no token/secret in AsyncStorage.
+- **Storage wrappers:** all 6 file-system imports are `expo-file-system/legacy` — uniform, no mismatch.
+- **SSRF:** every server `fetch` targets a hardcoded host; user input enters only via
+  `encodeURIComponent(...)` path segments. No user-controlled fetch target found.
+- **SQL injection:** `sql\`\`` interpolations are drizzle-bound parameters, not string concatenation.
+- **Listener/timer leaks:** all `BackHandler` subscriptions and the calendar `keydown` listener
+  remove themselves; the debounce timers clear on unmount.
+- **Hallucinated APIs / phantom components:** `tsc --noEmit` is clean, which proves every import,
+  type and component reference resolves.
+
+### Defects found and fixed
+1. **High — push delivery breaks past 100 devices.** `server/db.ts:getEnabledPushTokens()` loaded
+   **every** enabled token in one unbounded query, and `server/news-tracker.ts` posted them in a
+   **single** Expo request. Expo accepts at most **100 messages per request**, so high-impact push
+   notifications fail once more than 100 devices are registered. Now paginated, sent in pages of
+   100, with a page bound.
+2. **Medium — no retry/backoff on the optional-provider path.** `server/optional-providers.ts`
+   `requestJson` had a timeout but no retry and no 429/5xx handling, unlike every other provider
+   path in the codebase. Now retries transient failures with exponential backoff + jitter and
+   honours `Retry-After`.
+3. **Low — web stores user info (incl. email) in `localStorage`.** Unencrypted; documented rather
+   than changed, because web auth is cookie-based and this is display metadata.
+
+### Added
+- `server/push-batching.ts` — shared batching limits + clamping (removes magic numbers).
+- `tests/push-batching.test.ts` — 10 tests. Caught one real mismatch in my own first attempt
+  (`Infinity` fell back to the default instead of clamping to the cap); fixed.
+
+### Verified
+- `tsc --noEmit`: **0 errors**.
+- push-batching 10/10, activity-log 15/15, resource-packs 22/22, market-dataset-isolation 12/12,
+  market-isolation 32/32 (plus market-data 8, market-regions 4, sector-intelligence 4,
+  news-market-isolation-dedup 3, indian-news-relevance 10, regional-collectors 3).
