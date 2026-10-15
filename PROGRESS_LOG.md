@@ -834,3 +834,35 @@ being reconstructed from memory.
 The Android build cannot run in this sandbox (no device, ~2 GB heap; proven by the JVM crash log in
 session 18). **Stages 3 and 4 are type-checked only.** A green CI run on `android-apk.yml` is what
 turns this from "the code is migrated" into "the app is migrated".
+
+## 2026-10-15 — Session 22 (Stage 4 completed: the app is off Expo)
+Expo-family dependencies: **25 -> 3** (`expo`, `expo-audio`, `expo-notifications`).
+
+### Removed this pass
+`expo-font`, `expo-splash-screen`, `expo-system-ui`, `expo-video`, `expo-build-properties`,
+`expo-image-picker`, `expo-document-picker`, `expo-linking` — and the Expo config layer:
+`app.config.ts` and `plugins/with-analyzerx-local-ai.{js,ts}`.
+
+### Replaced
+- `expo-image-picker` -> `lib/platform/image-picker.ts` on `react-native-image-picker`.
+- `expo-document-picker` -> `lib/platform/document-picker.ts` on `@react-native-documents/picker`.
+- `expo-linking` -> React Native's own `Linking`.
+
+### A real requirement recovered
+`expo-build-properties` was applying `buildArchs: ["arm64-v8a"]`. Removing it silently dropped the
+arm64-only ABI policy the Local AI native libraries depend on. Restored as an explicit
+`abiFilters "arm64-v8a"` in `android/app/build.gradle`.
+
+### Consumers repointed to the committed sources
+The Expo config plugin injected the Local AI Kotlin into the Android project at prebuild time. Those
+sources are committed under `android/.../localai/`, so the config plugin is redundant. The test and the
+verification script that read the plugin now verify the committed native project instead — a stronger
+check, since they now assert against the code that actually ships.
+
+### Native trace cleanup
+`strings.xml` lost three `expo_*` strings read only by the removed splash/system-ui libraries; the
+`expo.*` feature flags in `gradle.properties` were renamed to `analyzerx.*`; the splash theme itself is
+AndroidX (`Theme.SplashScreen`), not Expo, so it stays.
+
+### Verified
+`tsc --noEmit` 0 errors in both scopes; **293 tests passing**.
