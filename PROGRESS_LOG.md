@@ -799,3 +799,38 @@ only its import line.
 ### Verified
 - `tsc --noEmit`: **0 errors** in both scopes. **293 tests passing.** `--frozen-lockfile` passes.
 - **Expo-family dependencies: 25 → 10.**
+
+## 2026-10-15 — Session 21 (Stage 4: native project and config layer off Expo)
+The config layer and the native project are off the Expo toolchain.
+
+### Config layer
+- `babel.config.js`: `babel-preset-expo` -> `module:@react-native/babel-preset`, keeping the NativeWind
+  JSX import source and the worklets plugin.
+- `metro.config.js`: `expo/metro-config` -> `@react-native/metro-config`, keeping the NativeWind wrapper
+  and adding the workspace packages to `watchFolders`.
+- `tsconfig.json`: `extends: "expo/tsconfig.base"` replaced with the options written out explicitly.
+- `expo-env.d.ts` deleted and removed from the tsconfig include list.
+- `index.js` added as the JavaScript entry point, registering the root component the way a bare React
+  Native app does (the Expo runtime loaded `.expo/.virtual-metro-entry` instead).
+
+### Native project
+- `MainApplication.kt`: rewritten to the bare React Native pattern (`getDefaultReactHost` +
+  `loadReactNative`), with the Local AI native packages registered explicitly. The Expo
+  `ReactNativeHostWrapper`, `ApplicationLifecycleDispatcher` and the `.expo/.virtual-metro-entry` JS
+  module name are gone.
+- `MainActivity.kt`: rewritten without `SplashScreenManager` and `ReactActivityDelegateWrapper`.
+- `settings.gradle`: standard React Native settings, off `expo-modules-autolinking`,
+  `expoAutolinking.useExpoModules()` and the Expo version catalog.
+- `android/build.gradle`: `expo-root-project` -> `com.facebook.react.rootproject`.
+- `android/app/build.gradle`: the Expo entry resolver, the `@expo/cli` bundler and
+  `bundleCommand = "export:embed"` removed; the Expo version catalog's Fresco version replaced with
+  React Native's own 3.6.0; Expo-namespaced feature flags renamed.
+- `AndroidManifest.xml`: inert expo-updates metadata and the expo-video playback service removed.
+
+The native rewrite follows React Native's own template (`react-native-community/template`) rather than
+being reconstructed from memory.
+
+### NOT verified
+The Android build cannot run in this sandbox (no device, ~2 GB heap; proven by the JVM crash log in
+session 18). **Stages 3 and 4 are type-checked only.** A green CI run on `android-apk.yml` is what
+turns this from "the code is migrated" into "the app is migrated".
