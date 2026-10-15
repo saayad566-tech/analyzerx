@@ -1,12 +1,13 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { BACKTEST_CAVEAT, COMPLIANCE_NOTICE } from "@/lib/quant/compliance";
 import { DEFAULT_BACKTEST_CONFIG, runBacktestAsync, type BacktestProgress, type BacktestResult } from "@/lib/quant/backtest";
 import { describeSeries, parseOhlcv } from "@/lib/quant/ohlcv";
 import { DEFAULT_STRATEGY, describeStrategy, generateStrategyFromPrompt } from "@/lib/quant/strategy";
@@ -51,8 +52,10 @@ function demoSeries(bars = 600): Candle[] {
 }
 
 export default function QuantLabScreen() {
+  // A strategy chosen in the Book Strategy Library arrives here as a prompt.
+  const params = useLocalSearchParams<{ prompt?: string }>();
   const [rawData, setRawData] = useState("");
-  const [prompt, setPrompt] = useState("ema 20/50 crossover");
+  const [prompt, setPrompt] = useState(typeof params.prompt === "string" && params.prompt.trim() ? params.prompt : "ema 20/50 crossover");
   const [startingCapital, setStartingCapital] = useState(String(DEFAULT_BACKTEST_CONFIG.startingCapital));
   const [commissionBps, setCommissionBps] = useState(String(DEFAULT_BACKTEST_CONFIG.commissionBps));
   const [slippageBps, setSlippageBps] = useState(String(DEFAULT_BACKTEST_CONFIG.slippageBps));
@@ -180,6 +183,16 @@ export default function QuantLabScreen() {
           Run a real candle-by-candle backtest on your own history. Signals are evaluated on a bar's close and filled on the
           next bar's open, with commission and slippage charged on every fill.
         </Text>
+
+        <View style={styles.compliance}>
+          <Ionicons name="shield-checkmark" size={15} color={amber} />
+          <Text style={styles.complianceText}>{COMPLIANCE_NOTICE}</Text>
+        </View>
+
+        <Pressable onPress={() => router.push("/strategy-library")} style={({ pressed }) => [styles.libraryLink, pressed && styles.pressed]} accessibilityRole="button">
+          <Ionicons name="library-outline" size={16} color={violet} />
+          <Text style={styles.libraryLinkText}>Browse the Book Strategy Library (100 frameworks, supply chain, screens)</Text>
+        </Pressable>
 
         {/* Data */}
         <View style={styles.card}>
@@ -327,9 +340,7 @@ export default function QuantLabScreen() {
         <View style={styles.disclaimer}>
           <Ionicons name="information-circle-outline" size={15} color={amber} />
           <Text style={styles.disclaimerText}>
-            A backtest is a research tool, not a prediction and not investment advice. Results depend entirely on the history you
-            supply and on the cost assumptions above; a strategy that looks good on past bars can lose money in live markets.
-            Nothing here executes a trade.
+            {BACKTEST_CAVEAT}
           </Text>
         </View>
       </ScrollView>
@@ -372,6 +383,10 @@ const styles = StyleSheet.create({
   eyebrow: { color: amber, fontSize: 11, fontWeight: "800", letterSpacing: 1.5 },
   title: { color: text, fontSize: 28, fontWeight: "800", letterSpacing: -0.6, marginTop: 4 },
   subtitle: { color: muted, fontSize: 13, lineHeight: 19, marginTop: 12 },
+  compliance: { flexDirection: "row", gap: 9, backgroundColor: "#2A2416", borderWidth: 1, borderColor: "#6B5527", borderRadius: 14, padding: 13, marginTop: 14 },
+  complianceText: { flex: 1, color: "#F7D79D", fontSize: 10, lineHeight: 15, fontWeight: "700" },
+  libraryLink: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: panel, borderWidth: 1, borderColor: divider, borderRadius: 14, padding: 13, marginTop: 10 },
+  libraryLinkText: { flex: 1, color: violet, fontSize: 11.5, fontWeight: "800" },
   card: { backgroundColor: panel, borderWidth: 1, borderColor: divider, borderRadius: 18, padding: 15, marginTop: 14 },
   cardLabel: { color: amber, fontSize: 9, fontWeight: "900", letterSpacing: 1.2, marginBottom: 10 },
   textArea: { minHeight: 88, backgroundColor: ink, borderWidth: 1, borderColor: divider, borderRadius: 12, color: text, fontSize: 11, lineHeight: 16, padding: 10, fontFamily: "monospace", textAlignVertical: "top" },
