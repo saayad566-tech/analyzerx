@@ -979,13 +979,18 @@ export async function analyzeFundamentals(requestedSymbol: string, marketId: Mar
   const resolved = alias ? `${alias.symbol}${suffix}` : requested;
   const redirect = alias ? { from: requested, to: resolved, reason: alias.reason } : null;
 
+  // The Indian providers are gated on the requested market. They were previously enabled for
+  // every market, so a US or French symbol still queried Indian quote and fundamental
+  // services. SEC filings are US-specific and are gated the same way.
+  const isIndia = marketId === "IN";
+  const isUnitedStates = marketId === "US";
   const results = await runProvidersInParallel<RawFundamentals>([
-    { id: "indian-api", tier: "primary", enabled: Boolean(process.env.INDIAN_API_KEY), run: () => fetchPrimary(resolved) },
+    { id: "indian-api", tier: "primary", enabled: isIndia && Boolean(process.env.INDIAN_API_KEY), run: () => fetchPrimary(resolved) },
     { id: "finnhub", tier: "primary", enabled: Boolean(process.env.FINNHUB_API_KEY), run: () => fetchFinnhubGlobal(resolved) },
-    { id: "sec-company-facts", tier: "primary", enabled: true, run: () => fetchSecCompanyFacts(resolved) },
-    { id: "india-stock-mcp", tier: "secondary", enabled: true, run: () => fetchSecondary(resolved) },
-    { id: "indian-open-api", tier: "secondary", enabled: true, run: () => fetchIndianOpenFundamentals(resolved) },
-    { id: "screener-public", tier: "web-fallback", enabled: true, run: () => fetchScreenerFallback(resolved) },
+    { id: "sec-company-facts", tier: "primary", enabled: isUnitedStates, run: () => fetchSecCompanyFacts(resolved) },
+    { id: "india-stock-mcp", tier: "secondary", enabled: isIndia, run: () => fetchSecondary(resolved) },
+    { id: "indian-open-api", tier: "secondary", enabled: isIndia, run: () => fetchIndianOpenFundamentals(resolved) },
+    { id: "screener-public", tier: "web-fallback", enabled: isIndia, run: () => fetchScreenerFallback(resolved) },
     { id: "yahoo-chart", tier: "web-fallback", enabled: true, run: () => fetchWebFallback(resolved) },
     { id: "public-company-profile", tier: "web-fallback", enabled: true, run: () => fetchPublicCompanyProfile(resolved) },
   ], 12_000);
