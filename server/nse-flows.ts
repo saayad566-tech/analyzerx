@@ -22,6 +22,29 @@ export type InstitutionalFlowComparison = {
   changePct: number | null;
 };
 
+/**
+ * The shape returned when the NSE report is not requested at all — i.e. the active market is
+ * not India. Returning a value of the SAME type as a real report keeps every caller's type
+ * stable: a union here propagated an implicit-any through the Flows screen's callbacks.
+ */
+export function unavailableInstitutionalFlows(range: FlowRange, reason: string): NseInstitutionalFlows {
+  return {
+    status: "unavailable",
+    source: "Not requested for this market",
+    upstream: "NSE",
+    reportDate: null,
+    fetchedAt: new Date().toISOString(),
+    freshnessLabel: "Unavailable",
+    freshnessBusinessDays: null,
+    rows: [],
+    history: [],
+    range,
+    rangeLabel: flowRangeMeta[range]?.label ?? range,
+    comparison: [],
+    error: reason,
+  };
+}
+
 export type NseInstitutionalFlows = {
   status: NseFlowStatus;
   source: string;
