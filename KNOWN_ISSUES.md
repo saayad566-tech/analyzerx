@@ -43,3 +43,8 @@
 
 | K30 | info | Signal history is capped at 2,000 records and refuses appends beyond it | Deliberate: trimming the oldest records would break the chain's genesis link and silently destroy history. At the cap the Lab says so and asks for a publish/archive |
 | K31 | info | `evaluateRecord` needs later prices supplied by the caller | The engine fetches nothing. A past suggestion cannot be scored without a price for the evaluation date, and inventing one would defeat the point of the record |
+
+| K32 | resolved | Screener showed the previous market's candidates after a market switch | `filteredCandidates` memoised without `researchCandidates` in its deps, and that value derives from `marketId`. Fixed; same family as the supply-chain leak (K23) |
+| K33 | open | Expo removal not performed | Removing 28 expo-family packages that back navigation, storage, auth, push and the build pipeline would leave a codebase that cannot build. EAS is not actually in use; the APK builds with Gradle. Migration scoped in DECISIONS.md D-015 |
+| K34 | open | Workflow run status cannot be read | The GitHub Actions read tools are unavailable to this agent (TOOL_NOT_FOUND). Commits can be pushed; pipeline results cannot be verified from here |
+| K35 | open | No .apk can be produced in this sandbox | No Android SDK/NDK, Java, Gradle or device, and a ~500MB heap ceiling. The CI workflow builds a signed APK on a runner |
