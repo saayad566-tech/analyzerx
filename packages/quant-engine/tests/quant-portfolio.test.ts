@@ -7,17 +7,7 @@ import {
 import { detectHighTightFlag, detectVolatilityContraction, fractalSwingHighs, fractalSwingLows } from "../src/patterns";
 import { capitalCycle, commodityCostCurve, deleveragingRegime, discountedCashFlow } from "../src/valuation";
 import type { Candle } from "../src/core-types";
-
-function rng(seed: number) {
-  let state = seed;
-  return () => {
-    state = (state + 0x6d2b79f5) | 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+import { realisticUniverse, rng } from "./fixtures/market";
 
 /**
  * Build candles from a price path. The high/low derive from the close only, so a swing is decided by
@@ -82,31 +72,42 @@ describe("Markowitz mean-variance", () => {
 });
 
 describe("Fama-French factor construction", () => {
-  const constant = (value: number) => [value, value, value];
-  const assets: FactorAsset[] = [
-    { symbol: "A", returns: constant(0.03), marketCap: 100, bookToMarket: 0.9, profitability: 0.9, investment: 0.05 },
-    { symbol: "B", returns: constant(0.03), marketCap: 200, bookToMarket: 0.8, profitability: 0.8, investment: 0.05 },
-    { symbol: "C", returns: constant(0.02), marketCap: 300, bookToMarket: 0.5, profitability: 0.5, investment: 0.05 },
-    { symbol: "D", returns: constant(0.02), marketCap: 400, bookToMarket: 0.4, profitability: 0.4, investment: 0.05 },
-    { symbol: "E", returns: constant(0.01), marketCap: 500, bookToMarket: 0.2, profitability: 0.2, investment: 0.5 },
-    { symbol: "F", returns: constant(0.01), marketCap: 600, bookToMarket: 0.1, profitability: 0.1, investment: 0.5 },
-  ];
-
-  it("builds all five factors as long-minus-short spreads", () => {
+  it("builds five factors that are genuinely distinct on a realistic universe", () => {
+    // Independent, non-monotonic characteristics and noisy returns. A constant-return fixture would
+    // collapse all four spreads to the same number and prove nothing about the sorts.
+    const assets = realisticUniverse({ seed: 4_242, size: 12, observations: 120 }) as FactorAsset[];
     const result = buildFamaFrenchFactors(assets)!;
-    expect(result.observations).toBe(3);
-    // Small (A,B) minus big (E,F): 0.03 − 0.01
-    expect(result.factors.SMB[0]).toBeCloseTo(0.02, 10);
-    expect(result.factors.HML[0]).toBeCloseTo(0.02, 10);
-    expect(result.factors.RMW[0]).toBeCloseTo(0.02, 10);
-    expect(result.factors.CMA[0]).toBeCloseTo(0.02, 10);
-    // Equal-weighted universe mean: (0.03+0.03+0.02+0.02+0.01+0.01)/6
-    expect(result.factors.MKT[0]).toBeCloseTo(0.02, 10);
-    expect(result.legSizes.SMB).toBe(2);
+    expect(result.observations).toBe(120);
+    expect(result.legSizes.SMB).toBe(4);
+    for (const name of ["MKT", "SMB", "HML", "RMW", "CMA"] as const) {
+      expect(result.factors[name]).toHaveLength(120);
+      expect(result.factors[name].every((value) => Number.isFinite(value))).toBe(true);
+    }
+    // The market factor must move over time. Building it from each asset's *mean* return would make
+    // it a constant series, which no constant-return fixture could ever reveal.
+    expect(new Set(result.factors.MKT.map((value) => value.toFixed(12))).size).toBeGreaterThan(1);
+
+    const spreads = ["SMB", "HML", "RMW", "CMA"] as const;
+    for (let i = 0; i < spreads.length; i += 1) {
+      for (let j = i + 1; j < spreads.length; j += 1) {
+        const a = result.factors[spreads[i]];
+        const b = result.factors[spreads[j]];
+        expect(a.every((value, t) => Math.abs(value - b[t]) < 1e-12), `${spreads[i]} and ${spreads[j]} are identical`).toBe(false);
+      }
+    }
+  });
+
+  it("orients the size spread in the direction its name implies", () => {
+    // Give small caps a genuine advantage; SMB must then be positive on average despite the noise.
+    const assets = realisticUniverse({ seed: 77, size: 12, observations: 150, smallCapAdvantage: 0.004 }) as FactorAsset[];
+    const result = buildFamaFrenchFactors(assets)!;
+    const mean = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
+    expect(mean(result.factors.SMB)).toBeGreaterThan(0);
   });
 
   it("refuses a universe too small to form legs", () => {
-    expect(buildFamaFrenchFactors(assets.slice(0, 3))).toBeNull();
+    const tiny = realisticUniverse({ seed: 5, size: 3 }) as FactorAsset[];
+    expect(buildFamaFrenchFactors(tiny)).toBeNull();
   });
 
   it("recovers known factor loadings by regression", () => {
@@ -213,11 +214,14 @@ describe("pattern detection", () => {
     expect(detectVolatilityContraction(fromPath([1, 2, 3]), { lookback: 24 })).toBeNull();
   });
 
-  it("detects a high tight flag", () => {
-    const rise = Array.from({ length: 25 }, (_, i) => 100 + i * (100 / 24));
-    const consolidate = Array.from({ length: 25 }, (_, i) => 200 - i * (15 / 24));
+  it("detects a high tight flag in a noisy advance", () => {
+    // The advance and the consolidation both carry noise, so the detector cannot rely on a smooth line.
+    const random = rng(3_131);
+    const rise = Array.from({ length: 25 }, (_, i) => 100 + i * (100 / 24) + (random() - 0.5) * 6);
+    const peak = Math.max(...rise);
+    const consolidate = Array.from({ length: 25 }, (_, i) => peak - i * (peak * 0.06 / 24) + (random() - 0.5) * 4);
     const path = [...rise, ...consolidate];
-    const volumes = path.map((_, i) => (i < 25 ? 2_000 : 800));
+    const volumes = path.map((_, i) => (i < 25 ? 2_000 : 800) * (0.85 + random() * 0.3));
     const result = detectHighTightFlag(fromPath(path, volumes))!;
     expect(result.advancePct).toBeGreaterThanOrEqual(100);
     expect(result.pullbackPct).toBeLessThanOrEqual(25);
@@ -225,8 +229,10 @@ describe("pattern detection", () => {
   });
 
   it("rejects a flag whose consolidation is too deep", () => {
-    const rise = Array.from({ length: 25 }, (_, i) => 100 + i * (100 / 24));
-    const collapse = Array.from({ length: 25 }, (_, i) => 200 - i * 3); // a 37% retracement
+    const random = rng(3_132);
+    const rise = Array.from({ length: 25 }, (_, i) => 100 + i * (100 / 24) + (random() - 0.5) * 6);
+    const peak = Math.max(...rise);
+    const collapse = Array.from({ length: 25 }, (_, i) => peak - i * (peak * 0.12 / 24)); // a ~37% retracement
     const result = detectHighTightFlag(fromPath([...rise, ...collapse]))!;
     expect(result.detected).toBe(false);
   });
