@@ -470,3 +470,46 @@ Nine models that were catalogued as NOT IMPL are implemented, with the mathemati
   collinear (so the solver correctly refused to fit), and my candle helper derived high/low from the
   open, creating a tie that masked a genuine swing high. Both fixed in the fixtures, not the code.
 - `lib/quant-ledger.ts` imported `TrackerExitReason` from `ledger` when it lives in `tracker`.
+
+## 2026-10-15 — Session 12 (rigorous engineering standard: audits + real-world fixtures)
+The brief was an engineering protocol, and items 2 and 3 named the exact two mistakes reported last
+session (the `swingHighs` collision and the collinear/tied fixtures). Worked it as an audit.
+
+### Audit 1 — zero-stub / zero-papering
+- No `as any`, `@ts-ignore`, `@ts-expect-error`, `TODO`, `FIXME`, `Math.random()` or `console.log`
+  anywhere in `packages/*/src`, the Strategy Lab screens, `lib/quant/` or `lib/quant-ledger.ts`.
+- The only two `return []` in the engine are legitimate guards, both inspected:
+  `extractEmaPeriods` (no EMA/SMA period in the text) and `runScreen` (unknown screen id, which
+  `library-run` already validates before calling).
+
+### Audit 2 — namespace isolation
+Wrote a checker over every module: **237 exported symbols, 0 name collisions**. The `export *` barrel
+would have failed `tsc` on any collision, so this is confirmed twice over.
+
+### Audit 3 — real-world test fixture integrity (the substantive fix)
+Found and replaced four artificial fixtures:
+- **Constant zero-noise returns** in the Fama-French fixture, where all four spreads collapsed to the
+  same `0.02` — the test could not tell the four sorts apart. Replaced with a realistic universe whose
+  characteristics are independently drawn and non-monotonic.
+- **Perfectly linear** correlation pair (`i`, `i*2`) → correlation exactly 1. Replaced with a noisy
+  common-factor pair plus an independent series, asserting the structural invariants.
+- **Perfectly linear** momentum series (`100 + i`) → replaced with a noisy uptrend, asserting the
+  definition exactly and that the skip genuinely changes the answer, plus the 252/253 boundary.
+- **Noise-free** high-tight flag → noise added to both the advance and the consolidation.
+- Added `tests/fixtures/market.ts`: a seeded GARCH-style candle generator with volatility clustering,
+  jumps and asymmetric wicks; noisy return series; a correlated pair; and a realistic universe.
+  Deterministic but noisy, so a fragile solver fails here rather than in production.
+
+### Real bug the stricter fixtures exposed
+`buildFamaFrenchFactors` built `MKT` from **each asset's mean return**, producing a constant series
+with no time variation — a market factor that never moves. Fixed to the equal-weighted return each
+period, with an assertion that MKT varies over time. The old constant-return fixture could not have
+revealed this.
+
+### Verification pipeline (protocol item 4)
+- `tsc --noEmit`: **0 errors** in all three scopes — packages+lib+server, app+components+hooks,
+  tests+scripts+root.
+- Full suite: **244 tests passing** on the realistic fixtures.
+- Wiring: the ledger is bound to the UI (5 references in `quant-lab`); 21/21 engine modules have
+  shims (`core-types` maps to `lib/quant/types.ts`).
+- Pending, reported explicitly: the `apps/analyzerx` rename, and the CI bundle verification.
