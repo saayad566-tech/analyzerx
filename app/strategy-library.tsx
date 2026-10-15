@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import * as Clipboard from "expo-clipboard";
 
 import { ScreenContainer } from "@/components/screen-container";
@@ -16,6 +16,7 @@ import { SUPPLY_CHAIN_THEMES, screenSupplyChainScoped, themeRolesByLayer } from 
 import { FAMILY_LABELS, STRATEGY_LIBRARY, findLibraryEntry, libraryByFamily, libraryStats, type LibraryEntry, type StrategyFamily } from "@/lib/quant/strategy-library";
 import { digestInputs, type SignalRecord, type Suggestion } from "@/lib/quant/signal-history";
 import { appendAndStore, chainForMarket, loadChain, publishHistory, verify } from "@/lib/signal-history";
+import type { IoniconName } from "@/lib/icon-names";
 
 const ink = "#09111F";
 const panel = "#111C2D";
@@ -462,7 +463,7 @@ function Chip({ label, active, onPress, tone = amber }: { label: string; active:
   );
 }
 
-function SmallButton({ icon, label, onPress, tone = amber }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; tone?: string }) {
+function SmallButton({ icon, label, onPress, tone = amber }: { icon: IoniconName; label: string; onPress: () => void; tone?: string }) {
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.smallButton, { borderColor: `${tone}55` }, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={label}>
       <Ionicons name={icon} size={15} color={tone} />
