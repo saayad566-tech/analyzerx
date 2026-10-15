@@ -93,3 +93,13 @@ per mandate §2. None is ticked until its check has run.
 - Never invent versions, URLs, endpoints or financial figures.
 - Cache and rate-limit every free API call.
 - A feature is DONE only when data flows from source to screen.
+
+## Slice 13 — Onboarding and per-country lifecycle (architecture review)
+
+| # | Item | Evidence | Status |
+|---|---|---|---|
+| 13.1 | No first-launch country selection existed | `app/_layout.tsx` went straight to `/(tabs)`; no onboarding flag anywhere | DONE — `app/onboarding.tsx` + `FirstLaunchGate` |
+| 13.2 | No per-country install state existed | `market-context.tsx` tracked the active market but nothing tracked whether a country's data was present | DONE — `lib/market-lifecycle.ts` |
+| 13.3 | The switcher showed only "active" | `app/market-country.tsx` had no download/installed/progress states | DONE — lifecycle badges, activation gated on installed |
+| 13.4 | Architecture was undocumented | No single description of the tree, lifecycle or isolation model | DONE — `docs/ARCHITECTURE.md` |
+| 13.5 | Country data packs do not exist | The state machine reaches `queued` and stops; there is no signed manifest or hosted pack | OPEN — largest remaining piece |
