@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Alert, FlatList, Linking, Pressable, StyleSheet, Text, View } from "react-native";
-import { router } from "expo-router";
+import { router } from "@/lib/navigation/router";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
