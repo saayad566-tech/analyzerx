@@ -15,6 +15,7 @@ import { describe, it, expect } from "vitest";
 import {
   MARKET_IDS, getMarketProfile, resolveMarketId, isMarketId,
   marketIdForExchange, marketIdForCountryName, UNKNOWN_MARKET,
+  type MarketId,
 } from "../lib/market-regions";
 import { formatForMarket, formatMarketCurrency, formatMarketNumber, formatMarketCompact, usesIndianGrouping } from "../lib/market-format";
 import { sessionForMarket, marketStatus, isMarketTrading } from "../lib/market-session";
@@ -154,7 +155,7 @@ describe("every market is complete and independent", () => {
 });
 
 describe("no two markets collide", () => {
-  const pairs: Array<[string, string]> = [];
+  const pairs: Array<[MarketId, MarketId]> = [];
   for (let i = 0; i < MARKET_IDS.length; i += 1) {
     for (let j = i + 1; j < MARKET_IDS.length; j += 1) pairs.push([MARKET_IDS[i], MARKET_IDS[j]]);
   }
@@ -165,7 +166,7 @@ describe("no two markets collide", () => {
 
   for (const [a, b] of pairs) {
     it(`${a} and ${b} share no storage key`, () => {
-      const kinds = (m: string) => [
+      const kinds = (m: MarketId) => [
         marketScopeKey(m, "quotes", "X"),
         marketScopeKey(m, "news", "X"),
         marketStoreKey(m, "watchlist"),
