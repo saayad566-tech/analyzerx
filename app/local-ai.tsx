@@ -21,6 +21,7 @@ import {
   type LocalAIModelId,
   type LocalAIState,
 } from "@/lib/local-ai";
+import { fireAndForget } from "@/lib/fire-and-forget";
 
 const amber = "#F4B860";
 const teal = "#4FD1C5";
@@ -46,8 +47,8 @@ export default function LocalAIScreen() {
   }
 
   useEffect(() => {
-    void refresh();
-    void getActiveLocalAIModelId().then(setLoadedModel);
+    fireAndForget(refresh(), "refresh");
+    fireAndForget(getActiveLocalAIModelId().then(setLoadedModel), "getActiveLocalAIModelId");
   }, []);
 
   const assessments = useMemo(() => (device ? recommendLocalAIModel(device) : []), [device]);
