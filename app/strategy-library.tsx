@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -14,6 +14,8 @@ import { MODEL_CATEGORIES, catalogueStats, modelsByCategory } from "@/lib/quant/
 import type { Fundamentals } from "@/lib/quant/fundamentals";
 import { SUPPLY_CHAIN_THEMES, screenSupplyChainScoped, themeRolesByLayer } from "@/lib/quant/supply-chain";
 import { FAMILY_LABELS, STRATEGY_LIBRARY, findLibraryEntry, libraryByFamily, libraryStats, type LibraryEntry, type StrategyFamily } from "@/lib/quant/strategy-library";
+import { digestInputs, type SignalRecord, type Suggestion } from "@/lib/quant/signal-history";
+import { appendAndStore, chainForMarket, loadChain, publishHistory, verify } from "@/lib/signal-history";
 
 const ink = "#09111F";
 const panel = "#111C2D";
@@ -55,6 +57,20 @@ export default function StrategyLibraryScreen() {
   const [error, setError] = useState<string | null>(null);
   const [themeId, setThemeId] = useState(SUPPLY_CHAIN_THEMES[0].id);
   const [modelId, setModelId] = useState<string>(RUNNABLE_MODELS[0]);
+  const [history, setHistory] = useState<SignalRecord[]>([]);
+  const [historyNote, setHistoryNote] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const chain = await loadChain();
+      if (!cancelled) setHistory(chain);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const stats = useMemo(() => libraryStats(), []);
   const groups = useMemo(() => libraryByFamily(), []);
@@ -110,6 +126,61 @@ export default function StrategyLibraryScreen() {
     setUniverse({ marketId, companies: demoUniverse(), priors: demoPriors() });
     setError(null);
     setDataNote(`Demo universe: 4 synthetic company records, tagged ${getMarketProfile(marketId).country}. These are NOT real company figures — they exist only to exercise the screens.`);
+  };
+
+  /** Prices recorded alongside a suggestion, so a later evaluation has something honest to measure. */
+  const priceOf = (symbol: string): number | null => {
+    const company = universe?.companies.find((entry) => entry.symbol === symbol);
+    return typeof company?.price === "number" ? company.price : null;
+  };
+
+  /** The suggestions the current result implies, in the form the history records. */
+  const currentSuggestions = (): Suggestion[] => {
+    if (run?.kind === "screen") {
+      return run.outcomes.filter((outcome) => outcome.passed).map((outcome) => ({
+        symbol: outcome.symbol, referencePrice: priceOf(outcome.symbol), score: (outcome.passedCount / Math.max(1, outcome.total)) * 100,
+        detail: `${outcome.passedCount}/${outcome.total} criteria passed`,
+      }));
+    }
+    if (run?.kind === "rank") {
+      return run.ranked.slice(0, 10).map((row) => ({
+        symbol: row.symbol, referencePrice: priceOf(row.symbol), score: row.score, detail: `combined rank ${row.combinedRank}`,
+      }));
+    }
+    if (modelRun?.kind === "scores") {
+      return modelRun.rows.filter((row) => row.passed).map((row) => ({
+        symbol: row.symbol, referencePrice: priceOf(row.symbol), score: row.value, detail: row.headline,
+      }));
+    }
+    return [];
+  };
+
+  const recordSuggestion = async () => {
+    const suggestions = currentSuggestions();
+    if (suggestions.length === 0) {
+      setHistoryNote("There is nothing to record: the current result suggests no assets.");
+      return;
+    }
+    const strategyId = modelRun?.kind === "scores" ? modelRun.modelId : selected?.id ?? "unknown";
+    const strategyName = modelRun?.kind === "scores" ? modelId : selected?.title ?? "Unknown strategy";
+    const kind = modelRun?.kind === "scores" ? "model" : run?.kind === "rank" ? "rank" : "screen";
+    const result = await appendAndStore({
+      recordedAt: Date.now(), marketId, strategyId, strategyName, kind, suggestions,
+      inputDigest: digestInputs({ marketId, strategyId, suggestions: suggestions.map((entry) => entry.symbol), universe: universe?.companies.length ?? 0 }),
+    });
+    setHistory(result.chain);
+    setHistoryNote(result.ok
+      ? `Recorded ${suggestions.length} suggestion(s) at ${new Date(result.record.recordedAt).toLocaleString()}. Head hash ${result.record.hash.slice(0, 16)}…`
+      : result.reason);
+  };
+
+  const publish = async () => {
+    setPublishing(true);
+    const result = await publishHistory(history);
+    setPublishing(false);
+    setHistoryNote(result.ok
+      ? `Published ${result.records} record(s). Head hash ${result.headHash.slice(0, 16)}…${result.shared ? " Shared." : result.uri ? " Artefact written." : ""}`
+      : result.reason ?? "The history could not be published.");
   };
 
   const openInBacktest = (spec: NonNullable<LibraryEntry["implemented"]>["spec"]) => {
@@ -298,6 +369,40 @@ export default function StrategyLibraryScreen() {
           ))}
         </View>
 
+        {/* Published signal history */}
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>PUBLISHED SIGNAL HISTORY</Text>
+          <Text style={styles.meta}>
+            Every suggestion recorded here is timestamped and chained: each record carries the hash of the one before it, so once published it cannot be altered without the change being detectable. This is how the Lab stays accountable for what it suggested and when.
+          </Text>
+          <View style={styles.metricGrid}>
+            <Metric label="Records" value={String(history.length)} />
+            <Metric label="This market" value={String(chainForMarket(history, marketId).length)} />
+            <Metric label="Chain" value={verify(history).valid ? "verified" : `broken @${verify(history).brokenAt}`} tone={verify(history).valid ? teal : coral} />
+          </View>
+          <View style={styles.rowGap}>
+            <SmallButton icon="bookmark-outline" label="Record this suggestion" onPress={() => void recordSuggestion()} tone={teal} />
+            <SmallButton icon="cloud-upload-outline" label={publishing ? "Publishing…" : "Publish history"} onPress={() => void publish()} tone={violet} />
+          </View>
+          {historyNote ? <Text style={styles.note}>{historyNote}</Text> : null}
+          {chainForMarket(history, marketId).length === 0 ? (
+            <Text style={styles.note}>No suggestions recorded for this market yet.</Text>
+          ) : (
+            chainForMarket(history, marketId).slice(-5).reverse().map((record) => (
+              <View key={record.hash} style={styles.screenRow}>
+                <View style={styles.screenHead}>
+                  <Text style={styles.screenSymbol}>#{record.seq} · {record.strategyName}</Text>
+                  <Text style={styles.criterion}>{record.recordedAtIso.slice(0, 10)}</Text>
+                </View>
+                <Text style={styles.criterion}>
+                  {record.kind} · {record.suggestions.length} suggestion(s): {record.suggestions.map((entry) => entry.symbol).join(", ")}
+                </Text>
+                <Text style={styles.criterion}>hash {record.hash.slice(0, 16)}… · linked to {record.previousHash.slice(0, 16)}…</Text>
+              </View>
+            ))
+          )}
+        </View>
+
         {/* Picks & shovels */}
         <View style={styles.card}>
           <Text style={styles.cardLabel}>PICKS &amp; SHOVELS — SUPPLY CHAIN</Text>
@@ -337,6 +442,15 @@ export default function StrategyLibraryScreen() {
         ) : null}
       </ScrollView>
     </ScreenContainer>
+  );
+}
+
+function Metric({ label, value, tone = text }: { label: string; value: string; tone?: string }) {
+  return (
+    <View style={styles.metric}>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <Text style={[styles.metricValue, { color: tone }]}>{value}</Text>
+    </View>
   );
 }
 
@@ -405,6 +519,10 @@ const styles = StyleSheet.create({
   screenSymbol: { color: text, fontSize: 12, fontWeight: "800" },
   screenScore: { fontSize: 11, fontWeight: "800" },
   criterion: { color: "#9FB0C4", fontSize: 9.5, lineHeight: 14, marginTop: 3 },
+  metricGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 11 },
+  metric: { flexGrow: 1, flexBasis: "30%", minWidth: 88, backgroundColor: raised, borderRadius: 11, padding: 9 },
+  metricLabel: { color: muted, fontSize: 8.5, fontWeight: "800", letterSpacing: 0.5 },
+  metricValue: { fontSize: 14, fontWeight: "800", marginTop: 4 },
   modelRow: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderTopWidth: 1, borderTopColor: "#1E2D42", paddingVertical: 8 },
   modelText: { flex: 1, color: "#9FB0C4", fontSize: 9.5, lineHeight: 14 },
   modelName: { color: text, fontSize: 11, fontWeight: "800" },
