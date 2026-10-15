@@ -1,6 +1,6 @@
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { router } from "expo-router";
+import { router } from "@/lib/navigation/router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useMarketContext } from "@/lib/market-context";
 import { trpc } from "@/lib/trpc";
