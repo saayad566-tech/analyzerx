@@ -1,7 +1,8 @@
 import { analyzeFundamentals } from "./fundamental-analysis";
 import { fetchIndianOpenStock, normalizeIndianOpenQuote } from "./indian-open-api";
 import { fetchNseInstitutionalFlows, type FlowRange } from "./nse-flows";
-import { verifiedResearchUniverse } from "./research-signals";
+import { sectorUniverseForMarket, sectorNamesForMarket, sectorCandidatesForMarket } from "../lib/market-sector-universe";
+import { type MarketId } from "../lib/market-regions";
 import { fetchSecurityWiseFlows, securityWiseFlowForSymbol } from "./security-wise-flows";
 import { percentOf } from "../lib/precision";
 import { resolveSector } from "../lib/sector-registry";
@@ -40,14 +41,33 @@ function categoryMetric(report: Awaited<ReturnType<typeof analyzeFundamentals>>,
   return category ? clamp(percentOf(category.score, Math.max(category.max, 1)) ?? 0) : null;
 }
 
-export async function getSectorConstituents(sector: string, options: { sort?: SectorSort; direction?: "asc" | "desc"; range?: FlowRange; limit?: number } = {}) {
-  const normalizedSector = sector.trim().toLowerCase();
-  const candidates = verifiedResearchUniverse.filter((candidate) => candidate.sector.toLowerCase() === normalizedSector);
-  const flow = await fetchNseInstitutionalFlows({ range: options.range ?? "TODAY" });
-  const securityWise = await fetchSecurityWiseFlows();
+/**
+ * Sector constituents for ONE market.
+ *
+ * Previously filtered a hardcoded Indian symbol list for every market and always called the
+ * NSE flow feeds and the Indian quote provider, so opening Sectors on the US market returned
+ * Indian companies with Indian prices and Indian flows. The router accepted a `marketId` and
+ * never passed it here.
+ *
+ * A market with no verified constituent list returns `unsupported` with a reason rather than
+ * another country's companies, and the NSE feeds are only contacted for India.
+ */
+export async function getSectorConstituents(sector: string, marketId: MarketId, options: { sort?: SectorSort; direction?: "asc" | "desc"; range?: FlowRange; limit?: number } = {}) {
+  const universe = sectorUniverseForMarket(marketId);
+  const candidates = sectorCandidatesForMarket(marketId, sector);
+  const isIndia = marketId === "IN";
+  const flow = isIndia
+    ? await fetchNseInstitutionalFlows({ range: options.range ?? "TODAY" })
+    : { status: "unavailable" as const, reportDate: null, freshnessLabel: null, range: options.range ?? "TODAY", rows: [], source: null, history: [] };
+  const securityWise = isIndia
+    ? await fetchSecurityWiseFlows()
+    : { available: false, source: null, reportDate: null, error: "Institutional flows are not available for this market.", rows: [] };
   const sectorRows = await Promise.allSettled(candidates.map(async (candidate): Promise<SectorConstituent> => {
-    const [quoteResult, reportResult] = await Promise.allSettled([fetchIndianOpenStock(candidate.symbol), analyzeFundamentals(candidate.symbol, "IN")]);
-    const quote = quoteResult.status === "fulfilled" ? normalizeIndianOpenQuote(quoteResult.value) : null;
+    const [quoteResult, reportResult] = await Promise.allSettled([
+      isIndia ? fetchIndianOpenStock(candidate.symbol) : Promise.resolve(null),
+      analyzeFundamentals(candidate.symbol, marketId),
+    ]);
+    const quote = quoteResult.status === "fulfilled" && quoteResult.value ? normalizeIndianOpenQuote(quoteResult.value) : null;
     const report = reportResult.status === "fulfilled" ? reportResult.value : null;
     const score = report ? scoreFor(report) : null;
     const securityFlow = securityWiseFlowForSymbol(securityWise.rows, candidate.symbol);
@@ -88,15 +108,17 @@ export async function getSectorConstituents(sector: string, options: { sort?: Se
   const status: "supported" | "unsupported" | "error" = rows.length > 0 ? "supported" : "unsupported";
   const reason = rows.length > 0
     ? null
-    : resolution.status === "unsupported"
-      ? resolution.reason
-      : `${sector} is not covered by the accepted AnalyzerX research universe, and no verified constituent list is mapped to it.`;
+    : !universe.available
+      ? universe.reason
+      : resolution.status === "unsupported"
+        ? resolution.reason
+        : `${sector} is not covered by ${marketId}'s verified constituent universe, and no constituent list is mapped to it.`;
   return {
     sector,
     asOf: new Date().toISOString(),
     status,
     reason,
-    availableUniverse: true,
+    availableUniverse: universe.available,
     coverageLabel: `Verified AnalyzerX research universe · ${rows.length} mapped constituent${rows.length === 1 ? "" : "s"}`,
     totalMapped: rows.length,
     sort,
@@ -108,4 +130,5 @@ export async function getSectorConstituents(sector: string, options: { sort?: Se
   };
 }
 
-export function getAvailableSectorNames() { return [...new Set(verifiedResearchUniverse.map((candidate) => candidate.sector))].sort(); }
+/** Sector names for ONE market. Was previously the Indian list for every market. */
+export function getAvailableSectorNames(marketId: MarketId) { return sectorNamesForMarket(marketId); }
