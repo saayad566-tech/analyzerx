@@ -13,12 +13,12 @@
     "production": {
       "autoIncrement": true
     },
-    "analyzerx-3.29.0-local-ai": {
+    "analyzerx-3.30.0-local-ai": {
       "distribution": "internal",
       "env": {
-        "ANALYZERX_RELEASE_VERSION": "3.29.0",
-        "ANALYZERX_ANDROID_VERSION_CODE": "32900",
-        "ANALYZERX_IOS_BUILD_NUMBER": "32900",
+        "ANALYZERX_RELEASE_VERSION": "3.30.0",
+        "ANALYZERX_ANDROID_VERSION_CODE": "33000",
+        "ANALYZERX_IOS_BUILD_NUMBER": "33000",
         "ANALYZERX_ENABLE_NATIVE_LOCAL_AI": "true"
       },
       "android": {
