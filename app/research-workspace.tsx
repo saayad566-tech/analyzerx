@@ -3,16 +3,17 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useAuth } from "@/hooks/use-auth";
 import { router } from "expo-router";
 import { trpc } from "@/lib/trpc";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { loadRecentSearches, loadSavedScreens, loadWatchlist, type SavedScreen } from "@/lib/local-preferences";
 import { MarketScopeChip } from "@/components/market-scope-chip";
+import type { IoniconName } from "@/lib/icon-names";
 
 const amber = "#F4B860";
 const teal = "#4FD1C5";
 
-function Action({ icon, label, route }: { icon: keyof typeof Ionicons.glyphMap; label: string; route: "/screener" | "/alerts" | "/flows" | "/sectors" | "/storylines" | "/research-desk" }) {
+function Action({ icon, label, route }: { icon: IoniconName; label: string; route: "/screener" | "/alerts" | "/flows" | "/sectors" | "/storylines" | "/research-desk" }) {
   return <Pressable onPress={() => router.push(route)} style={({ pressed }) => [styles.action, pressed && styles.pressed]}><Ionicons name={icon} size={16} color={teal} /><Text style={styles.actionText}>{label}</Text><Ionicons name="chevron-forward" size={15} color="#6E7D92" /></Pressable>;
 }
 
