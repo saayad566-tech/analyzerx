@@ -73,3 +73,6 @@
 
 | K51 | open | The native project rewrite is unverified | `MainApplication`/`MainActivity`/Gradle were rewritten to the bare React Native template, but no Android build can run here. A CI run on `android-apk.yml` is required before this can be called working |
 | K52 | open | Splash-screen theme still carries Expo-named resources | `strings.xml` retains `expo_splash_screen_*` values consumed by the splash theme. Removing them means rewriting the theme, which is a native change that needs the same CI verification |
+
+| K53 | open | 3 expo packages remain | `expo` core (transitive), `expo-notifications` (push registration uses `getExpoPushTokenAsync`) and `expo-audio` (a recording hook API). These are the last three and each needs a real replacement, not a rename |
+| K54 | info | The server already speaks bare FCM | `server/fcm-auth.ts` and `server/push-delivery.ts` implement RS256 JWT + FCM HTTP v1 directly. Only the *client* still registers through Expo, so the notification replacement is client-side only |
