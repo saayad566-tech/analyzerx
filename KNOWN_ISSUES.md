@@ -33,3 +33,6 @@
 
 | K23 | resolved | Cross-market leakage in the supply-chain screen | Fixed: `screenSupplyChainScoped` enforces the market tag in the engine, with 5 regression tests. The library and model runners already refused mismatched universes; this section did not |
 | K24 | resolved | Dead loading state and a literal "undefined" render in Strategy Lab | Fixed: removed the unreachable `busy` indicator; the candidate name now falls back to its symbol |
+
+| K25 | resolved | No cross-strategy performance ledger | Built: `src/ledger.ts` (pure aggregation) + `lib/quant-ledger.ts` (validated AsyncStorage persistence), wired into Strategy Lab with a cross-strategy dashboard |
+| K26 | info | 4 catalogue models remain unimplemented | random forest (its prerequisite, purged CV, is now implemented), Clenow's regression-slope ranking, reflexivity and the pre-mortem checklist. None has a published computable formula; each is labelled NOT IMPL with the reason |
