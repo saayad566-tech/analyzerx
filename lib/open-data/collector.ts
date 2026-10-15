@@ -16,6 +16,7 @@ import { genericRssFeed } from "./sources";
 import { appendArticles, pruneStore, STORE_LIMITS, type StoredArticle } from "./store";
 import { linkHealth, recordLink } from "./chain";
 import { nowIso } from "./core";
+import { fireAndForget } from "@/lib/fire-and-forget";
 
 const CURSOR_KEY = "analyzerx.collector.v1.cursor";
 const STATS_KEY = "analyzerx.collector.v1.stats";
@@ -215,10 +216,10 @@ export function startCollector(options: CollectOptions & { intervalMs?: number }
   const { intervalMs = 15 * 60_000, ...cycleOptions } = options;
   let stopped = false;
   running = true;
-  void runCollectionCycle(cycleOptions).catch(() => undefined);
+  fireAndForget(runCollectionCycle(cycleOptions).catch(() => undefined), "runCollectionCycle");
   const timer = setInterval(() => {
     if (stopped) return;
-    void runCollectionCycle(cycleOptions).catch(() => undefined);
+    fireAndForget(runCollectionCycle(cycleOptions).catch(() => undefined), "runCollectionCycle");
   }, intervalMs);
   return () => {
     stopped = true;
