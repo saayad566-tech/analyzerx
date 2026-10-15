@@ -36,3 +36,7 @@
 
 | K25 | resolved | No cross-strategy performance ledger | Built: `src/ledger.ts` (pure aggregation) + `lib/quant-ledger.ts` (validated AsyncStorage persistence), wired into Strategy Lab with a cross-strategy dashboard |
 | K26 | info | 4 catalogue models remain unimplemented | random forest (its prerequisite, purged CV, is now implemented), Clenow's regression-slope ranking, reflexivity and the pre-mortem checklist. None has a published computable formula; each is labelled NOT IMPL with the reason |
+
+| K27 | resolved | Artificial test fixtures (collinear / constant / zero-noise) | Replaced with a seeded realistic market generator: GARCH-style volatility clustering, jumps, asymmetric wicks, noisy universes. This exposed a real bug — MKT was a constant series |
+| K28 | open | `apps/analyzerx` rename not performed | Pure risk, no behaviour change; the decoupling it stands for is already true. Reported per protocol item 4 |
+| K29 | open | CI bundle verification has not run | `bundle-verify.yml` triggers on push to main; commits are made through the API, so the workflow has not executed. Local verification is resolution-only (Metro's transform needs WASM the pod cannot allocate) |
