@@ -13,11 +13,9 @@ import {
   exportActivityLog,
   flushActivityLog,
   readActivityLog,
-  readActivityLogText,
 } from "@/lib/activity-log";
 import { ACTIVITY_LOG_FILENAME, formatEntry, type ActivityEntry, type ActivityLevel } from "@/lib/activity-log-core";
 
-const ink = "#09111F";
 const panel = "#111C2D";
 const raised = "#17253A";
 const text = "#F4F7FB";
