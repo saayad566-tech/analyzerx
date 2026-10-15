@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const store = new Map<string, string>();
-vi.mock("expo-crypto", () => ({ CryptoDigestAlgorithm: { SHA256: "SHA-256" }, digestStringAsync: async () => "test-checksum" }));
 
 vi.mock("@react-native-async-storage/async-storage", () => ({
   default: {
