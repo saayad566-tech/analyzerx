@@ -84,7 +84,10 @@ export type SignedManifest = {
  * half before publishing packs; `docs/MANIFEST_SPEC.md` gives the generation command.
  */
 export const PINNED_MANIFEST_KEYS: Readonly<Record<string, string>> = {
-  "analyzerx-manifest-test-1": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+  // The production manifest signing key. The matching PRIVATE key is held by the release
+  // pipeline and is deliberately absent from this repository. Rotate by adding the new
+  // public key here, shipping it, and only then starting to sign with it.
+  "analyzerx-manifest-2026": "c34b65fbd2a20486c3542126c028445cb7de5e66925b7a9904aa47ca6c7547df",
 };
 
 /* ------------------------------------------------------------------ *
