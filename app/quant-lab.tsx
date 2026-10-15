@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "@/lib/navigation/router";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import * as Clipboard from "@/lib/platform/clipboard";
 import * as DocumentPicker from "expo-document-picker";
