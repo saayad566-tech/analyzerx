@@ -381,7 +381,7 @@ export async function getFundamentalObservationsForSymbol(symbol: string, limit 
 export async function upsertEventProjection(projection: InsertEventProjection): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;
-  await db.insert(eventProjections).values(projection).onDuplicateKeyUpdate({ set: { entityId: projection.entityId, symbol: projection.symbol, storylineKey: projection.storylineKey, eventType: projection.eventType, title: projection.title, summary: projection.summary, relationshipJson: projection.relationshipJson, sentiment: projection.sentiment, impactScore: projection.impactScore, confidenceScore: projection.confidenceScore, status: projection.status, sourceRecordId: projection.sourceRecordId, sourceUrl: projection.sourceUrl, sourceKey: projection.sourceKey, eventAt: projection.eventAt, detectedAt: projection.detectedAt, staleAt: projection.staleAt, evidenceJson: projection.evidenceJson, parserVersion: projection.parserVersion, updatedAt: new Date() } });
+  await db.insert(eventProjections).values(projection).onDuplicateKeyUpdate({ set: { entityId: projection.entityId, symbol: projection.symbol, storylineKey: projection.storylineKey, eventType: projection.eventType, title: projection.title, summary: projection.summary, relationshipJson: projection.relationshipJson, sentiment: projection.sentiment, impactScore: projection.impactScore, confidenceScore: projection.confidenceScore, status: projection.status, sourceRecordId: projection.sourceRecordId, sourceUrl: projection.sourceUrl, sourceKey: projection.sourceKey, marketId: projection.marketId, eventAt: projection.eventAt, detectedAt: projection.detectedAt, staleAt: projection.staleAt, evidenceJson: projection.evidenceJson, parserVersion: projection.parserVersion, updatedAt: new Date() } });
   return true;
 }
 
@@ -398,11 +398,20 @@ export async function getEventProjectionsForStoryline(storylineKey: string, limi
   return db.select().from(eventProjections).where(eq(eventProjections.storylineKey, storylineKey)).orderBy(desc(eventProjections.eventAt)).limit(Math.min(500, Math.max(1, limit)));
 }
 
-export async function getLatestEventProjections(limit = 200, lookbackDays = 365): Promise<EventProjection[]> {
+export async function getLatestEventProjections(limit = 200, lookbackDays = 365, marketId?: string): Promise<EventProjection[]> {
   const db = await getDb();
   if (!db) return [];
   const cutoff = new Date(Date.now() - Math.min(730, Math.max(1, lookbackDays)) * 24 * 60 * 60 * 1000);
-  return db.select().from(eventProjections).where(and(eq(eventProjections.status, "active"), gte(eventProjections.eventAt, cutoff))).orderBy(desc(eventProjections.eventAt)).limit(Math.min(500, Math.max(1, limit)));
+  const base = and(eq(eventProjections.status, "active"), gte(eventProjections.eventAt, cutoff));
+  // Market isolation: when a market is requested, return only that market's projections. Legacy
+  // rows written before marketId existed are treated as India (the only source historically
+  // connected); every new write carries an explicit marketId.
+  const marketFilter = marketId
+    ? marketId === "IN"
+      ? or(eq(eventProjections.marketId, "IN"), sql`${eventProjections.marketId} IS NULL`)
+      : eq(eventProjections.marketId, marketId)
+    : undefined;
+  return db.select().from(eventProjections).where(marketFilter ? and(base, marketFilter) : base).orderBy(desc(eventProjections.eventAt)).limit(Math.min(500, Math.max(1, limit)));
 }
 
 export async function getAutonomousRecommendation(id: string): Promise<AutonomousRecommendation | undefined> {
