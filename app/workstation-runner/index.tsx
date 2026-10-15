@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import { ScreenContainer } from "@/components/screen-container";
 import { cancelRunnerJob, confirmPairing, connectRunnerEvents, discoverRunners, getRunnerConnection, getRunnerState, revokeRunner, startPairing, startRunnerJob, type RunnerState } from "@/lib/workstation-runner";
 import { useRouter } from "expo-router";
