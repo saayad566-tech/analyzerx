@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
@@ -17,6 +17,7 @@ import { describeSeries, parseOhlcv } from "@/lib/quant/ohlcv";
 import { DEFAULT_TRACKER_CONFIG, trackStrategy, type TrackerRun } from "@/lib/quant/tracker";
 import { describeStrategy, generateStrategyFromPrompt } from "@/lib/quant/strategy";
 import type { Candle } from "@/lib/quant/types";
+import type { IoniconName } from "@/lib/icon-names";
 
 const ink = "#09111F";
 const panel = "#111C2D";
@@ -454,7 +455,7 @@ export default function QuantLabScreen() {
   );
 }
 
-function SmallButton({ icon, label, onPress, tone = amber }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; tone?: string }) {
+function SmallButton({ icon, label, onPress, tone = amber }: { icon: IoniconName; label: string; onPress: () => void; tone?: string }) {
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.smallButton, { borderColor: `${tone}55` }, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={label}>
       <Ionicons name={icon} size={15} color={tone} />
