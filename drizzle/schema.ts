@@ -55,7 +55,12 @@ export const newsEvents = mysqlTable("news_events", {
   impactScore: int("impactScore").notNull(),
   highImpact: boolean("highImpact").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => ({
+  marketPublishedIdx: index("news_events_market_published_idx").on(table.marketId, table.publishedAt),
+  marketSymbolPublishedIdx: index("news_events_market_symbol_published_idx").on(table.marketId, table.symbol, table.publishedAt),
+  publishedIdx: index("news_events_published_idx").on(table.publishedAt),
+  impactPublishedIdx: index("news_events_impact_published_idx").on(table.impactScore, table.publishedAt),
+}));
 
 export type NewsEvent = typeof newsEvents.$inferSelect;
 export type InsertNewsEvent = typeof newsEvents.$inferInsert;
@@ -141,7 +146,11 @@ export const sourceRecords = mysqlTable("source_records", {
   parserVersion: varchar("parserVersion", { length: 64 }).notNull(),
   supersedesId: varchar("supersedesId", { length: 96 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => ({
+  symbolRetrievedIdx: index("source_records_symbol_retrieved_idx").on(table.symbol, table.retrievedAt),
+  retrievedIdx: index("source_records_retrieved_idx").on(table.retrievedAt),
+  sourceKeyRetrievedIdx: index("source_records_source_key_retrieved_idx").on(table.sourceKey, table.retrievedAt),
+}));
 
 export type SourceRecord = typeof sourceRecords.$inferSelect;
 export type InsertSourceRecord = typeof sourceRecords.$inferInsert;
@@ -311,7 +320,12 @@ export const eventProjections = mysqlTable("event_projections", {
   parserVersion: varchar("parserVersion", { length: 64 }).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ({
+  statusEventAtIdx: index("event_projections_status_event_at_idx").on(table.status, table.eventAt),
+  marketStatusEventAtIdx: index("event_projections_market_status_event_at_idx").on(table.marketId, table.status, table.eventAt),
+  symbolEventAtIdx: index("event_projections_symbol_event_at_idx").on(table.symbol, table.eventAt),
+  storylineEventAtIdx: index("event_projections_storyline_event_at_idx").on(table.storylineKey, table.eventAt),
+}));
 
 export type EventProjection = typeof eventProjections.$inferSelect;
 export type InsertEventProjection = typeof eventProjections.$inferInsert;
@@ -421,7 +435,9 @@ export const userPushTokens = mysqlTable("user_push_tokens", {
   revokedAt: timestamp("revokedAt"),
   lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => ({
+  userEnabledRevokedIdx: index("user_push_tokens_user_enabled_revoked_idx").on(table.userId, table.enabled, table.revokedAt),
+}));
 export type UserPushToken = typeof userPushTokens.$inferSelect;
 export type InsertUserPushToken = typeof userPushTokens.$inferInsert;
 
