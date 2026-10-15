@@ -76,3 +76,7 @@
 
 | K53 | open | 3 expo packages remain | `expo` core (transitive), `expo-notifications` (push registration uses `getExpoPushTokenAsync`) and `expo-audio` (a recording hook API). These are the last three and each needs a real replacement, not a rename |
 | K54 | info | The server already speaks bare FCM | `server/fcm-auth.ts` and `server/push-delivery.ts` implement RS256 JWT + FCM HTTP v1 directly. Only the *client* still registers through Expo, so the notification replacement is client-side only |
+
+| K55 | resolved | `release:verify` failed on deleted files and markers | `release-manifest.json` still required `app.config.ts`, `eas.json` and two EAS-era markers. Repointed to the post-migration sources. The workflow would have failed before building |
+| K56 | resolved | `--frozen-lockfile` failed in CI | The lockfile was not regenerated after Stage 4 removed eight expo packages |
+| K57 | resolved | `pnpm check` failed on a stale test reference | `tests/local-ai-native-wiring.test.ts` referenced a removed variable; a stale `.expo/types` entry was also dropped from the root tsconfig |
