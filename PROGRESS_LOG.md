@@ -729,3 +729,40 @@ which type-checking caught a scripted edit that looked correct.
 Stages 2 (peripheral library swaps), 3 (`expo-router` → React Navigation, 43 files) and 4 (native
 project + config purge). Stage 3 and 4 are architectural and **must be verified on a device or CI**:
 tsc proves types, not that navigation or the native build actually works.
+
+## 2026-10-15 — Session 19 (Stage 2 of the Expo→bare-RN migration)
+Approved all phases. Stage 2 executed: the peripheral library layer is now off Expo.
+
+### Approach — a platform adapter layer
+Rather than edit ~60 call sites, each replaced package got a thin module under `lib/platform/` exposing
+the **same API surface**, so each call site changed only its import line. Smaller diff, far less risk,
+and one place to audit per package.
+
+| Removed | Replaced by | Files rewired |
+|---|---|---|
+| `@expo/vector-icons` (Stage 1) | `react-native-vector-icons` | 40 |
+| `expo-clipboard` | `@react-native-clipboard/clipboard` | 4 |
+| `expo-sharing` | `react-native-share` | 5 |
+| `expo-secure-store` | `react-native-keychain` | 3 |
+| `expo-haptics` | `react-native-haptic-feedback` | 1 |
+| `expo-device` | `react-native-device-info` | 1 |
+| `expo-linking` | react-native `Linking` (no new dep) | 3 |
+| `expo-status-bar` | react-native `StatusBar` (no new dep) | 1 |
+| `expo-file-system` | `react-native-fs` | 7 |
+| `expo-web-browser` | `react-native-inappbrowser-reborn` | 1 |
+| `expo-print` | `react-native-print` | 1 |
+| `expo-battery` | `react-native-device-info` | 1 |
+| `expo-constants` | `lib/platform/constants.ts` (mirrors app.config.ts) | 2 |
+| `expo-symbols` | `react-native-vector-icons` | 2 |
+
+**Expo-family dependencies: 24 → 11.** Remaining source imports: `expo-router` (43 files, Stage 3),
+`expo-notifications`, `expo-image-picker`, `expo-document-picker`, `expo-audio` (1 file each).
+
+### One behaviour change, recorded rather than hidden
+`createDownloadResumable` is reimplemented on react-native-fs. Progress, pause and cancel are faithful;
+**resume restarts the transfer rather than continuing by byte range**, because react-native-fs does not
+append to a partial file. Recorded as K46 — a real change, not a silent one.
+
+### Verified
+- `tsc --noEmit`: 0 errors in both scopes. **293 tests passing.** `--frozen-lockfile` passes.
+- The frozen check caught that packages were removed from `package.json` before the lockfile was synced.
