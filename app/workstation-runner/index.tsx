@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { ScreenContainer } from "@/components/screen-container";
 import { cancelRunnerJob, confirmPairing, connectRunnerEvents, discoverRunners, getRunnerConnection, getRunnerState, revokeRunner, startPairing, startRunnerJob, type RunnerState } from "@/lib/workstation-runner";
-import { useRouter } from "expo-router";
+import { useRouter } from "@/lib/navigation/router";
 import QRCode from "react-native-qrcode-svg";
 import { fireAndForget } from "@/lib/fire-and-forget";
 
