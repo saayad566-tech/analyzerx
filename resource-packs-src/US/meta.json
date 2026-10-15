@@ -1,0 +1,21 @@
+{
+  "marketId": "US",
+  "supported": true,
+  "notice": "Curated United States seed dataset. Live source-backed events, flows and filings arrive through the connected providers (SEC EDGAR and licensed feeds); figures shown here are the deterministic offline seed, not a live quote.",
+  "flowCategories": [
+    "Institutional",
+    "ETF",
+    "Insider",
+    "Options",
+    "Stock buying",
+    "Retail"
+  ],
+  "eventFilters": [
+    "All events",
+    "Large orders",
+    "Partnerships",
+    "Guidance",
+    "Government",
+    "High confidence"
+  ]
+}
