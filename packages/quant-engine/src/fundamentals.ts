@@ -32,6 +32,14 @@ export type Fundamentals = {
   cash?: number | null;
   inventory?: number | null;
   receivables?: number | null;
+  /** Balance-sheet and income-statement detail used by the forensic score models. */
+  costOfRevenue?: number | null;
+  grossProfit?: number | null;
+  sellingGeneralAdmin?: number | null;
+  depreciation?: number | null;
+  longTermDebt?: number | null;
+  retainedEarnings?: number | null;
+  propertyPlantEquipment?: number | null;
   ebit?: number | null;
   ebitda?: number | null;
   operatingCashFlow?: number | null;
