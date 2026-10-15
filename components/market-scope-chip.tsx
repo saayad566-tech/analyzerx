@@ -1,6 +1,6 @@
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { Pressable, Text, View } from "react-native";
-import { router } from "expo-router";
+import { router } from "@/lib/navigation/router";
 import { useMarketContext } from "@/lib/market-context";
 
 export function MarketScopeChip({ compact = false }: { compact?: boolean }) {
