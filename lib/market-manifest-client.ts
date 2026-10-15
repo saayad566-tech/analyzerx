@@ -141,6 +141,12 @@ export async function fetchManifest(options: {
   now?: Date;
   /** Injectable for tests: replaces the network call. */
   fetcher?: (url: string, timeoutMs: number) => Promise<unknown>;
+  /**
+   * Override the pinned key set. The application always uses the default production keys;
+   * this exists so a test can verify against its own key without a test key ever being
+   * compiled into a shipped build.
+   */
+  pinnedKeys?: Readonly<Record<string, string>>;
 } = {}): Promise<ManifestFetchResult> {
   const url = options.url ?? DEFAULT_MANIFEST_URL;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -161,7 +167,7 @@ export async function fetchManifest(options: {
 
   try {
     const raw = await fetcher(url, timeoutMs);
-    const verdict = verifyManifest(raw, { now });
+    const verdict = verifyManifest(raw, { now, pinnedKeys: options.pinnedKeys });
     if (!verdict.ok) {
       // A bad signature is not recoverable by retrying: serve the cache and say why.
       const cached = await readCachedManifest();
