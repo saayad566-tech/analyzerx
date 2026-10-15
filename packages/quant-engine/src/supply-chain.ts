@@ -73,6 +73,33 @@ export const SUPPLY_CHAIN_THEMES: Theme[] = [
     ],
   },
   {
+    id: "ev-transition",
+    name: "EV transition",
+    description:
+      "Electrification pulls on cells, the equipment that makes them, the charging and power electronics around them, and the mined inputs beneath all of it.",
+    roles: [
+      { id: "ev-oem", layer: "primary", label: "Vehicle OEMs", description: "The front-line manufacturers of electric vehicles.", keywords: ["electric vehicle", "ev oem", "automaker", "electric car", "vehicle manufacturer"] },
+      { id: "cells", layer: "secondary", label: "Battery cells", description: "Cell and pack manufacturing is the supply constraint.", keywords: ["battery", "cell manufacturing", "battery pack", "gigafactory", "lithium ion"] },
+      { id: "charging", layer: "secondary", label: "Charging & power electronics", description: "Charging networks and the power electronics in the vehicle.", keywords: ["charging", "power electronics", "inverter", "onboard charger", "dc fast"] },
+      { id: "magnets", layer: "secondary", label: "Motors & magnets", description: "Traction motors and the rare-earth magnets they need.", keywords: ["traction motor", "rare earth magnet", "permanent magnet", "neodymium", "electric motor"] },
+      { id: "ev-materials", layer: "tertiary", label: "Critical minerals", description: "Lithium, nickel, cobalt, graphite and copper.", keywords: ["lithium", "nickel", "cobalt", "graphite", "copper", "mining", "refining"] },
+      { id: "ev-grid", layer: "tertiary", label: "Grid capacity", description: "Charging load needs distribution capacity.", keywords: ["power grid", "grid capacity", "transmission", "substation", "utility"] },
+    ],
+  },
+  {
+    id: "energy-grid-overhaul",
+    name: "Energy grid overhaul",
+    description:
+      "Grid investment runs from the utilities and developers that commission it, through the switchgear and transformers that carry it, down to the metals it is built from.",
+    roles: [
+      { id: "developers", layer: "primary", label: "Utilities & developers", description: "Commission and operate the capacity.", keywords: ["utility", "power generation", "independent power", "nuclear", "gas turbine", "renewable developer"] },
+      { id: "switchgear", layer: "secondary", label: "Switchgear & transformers", description: "The equipment that moves and protects the power.", keywords: ["switchgear", "transformer", "circuit breaker", "grid equipment", "electrical equipment", "substation equipment"] },
+      { id: "cable", layer: "secondary", label: "Cable & transmission hardware", description: "Conductors, HVDC links and interconnection hardware.", keywords: ["cable", "conductor", "hvdc", "transmission line", "interconnection"] },
+      { id: "grid-metals", layer: "tertiary", label: "Copper & aluminium", description: "The metals the grid is physically made of.", keywords: ["copper", "aluminium", "aluminum", "smelting", "mining", "raw material"] },
+      { id: "grid-engineering", layer: "tertiary", label: "Engineering & construction", description: "Builds the physical infrastructure.", keywords: ["engineering and construction", "epc", "infrastructure construction", "grid construction"] },
+    ],
+  },
+  {
     id: "semiconductor-supply",
     name: "Semiconductor supply chain",
     description: "From wafers and chemicals up to the finished device.",
