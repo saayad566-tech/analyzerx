@@ -70,3 +70,6 @@
 | K48 | resolved | `expo-router` drove navigation across 43 files | Replaced by a React Navigation compatibility layer (`lib/navigation/router.tsx`) plus an explicit route registry and navigator tree. Screens changed only their import line |
 | K49 | open | Stage 3 navigation is type-checked, not device-verified | The navigator tree compiles and the suite passes, but tsc cannot prove that navigation, back behaviour or deep links actually work at runtime. Needs a device or CI run |
 | K50 | open | 10 expo-family packages remain | `expo` core, `expo-notifications`, `expo-image-picker`, `expo-document-picker`, `expo-audio`, `expo-font`, `expo-splash-screen`, `expo-system-ui`, `expo-video`, `expo-build-properties` — Stage 4 (native + config) of MIGRATION_PLAN.md |
+
+| K51 | open | The native project rewrite is unverified | `MainApplication`/`MainActivity`/Gradle were rewritten to the bare React Native template, but no Android build can run here. A CI run on `android-apk.yml` is required before this can be called working |
+| K52 | open | Splash-screen theme still carries Expo-named resources | `strings.xml` retains `expo_splash_screen_*` values consumed by the splash theme. Removing them means rewriting the theme, which is a native change that needs the same CI verification |
