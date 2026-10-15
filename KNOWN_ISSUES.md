@@ -66,3 +66,7 @@
 
 | K46 | info | Model download resume restarts rather than continuing by byte range | `react-native-fs` cannot append to a partial file, so `createDownloadResumable` re-fetches on resume. Progress, pause and cancel are faithful; the byte-range behaviour is not. Documented in `lib/platform/file-system.ts` |
 | K47 | open | 11 expo-family packages remain | `expo-router` (43 files) is Stage 3; `expo-notifications`, `expo-image-picker`, `expo-document-picker`, `expo-audio` and the Expo core/config/native layer are Stages 3-4 of MIGRATION_PLAN.md |
+
+| K48 | resolved | `expo-router` drove navigation across 43 files | Replaced by a React Navigation compatibility layer (`lib/navigation/router.tsx`) plus an explicit route registry and navigator tree. Screens changed only their import line |
+| K49 | open | Stage 3 navigation is type-checked, not device-verified | The navigator tree compiles and the suite passes, but tsc cannot prove that navigation, back behaviour or deep links actually work at runtime. Needs a device or CI run |
+| K50 | open | 10 expo-family packages remain | `expo` core, `expo-notifications`, `expo-image-picker`, `expo-document-picker`, `expo-audio`, `expo-font`, `expo-splash-screen`, `expo-system-ui`, `expo-video`, `expo-build-properties` — Stage 4 (native + config) of MIGRATION_PLAN.md |
