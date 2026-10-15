@@ -22,3 +22,6 @@
 
 | K15 | resolved | Native file picker | Added `expo-document-picker@~14.0.8` (SDK-54 pinned) with the lockfile re-synced; Strategy Lab now picks CSV/JSON directly |
 | K16 | info | Backtest costs model commission + slippage only — not short borrow/financing, market impact, or size limits | Documented in `lib/quant/backtest.ts`; sufficient for single-instrument research, not for capacity analysis |
+
+| K17 | info | Code multi-repo/monorepo sharding not executed | `expo export` (the only Metro-resolution test) fails in this pod with a WASM OOM, so a workspace conversion would ship unverified and could break the app bundle. Asset sharding (analyzerx-assets) is done; code sharding needs a bundler-capable environment |
+| K18 | info | 78 of the 100 catalogued books are reference-only (no algorithm) | Deliberate: they are labelled REFERENCE in the UI. Fabricating 78 screens would produce confident nonsense |
