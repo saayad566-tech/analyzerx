@@ -61,7 +61,7 @@ describe("Local AI model registry", () => {
 
   it("covers every catalogued model with an explicit lifecycle classification", () => {
     expect(LOCAL_AI_MODELS.map((model) => model.id)).toEqual(["qwen3-06b", "qwen3-06b-think", "gemma3-1b", "gemma4-e2b", "gemma4-e4b", "lfm25-12b", "qwen35-08b", "smollm3-3b", "bonsai-8b"]);
-    expect(LOCAL_AI_MODELS.filter((model) => model.installability === "verified_installable")).toHaveLength(3);
+    expect(LOCAL_AI_MODELS.filter((model) => model.installability === "verified_installable")).toHaveLength(4);
     expect(LOCAL_AI_MODELS.filter((model) => model.installability === "requires_account")).toHaveLength(1);
     expect(LOCAL_AI_MODELS.filter((model) => model.installability === "runtime_pending")).toHaveLength(4);
     // The default is the INT4 no-think build: smaller and roughly twice as quick on a CPU
