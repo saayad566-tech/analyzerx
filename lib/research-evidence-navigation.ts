@@ -1,4 +1,4 @@
-import type { Href } from "expo-router";
+import type { HrefTarget } from "@/lib/navigation/router";
 
 export type ResearchEvidenceNavigationInput = {
   kind: string;
@@ -9,7 +9,7 @@ export type ResearchEvidenceNavigationInput = {
 };
 
 export type ResearchEvidenceNavigation =
-  | { type: "route"; href: Href; label: string }
+  | { type: "route"; href: HrefTarget; label: string }
   | { type: "external"; url: string; label: string }
   | { type: "unavailable"; label: string; reason: string };
 
