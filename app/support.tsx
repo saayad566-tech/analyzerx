@@ -6,6 +6,7 @@ import * as Linking from "expo-linking";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { fireAndForget } from "@/lib/fire-and-forget";
 
 const SUPPORT_EMAIL = "support@marketeventintelligence.com";
 const SUPPORT_SITE = "https://marketevent-i4bj664j.manus.space";
@@ -42,7 +43,7 @@ export default function SupportScreen() {
   };
 
   const openSupportSite = () => {
-    void openExternal(SUPPORT_SITE, showFeedback);
+    fireAndForget(openExternal(SUPPORT_SITE, showFeedback), "openExternal");
   };
 
   const copyEmail = async () => {
