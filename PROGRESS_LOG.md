@@ -703,3 +703,29 @@ un-skipped in session 16 and exposed a real crash.
 - Working tree clean: `gradle.properties` restored to its original `-Xmx1200m -XX:MaxMetaspaceSize=384m`,
   no `local.properties`, no crash logs or heap dumps.
 - No `expo export` / EAS command anywhere in workflows or scripts.
+
+## 2026-10-15 — Session 18 (Stage 1 of the authorised Expo→bare-RN migration)
+The deadlock was explicitly resolved and the migration authorised with named replacements.
+
+### Stage 1 — executed and verified
+`@expo/vector-icons` → `react-native-vector-icons`.
+- **39 files** rewritten (the import was uniform: `import { Ionicons } from "@expo/vector-icons"`),
+  plus one default-import site the first pass missed (`components/ui/icon-symbol.tsx`).
+- **`keyof typeof Ionicons.glyphMap`** (an Expo-only type) appeared in 8 files. Replaced with
+  `IoniconName` in `lib/icon-names.ts`, derived from the component's own props so call sites stay
+  type-checked.
+- **Native step**: `apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")` added
+  to `android/app/build.gradle`. Without it the fonts are not bundled and icons render blank at
+  runtime — a break `tsc` cannot see.
+- `@types/react-native-vector-icons` added; `@expo/vector-icons` removed from `package.json`.
+- **Verified**: tsc 0 errors (app + lib), 293 tests passing, `--frozen-lockfile` valid.
+
+### Script defects caught by tsc (again)
+The rewrite script self-imported into `lib/icon-names.ts` (it matched the docstring) and the type
+replacement initially left a conflict. Both caught by tsc before commit. This is the third session in
+which type-checking caught a scripted edit that looked correct.
+
+### Remaining — see MIGRATION_PLAN.md
+Stages 2 (peripheral library swaps), 3 (`expo-router` → React Navigation, 43 files) and 4 (native
+project + config purge). Stage 3 and 4 are architectural and **must be verified on a device or CI**:
+tsc proves types, not that navigation or the native build actually works.
