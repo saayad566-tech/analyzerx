@@ -74,9 +74,11 @@ export async function discoverRunners(timeoutMs = 900) {
     const found: { service: string; version: string; url: string; hardware: RunnerHardware }[] = [];
     await new Promise<void>((resolve) => {
       let settled = false;
-      const finish = () => { if (!settled) { settled = true; try { socket.close(); } catch {} resolve(); } };
+      // Closing an already-closed or unbound socket throws; it is best-effort and must not block resolution.
+      const finish = () => { if (!settled) { settled = true; try { socket.close(); } catch { /* already closed */ } resolve(); } };
       const timer = setTimeout(finish, timeoutMs);
-      socket.on("message", (message: any) => { try { const payload = JSON.parse(message.toString()); if (payload.service === "AnalyzerX BYOH Runner" && payload.url && !found.some((item) => item.url === payload.url)) found.push(payload); } catch {} });
+      // A malformed broadcast from an unrelated service on the discovery port is expected and ignored.
+      socket.on("message", (message: any) => { try { const payload = JSON.parse(message.toString()); if (payload.service === "AnalyzerX BYOH Runner" && payload.url && !found.some((item) => item.url === payload.url)) found.push(payload); } catch { /* not our broadcast */ } });
       socket.on("error", () => { clearTimeout(timer); finish(); });
       socket.bind(0, () => { try { socket.setBroadcast?.(true); socket.send("ANALYZERX_DISCOVER_V1", 0, 22, DISCOVERY_PORT, "255.255.255.255"); } catch { clearTimeout(timer); finish(); } });
     });
