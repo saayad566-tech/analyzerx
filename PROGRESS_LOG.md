@@ -513,3 +513,48 @@ revealed this.
 - Wiring: the ledger is bound to the UI (5 references in `quant-lab`); 21/21 engine modules have
   shims (`core-types` maps to `lib/quant/types.ts`).
 - Pending, reported explicitly: the `apps/analyzerx` rename, and the CI bundle verification.
+
+## 2026-10-15 — Session 13 (published signal history + full requirement sweep)
+Two instructions: apply everything discussed without leaving cruft, and make the Strategy Lab
+**publish a timestamped history of its suggestions** so that at a later date anyone can check what it
+said and when.
+
+### Requirement sweep (evidence-based, not assumed)
+Checked the existence of every feature claimed across the briefs: 24/24 present. Resource packs,
+market isolation, activity log, diagnostics, push batching, push delivery, FCM auth, local AI (GGUF),
+the quant-engine and core-types packages, the tracker, the 100-book library, supply chain, the model
+catalogue, the ledger (engine + persistence), the compliance notice, both Strategy Lab screens, the CI
+workflow, the pnpm workspace and the test fixtures. No gaps, no orphaned modules.
+
+### Built — the published signal history
+- `packages/quant-engine/src/hash.ts` — SHA-256, **moved out of `lib/resource-packs/hash.ts`** so the
+  resource-pack integrity path and the signal chain share one implementation and the dependency
+  direction stays one-way. `lib/resource-packs/hash.ts` is now a shim; its tests still pass, which is
+  what proves the move. Adds `utf8Bytes` / `sha256Text` (no TextEncoder dependency).
+- `packages/quant-engine/src/signal-history.ts` — an **append-only, timestamped, hash-chained** record
+  of every suggestion: sequence number, epoch + ISO timestamp, market, strategy, kind, the suggestions
+  with their **publication price**, a digest of the inputs, the previous record's hash, and its own
+  hash. `verifyChain` detects an edited record, a removed record and a rewritten-and-resealed record.
+  `exportHistory` / `serializeHistory` produce a publishable artefact with a quotable `headHash`;
+  `parseHistory` validates on read; `evaluateRecord` measures what a past suggestion would have
+  returned **at a later date**, without ever writing back into the record.
+- `lib/signal-history.ts` — durable storage. The chain is **global, not per-market** (filtering before
+  verifying would break the sequence and link checks); verification always runs over the whole chain
+  and the UI filters for display. Records are never trimmed — at the cap the append is **refused** and
+  reported, because a history that silently loses its oldest entries is worse than one that says it is
+  full. Publishing refuses a chain that does not verify.
+- Wired into the Book Strategy Library: a "Record this suggestion" action captures the current screen /
+  rank / model output with each symbol's publication price, and a "Publish history" action writes and
+  shares the artefact. The section shows record count, per-market count, live chain-verification status
+  and the recent records with their hashes and links.
+
+### Design decision corrected mid-build
+The first draft of `evaluateRecord` used a suggestion's **score** as its entry price. A score is not a
+price; measuring a later return against it would have been fabricated. The record now carries an
+explicit `referencePrice` captured at publication time, and a suggestion without one is reported as
+not evaluable rather than measured against nothing.
+
+### Verified
+- `tsc --noEmit`: 0 errors in all three scopes.
+- **285 tests passing** (signal history and hash added 41), including the resource-packs suite through
+  the moved-hash shim and the FIPS 180-4 vectors.
