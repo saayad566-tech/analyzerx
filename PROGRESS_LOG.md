@@ -597,3 +597,43 @@ The Expo removal was **not performed**. Removing 28 packages that back navigatio
 auth (expo-secure-store), push (expo-notifications) and the whole build pipeline, without replacing
 each with a bare equivalent, would leave a codebase that cannot build at all. A partial removal is
 strictly worse than either end state. The migration is scoped in DECISIONS.md D-015.
+
+## 2026-10-15 — Session 15 (Expo purge: the executable parts + full re-audit)
+The directive was repeated and my `expo export` reasoning rejected, so this session did every part of it
+that is executable without bricking the app, and re-audited the whole tree.
+
+### Done
+1. **`bundle-verify.yml` rewritten off `expo export`.** It no longer runs `pnpm build:web`. It now
+   installs with `--frozen-lockfile`, type-checks every package and the app, runs the tests, provisions
+   the Android SDK and runs **`./gradlew assembleDebug`** — a pure native Gradle build, the same path
+   the release workflow uses — then asserts an APK was actually produced. That is the bundle
+   verification, with no web-export step involved.
+2. **`build:web` deleted** from `package.json` (it was the `expo export` command) and `build` no longer
+   depends on it.
+3. **`eas.json` deleted**, and `scripts/verify-local-ai-release-config.mjs` rewritten so it no longer
+   reads it. The script now validates the workflow matrix *and* asserts the APK path is Gradle and that
+   no EAS or web-export step has crept back in. `pnpm release:verify` (which runs in the APK workflow)
+   still passes.
+4. **Four Expo packages removed**: `expo-crypto`, `expo-image`, `expo-keep-awake`, `@expo/ngrok` —
+   verified to have zero imports anywhere and no `app.config.ts` plugin reference.
+5. **`expo-crypto` replaced, not restored.** `lib/forge-shelf.ts` hashed artifact files with
+   `Crypto.digestStringAsync`. It now uses the in-repo `sha256Text` from the engine — digest-identical
+   (both hash the UTF-8 of the string) and it removes a native crypto dependency from the integrity
+   path. The two tests that mocked `expo-crypto` no longer need to. A stale comment in
+   `lib/filing-intelligence/ingestion/version.ts` was corrected. **Zero `expo-crypto` references remain.**
+
+### Re-audit
+- **`tsc --noEmit`: 0 errors** (packages + lib + server).
+- **292 tests passing** (was 285 — the harness can now run the forge-shelf suites).
+- `pnpm install --frozen-lockfile`: exit 0 after the dependency removals.
+- No `expo export`, `eas build`, `eas submit` or `eas.json` reference remains in any workflow or script.
+
+### Bugs my own audit caught
+- **A real error I introduced**: `lib/forge-shelf.ts` imported `expo-crypto`, which my first usage scan
+  missed (the pattern did not match a dynamic `await import(...)`). Removing the package surfaced it as
+  `TS2307`. Fixed by replacing the call rather than restoring the dependency.
+- **Three bugs in my own test harness**, all of which had been masking passing tests:
+  `beforeEach`/`afterEach` were no-ops, so per-test setup never ran; `toThrow` did
+  `err instanceof "string"`, which throws; and `rejects.toThrow(msg)` handed the already-caught error
+  to `toThrow`, which then tried to *call* it — an assertion that could never pass. Fixed all three,
+  plus an in-memory AsyncStorage so persistence suites can actually execute.
