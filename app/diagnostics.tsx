@@ -15,6 +15,7 @@ import {
   readActivityLog,
 } from "@/lib/activity-log";
 import { ACTIVITY_LOG_FILENAME, formatEntry, type ActivityEntry, type ActivityLevel } from "@/lib/activity-log-core";
+import { fireAndForget } from "@/lib/fire-and-forget";
 
 const panel = "#111C2D";
 const raised = "#17253A";
@@ -55,7 +56,7 @@ export default function DiagnosticsScreen() {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    fireAndForget(refresh(), "refresh");
   }, [refresh]);
 
   const onExport = async () => {
