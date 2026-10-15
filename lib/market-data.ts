@@ -1,3 +1,5 @@
+import type { MarketId } from "./market-regions";
+
 export type EventKind =
   | "Partnership"
   | "Large order"
@@ -198,7 +200,15 @@ export const storylines: Storyline[] = [
   },
 ];
 
-export const sectors = [
+export type SectorSummary = {
+  name: string;
+  score: number;
+  activity: string;
+  color: string;
+  note: string;
+};
+
+export const sectors: SectorSummary[] = [
   { name: "Renewable energy", score: 92, activity: "6 linked events", color: "#F4B860", note: "Order-to-capex chains accelerating" },
   { name: "Capital goods", score: 84, activity: "4 linked events", color: "#4FD1C5", note: "Government order momentum" },
   { name: "Defence", score: 78, activity: "9 linked events", color: "#A78BFA", note: "Supplier discovery widening" },
@@ -207,10 +217,22 @@ export const sectors = [
 
 export const filters = ["All events", "Large orders", "Partnerships", "Investments", "Government", "High confidence"];
 
-export type FlowCategory = "FII" | "DII" | "Pro traders" | "Mutual funds" | "Stock buying" | "Options";
+export type FlowCategory =
+  | "FII"
+  | "DII"
+  | "Institutional"
+  | "Retail"
+  | "ETF"
+  | "Insider"
+  | "Pro traders"
+  | "Mutual funds"
+  | "Stock buying"
+  | "Options";
 
 export type MarketFlow = {
   id: string;
+  /** The market this flow belongs to. Present on market-scoped datasets; absent on legacy IN fixtures. */
+  marketId?: MarketId;
   category: FlowCategory;
   entity: string;
   symbol?: string;
