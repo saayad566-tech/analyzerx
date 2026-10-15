@@ -10,7 +10,7 @@ import { trpc } from "@/lib/trpc";
 import { clearMarketChatHistory, loadMarketChatHistory, loadMarketChatRuntimeMode, saveMarketChatHistory, saveMarketChatRuntimeMode, type LocalChatMessage, type MarketChatRuntimeMode } from "@/lib/local-preferences";
 import type { AnalyzerXAction, MarketChatAttachment } from "@/server/market-chat";
 import { getActiveLocalAIModelId, getLocalAIModel, getLocalAIRuntime, type LocalAIModelId } from "@/lib/local-ai";
-import { buildBoundedLocalPrompt, formatAssistantFailure, isGeneralChatQuestion, isCurrentDataQuestion, localPromptNotice, resolveMarketChatEngine, sanitizeLocalOutput, trimLocalHistory } from "@/lib/market-chat-runtime";
+import { buildBoundedLocalPrompt, formatAssistantFailure, isGeneralChatQuestion, localPromptNotice, resolveMarketChatEngine, sanitizeLocalOutput, trimLocalHistory } from "@/lib/market-chat-runtime";
 import { getLocalAIDeviceTelemetrySnapshot, recordLocalAIInference } from "@/lib/local-ai-telemetry";
 import { MarketScopeChip } from "@/components/market-scope-chip";
 import { useMarketContext } from "@/lib/market-context";
