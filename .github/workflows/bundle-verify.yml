@@ -1,8 +1,8 @@
 name: Bundle verification
 
-# The monorepo's package resolution and the Metro bundle are verified here, on a runner with real
-# memory, because a constrained local sandbox cannot complete a Metro transform (WASM allocation).
-# This is the gate that proves `packages/*` resolve and the app still bundles before a change lands.
+# Verifies the workspace resolves and the JavaScript bundle assembles, using standard native tooling.
+# The bundle is produced by Gradle through the committed `android/` project — the same path the release
+# workflow uses — so no web-export step is involved.
 
 on:
   workflow_dispatch:
@@ -39,13 +39,38 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
-      - name: Verify the Metro bundle resolves and builds
-        # This is the check a memory-constrained sandbox cannot run. It proves the workspace packages
-        # are resolvable from the app and that the bundle still assembles.
-        run: pnpm build:web
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
 
-      - name: Assert the bundle actually produced output
+      - name: Provision Android SDK
+        shell: bash
         run: |
-          test -d web-dist || { echo "expo export produced no web-dist"; exit 1; }
-          find web-dist -name "*.js" | head -5
-          echo "bundle files: $(find web-dist -name '*.js' | wc -l)"
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          SDKMGR="$(ls "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -n1)"
+          if [ -z "$SDKMGR" ]; then echo "sdkmanager not found under $SDK"; exit 1; fi
+          yes | "$SDKMGR" --sdk_root="$SDK" --licenses >/dev/null 2>&1 || true
+          "$SDKMGR" --sdk_root="$SDK" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Configure Android SDK path
+        run: echo "sdk.dir=${ANDROID_HOME}" > android/local.properties
+
+      - name: Assemble the debug APK (this is the bundle verification)
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --max-workers=1 -Dorg.gradle.jvmargs="-Xmx2200m -XX:MaxMetaspaceSize=512m"
+        env:
+          NODE_OPTIONS: --max-old-space-size=1536
+          CI: "1"
+
+      - name: Assert the bundle was actually produced
+        run: |
+          apk=$(find android/app/build/outputs/apk/debug -name '*.apk' -print -quit)
+          test -n "$apk" || { echo "Gradle produced no APK, so the bundle did not assemble"; exit 1; }
+          ls -la "$apk"
+          echo "Bundle verified via Gradle: $apk"
