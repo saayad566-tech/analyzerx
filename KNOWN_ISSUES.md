@@ -11,3 +11,6 @@
 | K7 | info | Live provider credentials (Finnhub/Dhan/Angel One/…) absent here | Environment-gated; truthful unavailable states retained |
 | K8 | info | Non-IN markets remain catalog-validated for live data; only seed content is bundled | Documented in PROJECT_SPEC and the dataset notices |
 | K9 | info | `event_projections.marketId` requires a schema migration (`pnpm db:push`, which CI runs) | Documented; legacy NULL rows are treated as India for the graph |
+
+| K10 | low | 13 `any` usages remain, all in vendor-style scaffolding (`lib/_core/*`, `server/_core/*`) that parses external payloads | Deliberately untouched — replacing them risks the auth path for no functional gain |
+| K11 | low | `console.log` in `lib/_core/api.ts` and `manus-runtime.ts` are not dev-gated | The auth path is now dev-gated; the rest is framework scaffolding, lower priority |
