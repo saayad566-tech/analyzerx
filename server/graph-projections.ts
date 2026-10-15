@@ -6,8 +6,10 @@ export type GraphEdge = { id: string; from: string; to: string; label: string; h
 function clamp(value: number) { return Math.max(0, Math.min(100, Math.round(value))); }
 function direction(sentiment: string | null | undefined) { return sentiment === "negative" ? "negative" : sentiment === "positive" ? "positive" : "neutral"; }
 
-export async function getRelationshipGraph(symbol?: string, maxHops = 2, limit = 80) {
-  const rows = await getLatestEventProjections(500);
+export async function getRelationshipGraph(symbol?: string, maxHops = 2, limit = 80, marketId?: string) {
+  // Market isolation: rows are scoped to the selected market so a relationship graph never mixes
+  // entities from different markets.
+  const rows = await getLatestEventProjections(500, 365, marketId);
   const selected = symbol ? rows.filter((row) => row.symbol === symbol.toUpperCase()) : rows;
   const nodes = new Map<string, GraphNode>();
   const clusters = new Map<string, { from: string; to: string; label: string; hop: number; confidence: number; sourceUrls: Set<string>; eventIds: Set<string>; directions: Set<string>; latest: string }>();
@@ -46,7 +48,7 @@ export async function getRelationshipGraph(symbol?: string, maxHops = 2, limit =
     const contradiction = cluster.directions.has("positive") && cluster.directions.has("negative") ? "mixed-direction" : cluster.sourceUrls.size > 1 && cluster.directions.has("neutral") ? "conflicting-sources" : "none";
     return { id: clusterKeyToId(cluster), from: cluster.from, to: cluster.to, label: cluster.label, hop: cluster.hop, confidence: cluster.confidence, evidenceStatus: (cluster.confidence >= 80 ? "confirmed" : cluster.confidence >= 55 ? "partial" : "inferred") as GraphEdge["evidenceStatus"], sourceUrl: cluster.latest, eventId: [...cluster.eventIds][0] ?? "", sourceCount: cluster.sourceUrls.size, sourceUrls: [...cluster.sourceUrls].slice(0, 8), contradiction: contradiction as GraphEdge["contradiction"], clusterKey: clusterKeyToId(cluster) };
   }).sort((a, b) => b.sourceCount - a.sourceCount || b.confidence - a.confidence).slice(0, limit);
-  return { symbol: symbol?.toUpperCase() ?? null, maxHops, nodes: [...nodes.values()].slice(0, limit), edges, asOf: new Date().toISOString(), evidence: selected.length ? "source-backed" : "unavailable" as const };
+  return { symbol: symbol?.toUpperCase() ?? null, maxHops, marketId: marketId ?? null, nodes: [...nodes.values()].slice(0, limit), edges, asOf: new Date().toISOString(), evidence: selected.length ? "source-backed" : "unavailable" as const };
 }
 
 function clusterKeyToId(cluster: { from: string; to: string; label: string }) { return `cluster:${cluster.from}:${cluster.to}:${cluster.label}`; }
