@@ -18,3 +18,6 @@ export * from "./supply-chain";
 export * from "./library-run";
 export * from "./compliance";
 export * from "./tracker";
+export * from "./scores";
+export * from "./risk";
+export * from "./model-catalogue";
