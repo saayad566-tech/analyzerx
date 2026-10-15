@@ -10,8 +10,8 @@
  *   - Nothing read back is trusted until it re-verifies.
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as FileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
+import * as FileSystem from "@/lib/platform/file-system";
+import * as Sharing from "@/lib/platform/share";
 
 import type { MarketId } from "@/lib/market-regions";
 import {
