@@ -15,6 +15,7 @@ import { MarketScopeChip } from "@/components/market-scope-chip";
 import { OperationProgressCard } from "@/components/operation-progress-card";
 import { useMarketContext } from "@/lib/market-context";
 import { classifyMarketCap, marketCapBandLabel, type MarketCapBand } from "@/lib/market-cap";
+import { fireAndForget } from "@/lib/fire-and-forget";
 
 const quantitativeFilterLabels: Partial<Record<FilterKey, string>> = {
   quality: "ROCE / ROE",
@@ -158,9 +159,9 @@ export default function ScreenerScreen() {
     setSelectedStock(direct ?? { symbol, name: symbol, sector: "Global equities", exchange: "Unknown", source: "Research Workspace" });
   }, [marketId, routedSymbol, selectedSymbol]);
   useEffect(() => {
-    void loadRecentSearches().then(setRecentSearches);
-    void loadSavedScreens().then(setSavedScreens);
-    void loadWatchlist().then(setWatchlist);
+    fireAndForget(loadRecentSearches().then(setRecentSearches), "loadRecentSearches");
+    fireAndForget(loadSavedScreens().then(setSavedScreens), "loadSavedScreens");
+    fireAndForget(loadWatchlist().then(setWatchlist), "loadWatchlist");
   }, []);
   const [remoteSearchQuery, setRemoteSearchQuery] = useState("");
   useEffect(() => {
