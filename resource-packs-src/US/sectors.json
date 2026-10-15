@@ -1,0 +1,30 @@
+[
+  {
+    "name": "Semiconductors",
+    "score": 91,
+    "activity": "7 linked events",
+    "color": "#F4B860",
+    "note": "Guidance raises across the accelerator chain"
+  },
+  {
+    "name": "Data-center infrastructure",
+    "score": 86,
+    "activity": "5 linked events",
+    "color": "#4FD1C5",
+    "note": "Power and cooling demand accelerating"
+  },
+  {
+    "name": "Electrical infrastructure",
+    "score": 79,
+    "activity": "4 linked events",
+    "color": "#A78BFA",
+    "note": "Grid awards improving visibility"
+  },
+  {
+    "name": "Financials",
+    "score": 72,
+    "activity": "6 linked events",
+    "color": "#FB7185",
+    "note": "Rate-sensitive positioning mixed"
+  }
+]
