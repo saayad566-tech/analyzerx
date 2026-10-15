@@ -3,7 +3,7 @@ import * as FileSystem from "@/lib/platform/file-system";
 import * as Sharing from "@/lib/platform/share";
 import { useMemo, useState } from "react";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "@/lib/navigation/router";
 import { ScreenContainer } from "@/components/screen-container";
 import { DetailHeader } from "@/components/detail-header";
 import { trpc } from "@/lib/trpc";
