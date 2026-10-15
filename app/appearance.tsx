@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useThemeContext } from "@/lib/theme-provider";
 import { THEME_DEFINITIONS, type ThemeMode } from "@/lib/theme-registry";
+import type { IoniconName } from "@/lib/icon-names";
 
-const modes: { id: ThemeMode; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [{ id: "system", label: "System", icon: "contrast-outline" }, { id: "light", label: "Light", icon: "sunny-outline" }, { id: "dark", label: "Dark", icon: "moon-outline" }];
+const modes: { id: ThemeMode; label: string; icon: IoniconName }[] = [{ id: "system", label: "System", icon: "contrast-outline" }, { id: "light", label: "Light", icon: "sunny-outline" }, { id: "dark", label: "Dark", icon: "moon-outline" }];
 
 export default function AppearanceScreen() {
   const { themeId, mode, palette, setThemeId, setMode, setCustomPalette } = useThemeContext();
