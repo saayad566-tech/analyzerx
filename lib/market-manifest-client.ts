@@ -33,7 +33,9 @@ import { marketScopeKey } from "./market-isolation";
 const CACHE_KEY = "analyzerx.manifest.cache.v1";
 
 /** The production manifest location. HTTPS only; the verifier rejects anything else. */
-export const DEFAULT_MANIFEST_URL = "https://github.com/saayad566-tech/analyzerx/releases/download/manifest-latest/market-manifest.json";
+// The live signed manifest. Hosted as a Release asset so it is served over HTTPS with no
+// server to run, and so a new manifest can be published without shipping an app build.
+export const DEFAULT_MANIFEST_URL = "https://github.com/saayad566-tech/analyzerx/releases/download/packs-IN-1.0.0/market-manifest.json";
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 /** A cached manifest is served when offline, but never presented as freshly checked. */
