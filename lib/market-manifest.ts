@@ -284,6 +284,11 @@ export function diffMarketPack(
   if (min === null) return { kind: "uncomparable", reason: `Could not compare app version ${appVersion} with required ${entry.minAppVersion}.` };
   if (min < 0) return { kind: "requires-app-update", required: entry.minAppVersion, current: appVersion };
 
+  // Validate the REMOTE version before anything else. Returning "absent" for a pack whose
+  // advertised version cannot be parsed would offer a download that could never be
+  // compared against what gets installed, so a malformed version is reported instead.
+  if (!parseVersion(entry.version)) return { kind: "uncomparable", reason: `The published version "${entry.version}" is not a valid semantic version.` };
+
   if (!local.version) return { kind: "absent", remoteVersion: entry.version };
 
   const cmp = compareVersions(entry.version, local.version);
