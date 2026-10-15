@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { router } from "@/lib/navigation/router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSyncExternalStore } from "react";
 import Ionicons from "react-native-vector-icons/Ionicons";
