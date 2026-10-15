@@ -49,6 +49,7 @@ import {
   isVerifiedRelease,
   releaseIdentityLabel,
 } from "@/lib/release-info";
+import { fireAndForget } from "@/lib/fire-and-forget";
 
 const amber = "#F4B860";
 const teal = "#4FD1C5";
@@ -372,8 +373,8 @@ export default function LiveEventsScreen() {
   const [irrelevantNewsIds, setIrrelevantNewsIds] = useState<string[]>([]);
   const [flaggingNewsId, setFlaggingNewsId] = useState<string | null>(null);
   useEffect(() => {
-    void recordResearchEvent({ type: "session", route: "live-events" });
-    void loadResearchUsageSummary().then(setUsageSummary);
+    fireAndForget(recordResearchEvent({ type: "session", route: "live-events" }), "recordResearchEvent");
+    fireAndForget(loadResearchUsageSummary().then(setUsageSummary), "loadResearchUsageSummary");
     void AsyncStorage.getItem(FIRST_SESSION_CHECKLIST_KEY)
       .then((value) => setChecklistDismissed(value === "seen"))
       .catch(() => undefined);
@@ -389,7 +390,7 @@ export default function LiveEventsScreen() {
     return () => clearTimeout(timeout);
   }, [query]);
   useEffect(() => {
-    void loadLocalIrrelevantNewsIds(market.id).then(setIrrelevantNewsIds);
+    fireAndForget(loadLocalIrrelevantNewsIds(market.id).then(setIrrelevantNewsIds), "loadLocalIrrelevantNewsIds");
     setArchivePage(0);
     setAppliedCustomRange(null);
     setShowCustomRange(false);
@@ -451,7 +452,7 @@ export default function LiveEventsScreen() {
     const articles = newsArchive.data?.articles ?? [];
     if (!articles.length) return;
     setLocalArchiveArticles(articles.slice(0, 500));
-    void writeLocalCache(localArchiveKey, articles.slice(0, 500), { source: "server", staleAfterSeconds: 7 * 24 * 60 * 60 });
+    fireAndForget(writeLocalCache(localArchiveKey, articles.slice(0, 500), { source: "server", staleAfterSeconds: 7 * 24 * 60 * 60 }), "writeLocalCache");
   }, [localArchiveKey, newsArchive.data?.articles]);
   const archiveExport = trpc.news.archiveExport.useQuery(
     archiveExportRequest ?? {
@@ -2430,7 +2431,7 @@ export default function LiveEventsScreen() {
               ]}
               onPress={() => {
                 if (selectedArticleHasSourceLink)
-                  void Linking.openURL(selectedNewsArticle.url);
+                  fireAndForget(Linking.openURL(selectedNewsArticle.url), "Linking.openURL");
               }}
             >
               <Text style={styles.primaryButtonText}>
