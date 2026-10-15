@@ -210,3 +210,30 @@ zero-cost push engine (session 4).
   and cursor pagination are what actually scales. See `stream-buffer.ts`.
 - **A native file picker.** `expo-document-picker` is not a dependency, and adding one would break
   `pnpm install --frozen-lockfile` in CI. Paste/clipboard is used instead.
+
+## 2026-10-15 — Session 6 (full-project type check closed; file picker added)
+Triggered by the master directive, which (a) adopts the bounded-streams position argued in session 5
+and (b) authorises lockfile synchronisation for missing dependencies.
+
+### Closed the verification gap from session 5
+The full-project `tsc --noEmit` could not complete in this pod (jitless exceeds the 300s cap;
+non-jitless OOMs at a real ~500MB heap ceiling). Per the directive's "smart alternatives", the check
+was split into three scopes and all three now pass with **0 errors**:
+- A: `server/**`, `lib/**`, `drizzle/**`, `shared/**`, `constants/**`
+- B: `app/**`, `components/**`, `hooks/**`
+- C: `tests/**`, `scripts/**`, root `*.ts`
+A first attempt produced two false errors (a missing `pako` declaration and a socket option type).
+Root cause: a scoped config **replaces** `include`, so the project's ambient declarations
+(`types/pako.d.ts`, `theme.config.d.ts`) were dropped. Adding them back cleared both. The code was
+never wrong — the config was.
+
+### Added — native CSV/JSON file picker (directive §2, lockfile sync)
+- `expo-document-picker@~14.0.8` — the version Expo SDK 54 pins in `expo/bundledNativeModules.json`.
+- `package.json` + `pnpm-lock.yaml` updated by a real `pnpm install` (lockfile now in sync, so
+  `--frozen-lockfile` in CI keeps working).
+- `app/quant-lab.tsx` — "Choose CSV / JSON" reads the picked file via `expo-file-system/legacy` and
+  feeds it to the same strict parser (paste and the labelled demo series remain).
+
+### Verified
+- Scoped strict tsc A, B, C: 0 errors each (B re-run after the picker change).
+- 81 quant tests still passing.
