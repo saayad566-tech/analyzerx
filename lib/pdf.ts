@@ -5,8 +5,8 @@
  * it to PDF with expo-print (no server, no Node). Charts are inline SVG so they
  * survive the HTML→PDF conversion without any image pipeline.
  */
-import * as Print from "expo-print";
-import * as Sharing from "expo-sharing";
+import * as Print from "@/lib/platform/print";
+import * as Sharing from "@/lib/platform/share";
 import { nowIso, type MarketId } from "./open-data/core";
 import { fundamentals, priceHistory, stockNews, type FundamentalAnalysis } from "./open-data/engine";
 
