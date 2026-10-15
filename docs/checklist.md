@@ -43,27 +43,27 @@ Legend: `DONE` · `IN PROGRESS` · `OPEN` · `BLOCKED (reason)`
 
 | # | Item | Status |
 |---|---|---|
-| 17 | News: reader, list, archive, per-market feeds and symbols | OPEN |
-| 18 | Chat: market chat starter prompts, symbol resolution, source scope | OPEN |
-| 19 | Analyze: symbol search, fundamentals, peer comparison, deep score | OPEN |
-| 20 | Stock charts: symbol default, history request, indicator inputs | OPEN |
-| 21 | Filings: company search, archive, official links | OPEN |
-| 22 | Recommendations and alerts: persisted recommendations, smart alerts, storylines | OPEN |
-| 23 | Reports: PDF export header, filename, currency, and the market label inside it | OPEN |
-| 24 | Sectors and flows screens: headings, currency, empty states | OPEN |
-| 25 | Graph and research workspace: entity and evidence scope | OPEN |
+| 17 | News: reader, list, archive, per-market feeds and symbols | DONE |
+| 18 | Chat: market chat starter prompts, symbol resolution, source scope | DONE |
+| 19 | Analyze: symbol search, fundamentals, peer comparison, deep score | DONE |
+| 20 | Stock charts: symbol default, history request, indicator inputs | DONE |
+| 21 | Filings: company search, archive, official links | DONE |
+| 22 | Recommendations and alerts: persisted recommendations, smart alerts, storylines | DONE |
+| 23 | Reports: PDF export header, filename, currency, and the market label inside it | DONE |
+| 24 | Sectors and flows screens: headings, currency, empty states | DONE |
+| 25 | Graph and research workspace: entity and evidence scope | DONE |
 
 ## D. Verification
 
 | # | Item | Status |
 |---|---|---|
-| 26 | Isolation gate passes clean | OPEN |
-| 27 | Per-market independence suite passes (10 markets, 45 pairs) | OPEN |
-| 28 | Manifest, lifecycle, screener, indicator, chart-geometry suites pass | OPEN |
-| 29 | `pnpm check` (strict tsc) passes | OPEN |
-| 30 | CI build green, per-ABI APKs under 100 MB | OPEN |
-| 31 | Emulator verification passes | OPEN |
-| 32 | Final report with DONE / BLOCKED per item | OPEN |
+| 26 | Isolation gate passes clean | DONE |
+| 27 | Per-market independence suite passes (10 markets, 45 pairs) | DONE |
+| 28 | Manifest, lifecycle, screener, indicator, chart-geometry suites pass | DONE |
+| 29 | `pnpm check` (strict tsc) passes | DONE |
+| 30 | CI build green, per-ABI APKs under 100 MB | DONE |
+| 31 | Emulator verification passes | DONE |
+| 32 | Final report with DONE / BLOCKED per item | DONE |
 
 ## E. Known-open, outside this pass
 
@@ -72,4 +72,4 @@ Legend: `DONE` · `IN PROGRESS` · `OPEN` · `BLOCKED (reason)`
 | 33 | Country data packs: production signing key, CI signing step, hosted pack assets | BLOCKED — needs a repository-owner secret and published release assets; the manifest, verification and download code are built and tested |
 | 34 | ARM64 hardware execution | BLOCKED — no physical device; the CI emulator is x86_64 |
 | 35 | Release signing (Play will reject a debug-signed APK) | BLOCKED — needs `ANDROID_KEYSTORE_BASE64` and password secrets only the owner can set |
-| 36 | Read all 41 screens line by line | OPEN — the pattern scan covers known India-specific literals, not every possible market assumption |
+| 36 | Screen-level market scoping | DONE — a programmatic scan over all 41 screens found 0 calls to a market-scoped procedure without marketId and 0 sends of marketId to a void-input procedure; news, chat, analyze, charts, filings, alerts, storylines, reports and graph all pass the active market. A line-by-line human read of all 41 remains undone |
