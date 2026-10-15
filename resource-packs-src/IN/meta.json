@@ -1,0 +1,21 @@
+{
+  "marketId": "IN",
+  "supported": true,
+  "notice": "Curated India seed dataset. Live source-backed news, filings and institutional flows arrive through NSE/BSE/SEBI collectors and the connected providers; figures shown here are the deterministic offline seed, not a live quote.",
+  "flowCategories": [
+    "FII",
+    "DII",
+    "Pro traders",
+    "Mutual funds",
+    "Stock buying",
+    "Options"
+  ],
+  "eventFilters": [
+    "All events",
+    "Large orders",
+    "Partnerships",
+    "Investments",
+    "Government",
+    "High confidence"
+  ]
+}
