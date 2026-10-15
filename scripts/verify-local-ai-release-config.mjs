@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import yaml from "yaml";
 
+// The release profile is validated against the workflow matrix, which is the single source of truth
+// for how the APK is built. The former EAS profile file is gone: the build uses Gradle directly and
+// never invoked EAS, so validating a profile that nothing consumed proved nothing.
 const workflow = yaml.parse(
   fs.readFileSync(".github/workflows/android-apk.yml", "utf8"),
 );
@@ -18,14 +21,12 @@ if (
   throw new Error("The Local AI Android workflow profile is missing or inconsistent.");
 }
 
-const eas = JSON.parse(fs.readFileSync("eas.json", "utf8"));
-const easLocalAi = eas.build["analyzerx-1.4.0-local-ai"];
-if (
-  !easLocalAi ||
-  easLocalAi.env.ANALYZERX_ENABLE_NATIVE_LOCAL_AI !== "true" ||
-  easLocalAi.env.ANALYZERX_ANDROID_VERSION_CODE !== "1400"
-) {
-  throw new Error("The Local AI EAS profile is missing or inconsistent.");
+const steps = workflow.jobs["build-apk"].steps.map((step) => step.run ?? "").join("\n");
+if (!/gradlew\s+assembleRelease/.test(steps)) {
+  throw new Error("The APK workflow no longer builds through Gradle.");
+}
+if (/\beas\b|expo\s+export/.test(steps)) {
+  throw new Error("The APK workflow must not invoke EAS or a web export step.");
 }
 
-console.log("Local AI release profile and workflow matrix verified.");
+console.log("Local AI release profile and Gradle build path verified.");
