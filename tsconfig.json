@@ -30,7 +30,6 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
-    ".expo/types/**/*.ts",
     "nativewind-env.d.ts"
   ],
   "exclude": [
