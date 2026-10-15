@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import { router } from "expo-router";
+import { router } from "@/lib/navigation/router";
 import { ScreenContainer } from "@/components/screen-container";
 import { clearResearchHistory, loadResearchHistory, type ResearchHistoryEntry, type ResearchHistoryType } from "@/lib/research-analytics";
 import { clearArchiveExportHistory, loadArchiveExportHistory, type ArchiveExportHistoryEntry } from "@/lib/local-preferences";
