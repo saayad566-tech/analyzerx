@@ -1,7 +1,7 @@
 import mysql from "mysql2";
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
-import { and, asc, desc, eq, gte, like, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, like, lt, or, sql } from "drizzle-orm";
 import { AutonomousRecommendation, Entity, EventProjection, InsertAutonomousRecommendation, InsertEntity, InsertEventProjection, InsertFundamentalObservation, InsertMarketObservation, InsertNewsEvent, InsertPushToken, InsertSmartAlertResult, InsertSourceRecord, InsertUser, InsertUserAlertResult, InsertUserNotificationPreferences, InsertUserSavedResearch, autonomousRecommendations, entities, eventProjections, fundamentalObservations, heldNewsArticles, marketObservations, newsEvents, newsRelevanceFeedback, pushTokens, smartAlertResults, sourceRecords, providerHealthHistory, users, userAlertResults, userAlertRules, userNotificationPreferences, userPushTokens, userSavedResearch, userSavedScreens, userWatchlistItems, userMarketPreferences, researchRuns, researchAgentRuns, type UserMarketPreference, type InsertResearchRun, type InsertResearchAgentRun, type InsertProviderHealthHistory, type InsertNewsRelevanceFeedback, type InsertHeldNewsArticle, type UserNotification, type InsertUserNotification, type PushToken, userNotifications } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { normalizePushTokenPage } from "./push-batching";
@@ -285,17 +285,33 @@ export async function upsertPushToken(token: InsertPushToken): Promise<boolean> 
 }
 
 /**
- * Enabled push tokens, read in bounded pages.
+ * One cursor page of enabled push tokens, ordered ascending by the token primary key.
  *
- * This used to load every enabled token across every user in one unbounded query. It is now
- * paginated so memory stays flat as the device count grows; callers loop over the pages.
- * Ordered by the token primary key so pages are stable between calls.
+ * Cursor (keyset) pagination rather than OFFSET: the delivery loop deactivates dead tokens as it
+ * goes, and an OFFSET page would then skip live devices because the filtered set shrank. A cursor
+ * on the last token seen is unaffected by rows disappearing behind it.
  */
-export async function getEnabledPushTokens(options: { limit?: number; offset?: number } = {}): Promise<PushToken[]> {
+export async function getEnabledPushTokenPage(options: { after?: string | null; limit?: number } = {}): Promise<PushToken[]> {
   const db = await getDb();
   if (!db) return [];
-  const { limit, offset } = normalizePushTokenPage(options);
-  return db.select().from(pushTokens).where(eq(pushTokens.enabled, true)).orderBy(asc(pushTokens.token)).limit(limit).offset(offset);
+  const { limit } = normalizePushTokenPage({ limit: options.limit });
+  const after = typeof options.after === "string" && options.after.length > 0 ? options.after : null;
+  const where = after ? and(eq(pushTokens.enabled, true), gt(pushTokens.token, after)) : eq(pushTokens.enabled, true);
+  return db.select().from(pushTokens).where(where).orderBy(asc(pushTokens.token)).limit(limit);
+}
+
+/**
+ * Mark tokens as no longer enabled — used when the push service reports a device as unregistered.
+ * Bounded so a single call can never issue an unbounded IN clause. Returns how many rows changed.
+ */
+export async function deactivatePushTokens(tokens: string[]): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const unique = [...new Set(tokens.filter((token): token is string => typeof token === "string" && token.length > 0))].slice(0, 1_000);
+  if (unique.length === 0) return 0;
+  const result = await db.update(pushTokens).set({ enabled: false }).where(inArray(pushTokens.token, unique));
+  const header = Array.isArray(result) ? (result[0] as { affectedRows?: number }) : (result as unknown as { affectedRows?: number });
+  return typeof header?.affectedRows === "number" ? header.affectedRows : unique.length;
 }
 
 export async function upsertSmartAlertResult(result: InsertSmartAlertResult): Promise<boolean> {
