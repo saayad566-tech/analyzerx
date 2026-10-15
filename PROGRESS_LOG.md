@@ -164,3 +164,49 @@ Triggered by the FCM/VAPID brief.
 - Live FCM delivery cannot be exercised here (needs the operator's Firebase service account and a
   device). The transport is real and its logic is unit-tested; the live call is not claimed as
   verified. Expo remains the default free path when FCM is unconfigured.
+
+## 2026-10-15 — Session 5 (quant R&D engine: real backtesting, no stubs)
+Triggered by the "quant systems architect" brief. Two parts of that brief were already satisfied and
+are NOT rebuilt: on-device local AI (real: pinned HF artifacts in `lib/local-ai-policy.ts`, Kotlin
+modules in `plugins/local-ai-android/`, real probes in `workstation-runner/adapters.py`) and the
+zero-cost push engine (session 4).
+
+### Built — `lib/quant/` (pure, dependency-free, 81 tests)
+- `types.ts`, `indicators.ts` — SMA, EMA (2/(n+1) seed), Wilder RSI, Wilder ATR, true range, rolling
+  extremes, fractal swings, market-structure trend. Warm-up is `null`, never a fabricated value.
+- `metrics.ts` — win rate, profit factor, expectancy, max drawdown, time-in-drawdown, CAGR,
+  volatility, Sharpe, exposure. Uncomputable metrics are `null`, never a flattering default.
+- `strategy.ts` — explicit rule list (AND entry, OR exit), precomputed series, and a **rule-based**
+  `generateStrategyFromPrompt` (deterministic keyword mapping — not a fake LLM).
+- `backtest.ts` — event-driven engine: signal on bar close, **fill on the next bar's open**,
+  commission on both legs, adverse slippage, intrabar stops/targets, and when a bar touches both the
+  **stop wins** (pessimistic). Refactored into a **generator** so the UI can show genuine per-bar
+  progress instead of animating a fake bar over a blocking call.
+- `ohlcv.ts` — strict CSV/JSON ingestion with quote-aware splitting, column aliasing, timestamp
+  normalisation, validation and dedupe. Reports what it dropped and why.
+- `stream-buffer.ts` — bounded `RingBuffer` + `BackpressureQueue` with explicit overflow policy and
+  a visible degraded flag. This is the correct answer to "handle millions of ticks": a fixed memory
+  ceiling with backpressure, not an unbounded array.
+- `app/quant-lab.tsx` — the wired console: paste/clipboard or a clearly-labelled demo series,
+  strategy prompt + presets, real progress bar and live log, metrics grid, trades and execution log.
+
+### Bugs my own tests caught (fixed)
+1. `maxHoldBars` off-by-one — held `N+1` bars instead of `N`.
+2. `generateStrategyFromPrompt` missed the common "ema 10/30" phrasing (number after the keyword).
+3. Stop/target percentages were only read when the number followed the word ("3% stop" failed).
+4. Quoted CSV fields were not handled, so `"1,000"` corrupted a value.
+
+### Verified
+- 81 quant tests passing (indicators 16, backtest 27, ingestion 20, stream 16).
+- Scoped **strict** tsc (with `noUnusedLocals`/`noUnusedParameters`) on `lib/quant` + quant tests:
+  0 errors. Scoped tsc on the new screen and on `app/account.tsx`: 0 errors.
+- Full-project `tsc --noEmit` passed earlier this session with the quant modules present. It could
+  not be re-run at the end: jitless exceeds the 300s cap and non-jitless OOMs at the pod's ~500MB
+  real heap ceiling. Every file changed *after* that pass was type-checked with a scoped config.
+
+### Deliberately NOT done (and why)
+- **Removing all limits / unbounded queries.** Refused on engineering grounds: an uncapped buffer or
+  query converts a latency problem into an out-of-memory crash. Bounded buffers with backpressure
+  and cursor pagination are what actually scales. See `stream-buffer.ts`.
+- **A native file picker.** `expo-document-picker` is not a dependency, and adding one would break
+  `pnpm install --frozen-lockfile` in CI. Paste/clipboard is used instead.
