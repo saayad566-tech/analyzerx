@@ -115,3 +115,17 @@ per mandate §2. None is ticked until its check has run.
 | 14.5 | Download pipeline wired to the manifest | `lib/market-pack-download.ts`; queued → downloading → verifying → installed, hash checked against the verified manifest | DONE |
 | 14.6 | Specification document | `docs/MANIFEST_SPEC.md` | DONE |
 | 14.7 | Production signing key, CI signing step, hosted packs | The pinned key is currently the RFC 8032 test key so the verification path is exercised end to end | OPEN — needs the real private key in CI and packs published as Release assets |
+
+## Slice 15 — Per-market independence cross-check
+
+Every market was checked individually, and every PAIR checked for collisions. This is the
+only way to catch a shared storage key or an identical formatter, which are invisible when
+you look at one market at a time.
+
+| # | Item | Evidence | Status |
+|---|---|---|---|
+| 15.1 | All 10 markets checked individually | `tests/market-independence.test.ts`; profile, currency, timezone, exchanges, formatting, grouping, storage keys, benchmarks, universe, news edition, session, status, resolution | DONE — 602 checks pass |
+| 15.2 | All 45 market pairs checked for collisions | Storage keys, news editions and currency formatting compared pairwise | DONE — 0 collisions |
+| 15.3 | 199-country registry round-trips | Every ISO2 and every MIC attributed back to its own country | DONE |
+| 15.4 | **China listed the wrong MIC** | `XBSE` is the Bucharest Stock Exchange; China's third exchange is the Beijing Stock Exchange, `XBEI`. A Bucharest code was resolving to China | DONE — corrected |
+| 15.5 | **A shared MIC silently resolved to one country** | `BY_MIC` kept the first claimant, so BRVM (`XBRV`), which serves 8 West African countries, resolved to Benin for all of them. `countryForMic` now refuses an ambiguous code; `countriesForMic` and `isRegionalMic` expose the regional case | DONE |
