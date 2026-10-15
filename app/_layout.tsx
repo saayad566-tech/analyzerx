@@ -27,6 +27,10 @@ import { MarketProvider } from "@/lib/market-context";
 import { resolveBackAction, resolveRootBackFeedback } from "@/lib/navigation-back";
 import { AssistantModeGate } from "@/components/assistant-mode-gate";
 import { RuntimeReadinessProbe } from "@/components/runtime-readiness-probe";
+import { fireAndForget, installUnhandledRejectionGuard } from "@/lib/fire-and-forget";
+
+// Record any rejection that escapes a call site, so no background failure is ever silent.
+installUnhandledRejectionGuard();
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -84,7 +88,7 @@ function PushRegistration() {
         console.warn("[Notifications] Push registration unavailable:", error);
       }
     };
-    void register();
+    fireAndForget(register(), "register");
   }, [registerPushToken, isAuthenticated]);
   return null;
 }
