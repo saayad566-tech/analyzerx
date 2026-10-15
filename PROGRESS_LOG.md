@@ -384,3 +384,42 @@ it endorses the workspace split, and it states that bundle verification belongs 
   equality (`0.03 − 0.01 = 0.019999999999999997`). The test was wrong, not the code.
 - `MarketUniverse` had no `priors` field while the screen passed one; unified `ModelUniverse` into
   `MarketUniverse` so there is a single universe shape.
+
+## 2026-10-15 — Session 10 (rigid audit against the master checklist)
+The brief was an audit with a **hard scope freeze**: no new screens, buttons or sliders — audit, fix
+and polish existing components only. Worked the checklist item by item.
+
+### Checklist results
+1. **Architecture & monorepo** — PASS. Wrote a real import-graph check (not an assertion):
+   - 0 edges from any `packages/**` file into `app/`, `components/`, `hooks/` or `lib/`.
+   - 0 import cycles across `packages/`, `app/`, `lib/`, `components/`, `hooks/`.
+   - 0 back-edges from `packages/**` to the `lib/quant/*` shims.
+   - `tsc` 0 errors in all three scopes (packages+lib+server, app+components+hooks, tests+scripts+root).
+2. **Quant engine** — PASS. The 22 book frameworks are wired through `IMPLEMENTATIONS` with no dummy
+   data; regional isolation and the compliance badge verified below.
+3. **Trailing stop-loss** — PASS. All five required behaviours are pinned by tests: the −10% floor,
+   break-even at +10%, +5% at +15%, +10% at +20%, the 10% gap to +50% and the 5% gap above it, plus
+   the ratchet and the per-position returns and win rates.
+4. **UX reconciliation** — 3 real defects found and fixed (below). Test suite 100% passing.
+
+### Defects found and fixed
+1. **Cross-market leakage in the supply-chain screen.** `screenSupplyChain` was called with whatever
+   universe was loaded, with no market-tag check — unlike `runLibraryEntry` and `runModel`, which both
+   refuse a mismatched universe. Loading a US universe and then switching the active market to India
+   left the US companies on screen. Fixed **in the engine**, not the UI: added
+   `screenSupplyChainScoped(themeId, universe, marketId)` to `supply-chain.ts`, mirroring the existing
+   refusal, with 5 regression tests. This is the kind of defect the checklist exists to catch.
+2. **Dead loading state.** `busy` was set true then false synchronously around `router.push`, so the
+   indicator could never render. Removed the dead state, its never-reached render and the now-unused
+   `ActivityIndicator` import.
+3. **Literal "undefined" in the UI.** `{item.candidate.name}` rendered the string "undefined" for a
+   company record with no name, because `Candidate.name` became optional when it was widened to accept
+   `Fundamentals`. Now falls back to the symbol.
+
+### Audited and found clean (not assumed)
+- Zero TODO/FIXME/stub/placeholder markers in `packages/*/src`, `app/*.tsx` or `lib/quant` — the only
+  `placeholder` matches are legitimate TextInput placeholder props.
+- Every `[0]` index in the two Strategy Lab screens is on a non-empty const array or an optional chain.
+- Every `toFixed` on a possibly-null value is null-guarded (`profitFactor`, `spanDays`, criterion and
+  component values).
+- `params.prompt` is type- and trim-guarded before it seeds the prompt.
