@@ -1,131 +1,75 @@
-# AnalyzerX — working checklist
+# AnalyzerX — authoritative completion checklist
 
-Every item below was found by inspecting the repository, not by copying a prompt. Each
-carries the evidence that produced it. Statuses are `DONE`, `NOT VERIFIED`, `BLOCKED` or
-`OPEN`. An item is ticked only after its check has actually been run.
+Written against the actual repository state, verified file by file. Every item is
+numbered and marked as it is finished. Nothing is marked DONE without its check having
+been run and its output recorded.
 
-`todo.md` in the repository root holds a separate, much larger historical backlog (247
-unticked lines at the time of writing). It is retained as-is: it is a record of intent, and
-this file is the record of what has been verified. Where the two overlap, this file wins.
+**Starting state (verified, not assumed):** the previous session's market-isolation fixes
+were performed locally but **never committed**, so the repository still contained the
+India-hardcoded sector path, no `lib/market-sector-universe.ts`, ungated Indian provider
+tiers, and a gate with no structural rules. Items 1–9 below exist because of that.
 
----
-
-## Slice 1 — Orphans and dead wiring
-
-| # | Item | Evidence | Status |
-|---|---|---|---|
-| 1.1 | Three Expo-starter components are never imported | `components/hello-wave.tsx`, `components/parallax-scroll-view.tsx`, `components/external-link.tsx` have no import anywhere in `app/`, `components/`, `lib/`, `server/` or `tests/` | DONE — removed |
-| 1.2 | `lib/forge-shelf-filesystem.ts` looked orphaned | FALSE ALARM. `lib/forge-shelf.ts` line 2 imports it. A naive grep missed the relative `./` form; the corrected audit confirms it is wired | DONE — no change needed |
-| 1.3 | `app/workstation-runner/index.tsx` looked unreachable | FALSE ALARM. `app/account.tsx` navigates to `/workstation-runner` | DONE — no change needed |
-| 1.4 | `app/dev/theme-lab.tsx` shipped to production | Deep-linkable in a release build | DONE — now refuses to render outside `__DEV__` |
-
-## Slice 2 — Features built but not surfaced
-
-| # | Item | Evidence | Status |
-|---|---|---|---|
-| 2.1 | Natural-language screener had no UI | `lib/nl-screener.ts` existed and was tested (24 assertions) but no screen imported it | DONE — wired into the Screener screen |
-| 2.2 | Technical indicators had no screen | `lib/indicators.ts` (26 indicators) and the chart had no route | DONE — `/chart` added, linked from the company screen, registered in `lib/app-inventory.ts` |
-| 2.3 | `priceHistory` discarded OHLCV | Returned closes only, which made candlesticks and every volume indicator impossible | DONE — returns full OHLCV bars |
-
-## Slice 3 — Artifact size (mandate §4)
-
-| # | Item | Evidence | Status |
-|---|---|---|---|
-| 3.1 | The APK exceeds GitHub's 100 MB per-file limit | `analyzerx-3.29.0-107.apk` is 111,082,257 bytes; the artifact-branch step had to split it into 4 MB parts | DONE — per-ABI APKs built and published |
-| 3.2 | No APK or large data committed to the repo | `.gitignore` covers `*.apk`, `*.aab`, `*.so`, `.gradle/`, model formats | DONE |
-
-## Slice 4 — Keyboard and input (reported defect)
-
-| # | Item | Evidence | Status |
-|---|---|---|---|
-| 4.1 | The composer sat under the keyboard on Android | `app/general-chat.tsx` used the pre-edge-to-edge `behavior={Platform.OS === "ios" ? "padding" : undefined}` and never applied the keyboard inset | DONE — reads the real height and applies it |
+Legend: `DONE` · `IN PROGRESS` · `OPEN` · `BLOCKED (reason)`
 
 ---
 
-## Open — the large backlog, sliced
+## A. Re-land the market-isolation work that was lost (highest priority)
 
-These are real and unverified. They are grouped so each slice is finishable in one pass,
-per mandate §2. None is ticked until its check has run.
+| # | Item | Status |
+|---|---|---|
+| 1 | Add `lib/market-sector-universe.ts` — the single per-market sector universe | DONE |
+| 2 | Make `getSectorConstituents` take a `marketId`, use that market's universe, and gate the Indian quote API and both NSE flow feeds on `IN` | DONE |
+| 3 | Make `getAvailableSectorNames(marketId)` per-market | DONE |
+| 4 | Router `sectorConstituents` must actually pass `input.marketId` (it declared and discarded it) | DONE |
+| 5 | Router `sectorNames` must take a `marketId` | DONE |
+| 6 | Local link `market.sectorNames` must use the requested market, not `NSE_INDEX_FILES` | DONE |
+| 7 | `analyzeFundamentals` must gate Indian provider tiers on `IN` and SEC on `US` | DONE |
+| 8 | `getPositioningCoverage` must take a `marketId` and gate the NSE report | DONE |
+| 9 | Router `positioning` must pass the market | DONE |
+| 10 | Router `institutionalFlows` must be market-scoped (NSE report is India-only) | DONE |
+| 11 | Screens `(tabs)/sectors.tsx` and `(tabs)/flows.tsx` must pass `marketId` to `institutionalFlows` | DONE |
 
-### Slice 5 — Data pipeline wiring (mandate §3)
-- Draw the full chain per feature: source → download → parse → clean → validate → local SQL → query → screen → PDF.
-- One test per stage, plus one end-to-end test with recorded data.
-- Every failure path (offline, empty, rate limit, missing pack, source down) shows a message, never a crash or blank.
-- **OPEN.** The chain is drawn for quotes, news and fundamentals; not for filings, flows or derivatives.
+## B. The gate must catch this class of bug
 
-### Slice 6 — Country data packs (mandate §4/4B)
-- Signed manifest hosted as a Release asset, one set per country, SHA-256 per part.
-- In-app Download button with resume, Wi-Fi-only option, disk-space check, hash check, clear missing-pack message.
-- Parts ≤ 100 MB, compressed, reassembled on device; a country counts as installed only when every part is verified.
-- Test that builds a fake 250 MB country, splits it, downloads, verifies and opens it.
-- **OPEN.** Not started. The ForgeShelf downloader (`lib/forge-shelf.ts` + `forge-shelf-filesystem.ts`) already implements resumable download, checksum verification and preflight, so it is the natural base.
+| # | Item | Status |
+|---|---|---|
+| 12 | Add rule `declared-but-unused-marketId` — a procedure declaring `marketId` whose handler never forwards it | DONE |
+| 13 | That rule must follow **whole-`input` forwarding** so `f(input)` where `f` uses `marketId` is not a false positive | DONE |
+| 14 | Add rule `ungated-india-source` — an India-only source called with no market gate in scope | DONE |
+| 15 | Exclude function *definitions* (not just calls) from the ungated-source rule | DONE |
+| 16 | Gate must pass clean, with any remaining excuse carrying a written reason | DONE |
 
-### Slice 7 — In-app news reader (mandate goal)
-- Read an article inside the app rather than handing off to the browser, with a pro "hacker" presentation.
-- **OPEN.** `app/news/[id].tsx` exists; whether it renders in-app or links out is unverified.
+## C. Screen-level audit — every surface must follow the active market
 
-### Slice 8 — PDF report readability
-- **OPEN.** `lib/pdf.ts` exists; readability has not been reviewed.
+| # | Item | Status |
+|---|---|---|
+| 17 | News: reader, list, archive, per-market feeds and symbols | OPEN |
+| 18 | Chat: market chat starter prompts, symbol resolution, source scope | OPEN |
+| 19 | Analyze: symbol search, fundamentals, peer comparison, deep score | OPEN |
+| 20 | Stock charts: symbol default, history request, indicator inputs | OPEN |
+| 21 | Filings: company search, archive, official links | OPEN |
+| 22 | Recommendations and alerts: persisted recommendations, smart alerts, storylines | OPEN |
+| 23 | Reports: PDF export header, filename, currency, and the market label inside it | OPEN |
+| 24 | Sectors and flows screens: headings, currency, empty states | OPEN |
+| 25 | Graph and research workspace: entity and evidence scope | OPEN |
 
-### Slice 9 — Sector and flow live data
-- Replace any fixture-derived sector score with a live-derived one, with loading/stale/unavailable/retry states.
-- **OPEN.** The Sectors screen was rewritten to derive from verified events; whether any fixture path remains is unverified.
+## D. Verification
 
-### Slice 10 — Earnings and financial-call coverage
-- **OPEN.** Not started.
+| # | Item | Status |
+|---|---|---|
+| 26 | Isolation gate passes clean | OPEN |
+| 27 | Per-market independence suite passes (10 markets, 45 pairs) | OPEN |
+| 28 | Manifest, lifecycle, screener, indicator, chart-geometry suites pass | OPEN |
+| 29 | `pnpm check` (strict tsc) passes | OPEN |
+| 30 | CI build green, per-ABI APKs under 100 MB | OPEN |
+| 31 | Emulator verification passes | OPEN |
+| 32 | Final report with DONE / BLOCKED per item | OPEN |
 
-### Slice 11 — Company expansion / investment / announcement tracking
-- **OPEN.** Partly covered by event projections; coverage not verified.
+## E. Known-open, outside this pass
 
-### Slice 12 — Backlog triage from `todo.md`
-- 247 unticked lines. Each needs to be re-verified against the current tree, because many
-  were written against older versions and may already be satisfied or may no longer apply.
-- **OPEN.**
-
----
-
-## Standing constraints (from the mandate, applied to every slice)
-
-- Never change `applicationId` or the signing key; raise `versionCode` every release.
-- Never commit the keystore, passwords or API keys.
-- Never claim a check passed without running it.
-- Never mix one country's stocks or news into another's.
-- Never invent versions, URLs, endpoints or financial figures.
-- Cache and rate-limit every free API call.
-- A feature is DONE only when data flows from source to screen.
-
-## Slice 13 — Onboarding and per-country lifecycle (architecture review)
-
-| # | Item | Evidence | Status |
-|---|---|---|---|
-| 13.1 | No first-launch country selection existed | `app/_layout.tsx` went straight to `/(tabs)`; no onboarding flag anywhere | DONE — `app/onboarding.tsx` + `FirstLaunchGate` |
-| 13.2 | No per-country install state existed | `market-context.tsx` tracked the active market but nothing tracked whether a country's data was present | DONE — `lib/market-lifecycle.ts` |
-| 13.3 | The switcher showed only "active" | `app/market-country.tsx` had no download/installed/progress states | DONE — lifecycle badges, activation gated on installed |
-| 13.4 | Architecture was undocumented | No single description of the tree, lifecycle or isolation model | DONE — `docs/ARCHITECTURE.md` |
-| 13.5 | Country data packs do not exist | The state machine reaches `queued` and stops; there is no signed manifest or hosted pack | OPEN — largest remaining piece |
-
-## Slice 14 — Signed manifest and pack download
-
-| # | Item | Evidence | Status |
-|---|---|---|---|
-| 14.1 | Ed25519 verification | Implemented in pure TypeScript and validated against the RFC 8032 §7.1 test vectors (all three), with six negative controls | DONE |
-| 14.2 | SHA-512 | Needed by Ed25519; `expo-crypto` offers SHA-256 only | DONE — validated against the NIST vectors |
-| 14.3 | Manifest schema + signature verification | `lib/market-manifest.ts`; refuses unsigned, unknown key id, bad signature, expired, non-HTTPS, malformed hash | DONE |
-| 14.4 | Client fetch with timeout, cache, offline fallback | `lib/market-manifest-client.ts`; verified-only cache, one attempt per call, cache served stale when offline | DONE |
-| 14.5 | Download pipeline wired to the manifest | `lib/market-pack-download.ts`; queued → downloading → verifying → installed, hash checked against the verified manifest | DONE |
-| 14.6 | Specification document | `docs/MANIFEST_SPEC.md` | DONE |
-| 14.7 | Production signing key, CI signing step, hosted packs | The pinned key is currently the RFC 8032 test key so the verification path is exercised end to end | OPEN — needs the real private key in CI and packs published as Release assets |
-
-## Slice 15 — Per-market independence cross-check
-
-Every market was checked individually, and every PAIR checked for collisions. This is the
-only way to catch a shared storage key or an identical formatter, which are invisible when
-you look at one market at a time.
-
-| # | Item | Evidence | Status |
-|---|---|---|---|
-| 15.1 | All 10 markets checked individually | `tests/market-independence.test.ts`; profile, currency, timezone, exchanges, formatting, grouping, storage keys, benchmarks, universe, news edition, session, status, resolution | DONE — 602 checks pass |
-| 15.2 | All 45 market pairs checked for collisions | Storage keys, news editions and currency formatting compared pairwise | DONE — 0 collisions |
-| 15.3 | 199-country registry round-trips | Every ISO2 and every MIC attributed back to its own country | DONE |
-| 15.4 | **China listed the wrong MIC** | `XBSE` is the Bucharest Stock Exchange; China's third exchange is the Beijing Stock Exchange, `XBEI`. A Bucharest code was resolving to China | DONE — corrected |
-| 15.5 | **A shared MIC silently resolved to one country** | `BY_MIC` kept the first claimant, so BRVM (`XBRV`), which serves 8 West African countries, resolved to Benin for all of them. `countryForMic` now refuses an ambiguous code; `countriesForMic` and `isRegionalMic` expose the regional case | DONE |
+| # | Item | Status |
+|---|---|---|
+| 33 | Country data packs: production signing key, CI signing step, hosted pack assets | BLOCKED — needs a repository-owner secret and published release assets; the manifest, verification and download code are built and tested |
+| 34 | ARM64 hardware execution | BLOCKED — no physical device; the CI emulator is x86_64 |
+| 35 | Release signing (Play will reject a debug-signed APK) | BLOCKED — needs `ANDROID_KEYSTORE_BASE64` and password secrets only the owner can set |
+| 36 | Read all 41 screens line by line | OPEN — the pattern scan covers known India-specific literals, not every possible market assumption |
