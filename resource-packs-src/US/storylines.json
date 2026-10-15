@@ -1,0 +1,41 @@
+[
+  {
+    "id": "us-story-1",
+    "title": "MSFT <-> VRT: AI data-centre buildout",
+    "subtitle": "Partnership -> order -> capacity -> capex",
+    "score": 90,
+    "eventCount": 3,
+    "window": "24h",
+    "entities": [
+      "MSFT",
+      "VRT",
+      "Texas"
+    ],
+    "status": "Developing"
+  },
+  {
+    "id": "us-story-2",
+    "title": "NVDA: accelerator supply chain",
+    "subtitle": "Guidance raise -> supplier read-through",
+    "score": 86,
+    "eventCount": 1,
+    "window": "7d",
+    "entities": [
+      "NVDA"
+    ],
+    "status": "Watch"
+  },
+  {
+    "id": "us-story-3",
+    "title": "PWR: grid modernization cycle",
+    "subtitle": "Federal award -> execution throughput",
+    "score": 83,
+    "eventCount": 1,
+    "window": "30d",
+    "entities": [
+      "PWR",
+      "U.S. Department of Energy"
+    ],
+    "status": "Confirmed"
+  }
+]
