@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { LOCAL_AI_MODELS, type LocalAIModelId } from "@/lib/local-ai-policy";
