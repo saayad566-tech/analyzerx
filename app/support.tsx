@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
-import * as Clipboard from "expo-clipboard";
-import * as Linking from "expo-linking";
+import * as Clipboard from "@/lib/platform/clipboard";
+import { Linking } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
 import { ScreenContainer } from "@/components/screen-container";
