@@ -670,3 +670,36 @@ the whole repo for incomplete/leaked/broken blocks, fix everything, and report i
 ### Verified
 - `tsc --noEmit`: **0 errors** (packages + lib + server).
 - **293 tests passing** (up from 292 — the un-skipped auth suite now runs).
+
+## 2026-10-15 — Session 17 (uncaught promises resolved; version reconciled; release 3.2.0)
+The directive accepted the 2 GB pod ceiling, forbade producing a dummy .apk locally, and asked for the
+uncaught-async class to be resolved. Executed against those terms.
+
+### Uncaught async promises — resolved
+- New `lib/fire-and-forget.ts`: `fireAndForget(operation, label)` runs an operation without awaiting it
+  and **guarantees the rejection is recorded** to the activity log. `void promise` only marks intent — it
+  does not handle rejection, which is how 100+ background failures could go silent.
+- **31 call sites converted** across 13 files from `void foo()` to `fireAndForget(foo(), "foo")`.
+- `installUnhandledRejectionGuard()` installed in `app/_layout.tsx`: any rejection that still escapes a
+  call site is recorded rather than lost. This covers the remaining multi-line sites at runtime.
+- Conversion was scripted, then verified by `tsc`. It broke two files (the import landed inside a
+  multi-line import block) — caught by tsc and fixed. Exactly why the change was type-checked rather
+  than trusted.
+
+### Version reconciled
+`package.json` said `1.4.0` while the app release is `3.2.0` (`app.config.ts`, versionCode 3200). Two
+different versions for one repository. Aligned `package.json` to **3.2.0**.
+
+### Skipped tests — audited, not forced
+Six conditional skips exist (`token ? it : it.skip`, `describe.skipIf(!runIntegration)`). These are
+opt-in integration tests that require a live API key or network (Finnhub, SEC EDGAR, NSE, TinyFish).
+They are correctly gated, not hidden gaps. Forcing them green without credentials would be faking a
+result, so they are reported rather than un-skipped. The one genuinely stale skip (`auth.logout`) was
+un-skipped in session 16 and exposed a real crash.
+
+### Verified
+- `tsc --noEmit`: **0 errors** in both scopes (packages+lib+server, app+lib).
+- **293 tests passing, 0 failed.**
+- Working tree clean: `gradle.properties` restored to its original `-Xmx1200m -XX:MaxMetaspaceSize=384m`,
+  no `local.properties`, no crash logs or heap dumps.
+- No `expo export` / EAS command anywhere in workflows or scripts.
