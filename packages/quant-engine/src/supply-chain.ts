@@ -12,6 +12,8 @@
  * is returned as unmatched rather than being force-fitted into a layer.
  */
 
+import type { MarketId } from "./core-types";
+
 export type SupplyChainLayer = "primary" | "secondary" | "tertiary";
 
 export type SupplyChainRole = {
@@ -163,6 +165,35 @@ export function screenSupplyChain(themeId: string, candidates: Candidate[]): Sup
   }
   for (const layer of LAYER_ORDER) layers[layer].sort((a, b) => b.confidence - a.confidence || a.candidate.symbol.localeCompare(b.candidate.symbol));
   return { theme, layers, unmatched };
+}
+
+export type ScopedSupplyChainResult =
+  | { ok: true; screen: SupplyChainScreen }
+  | { ok: false; reason: string };
+
+/**
+ * Market-scoped supply-chain screening.
+ *
+ * Mirrors the refusal in `library-run`: a universe tagged for one market is never screened under
+ * another. Without this the section would keep listing companies from the previously selected region
+ * after the active market changed — invisible to the user, and wrong in every row.
+ */
+export function screenSupplyChainScoped(
+  themeId: string,
+  universe: { marketId: MarketId; companies: Candidate[] } | null | undefined,
+  marketId: MarketId,
+): ScopedSupplyChainResult {
+  const theme = findTheme(themeId);
+  if (!theme) return { ok: false, reason: `No supply-chain theme named "${themeId}" is defined.` };
+  if (!universe || universe.companies.length === 0) {
+    return { ok: false, reason: "Load a fundamentals universe above — its sector and description text drives the classification." };
+  }
+  if (universe.marketId !== marketId) {
+    return { ok: false, reason: `The loaded universe is tagged ${universe.marketId} but the active market is ${marketId}. Cross-market supply-chain screening is refused.` };
+  }
+  const screen = screenSupplyChain(themeId, universe.companies);
+  if (!screen) return { ok: false, reason: `No supply-chain theme named "${themeId}" is defined.` };
+  return { ok: true, screen };
 }
 
 /** Roles of a theme, grouped by layer — used by the education panel. */
