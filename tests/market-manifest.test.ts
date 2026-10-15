@@ -34,9 +34,18 @@ import {
 import { publicKeyFromSeed, signEd25519, signPayload } from "./helpers/manifest-signer";
 import { hexToBytes } from "../lib/ed25519";
 
-/** The RFC 8032 TEST 1 seed, whose public half is the pinned test key. */
+/**
+ * The RFC 8032 TEST 1 seed, used to sign in this suite.
+ *
+ * The application pins the PRODUCTION key, which is the correct thing to ship — a test key
+ * must never be compiled into a build. So this suite injects its own key through the
+ * `pinnedKeys` option, which exists for exactly this purpose, and asserts separately that
+ * the production key is pinned and is NOT the test key.
+ */
 const SEED = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
 const KEY_ID = "analyzerx-manifest-test-1";
+/** Every verification in this file runs against this key set. */
+const TEST_KEYS = { [KEY_ID]: publicKeyFromSeed(SEED) } as const;
 
 const NOW = new Date("2026-10-15T00:00:00Z");
 
@@ -66,9 +75,26 @@ function signed(p: ManifestPayload, seed = SEED, keyId = KEY_ID) {
 
 beforeEach(() => { store.clear(); });
 
-describe("the pinned key is the RFC 8032 test key", () => {
-  it("matches the public key derived from the test seed", () => {
-    expect(PINNED_MANIFEST_KEYS[KEY_ID]).toBe(publicKeyFromSeed(SEED));
+describe("the pinned key is the production key, not the test key", () => {
+  it("pins a production key id", () => {
+    expect(Object.keys(PINNED_MANIFEST_KEYS)).toContain("analyzerx-manifest-2026");
+  });
+
+  it("pins a 32-byte hex public key", () => {
+    const value = PINNED_MANIFEST_KEYS["analyzerx-manifest-2026"];
+    expect(typeof value).toBe("string");
+    expect(value).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("does NOT pin the test key, so a test key can never ship", () => {
+    expect(PINNED_MANIFEST_KEYS[KEY_ID]).toBeUndefined();
+    expect(Object.values(PINNED_MANIFEST_KEYS)).not.toContain(publicKeyFromSeed(SEED));
+  });
+
+  it("refuses a manifest signed by the test key in production", () => {
+    const verdict = verifyManifest(signed(payload()), { now: NOW });
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.reason).toMatch(/unknown signing key/i);
   });
 });
 
@@ -98,7 +124,7 @@ describe("canonical serialization", () => {
 
 describe("signature verification", () => {
   it("accepts a correctly signed manifest", () => {
-    const verdict = verifyManifest(signed(payload()), { now: NOW });
+    const verdict = verifyManifest(signed(payload()), { now: NOW, pinnedKeys: TEST_KEYS });
     expect(verdict.ok).toBe(true);
     if (verdict.ok) expect(verdict.keyId).toBe(KEY_ID);
   });
@@ -107,7 +133,7 @@ describe("signature verification", () => {
     const manifest = signed(payload());
     // Change one byte of the payload after signing.
     (manifest.payload.markets.IN as { version: string }).version = "9.9.9";
-    const verdict = verifyManifest(manifest, { now: NOW });
+    const verdict = verifyManifest(manifest, { now: NOW, pinnedKeys: TEST_KEYS });
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.reason).toMatch(/signature/i);
   });
@@ -115,24 +141,24 @@ describe("signature verification", () => {
   it("rejects a tampered size without the signature being updated", () => {
     const manifest = signed(payload());
     (manifest.payload.markets.IN as { sizeBytes: number }).sizeBytes = 1;
-    expect(verifyManifest(manifest, { now: NOW }).ok).toBe(false);
+    expect(verifyManifest(manifest, { now: NOW, pinnedKeys: TEST_KEYS }).ok).toBe(false);
   });
 
   it("rejects an unsigned manifest", () => {
-    const verdict = verifyManifest({ payload: payload() }, { now: NOW });
+    const verdict = verifyManifest({ payload: payload() }, { now: NOW, pinnedKeys: TEST_KEYS });
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.reason).toMatch(/unsigned/i);
   });
 
   it("rejects a signature from an unknown key id", () => {
-    const verdict = verifyManifest(signed(payload(), SEED, "not-a-pinned-key"), { now: NOW });
+    const verdict = verifyManifest(signed(payload(), SEED, "not-a-pinned-key"), { now: NOW, pinnedKeys: TEST_KEYS });
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.reason).toMatch(/unknown signing key/i);
   });
 
   it("rejects a manifest signed by a different key", () => {
     const otherSeed = "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb";
-    const verdict = verifyManifest(signed(payload(), otherSeed), { now: NOW });
+    const verdict = verifyManifest(signed(payload(), otherSeed), { now: NOW, pinnedKeys: TEST_KEYS });
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.reason).toMatch(/signature verification failed/i);
   });
@@ -140,7 +166,7 @@ describe("signature verification", () => {
   it("rejects a non-Ed25519 algorithm", () => {
     const manifest = signed(payload());
     (manifest.signature as { algorithm: string }).algorithm = "RSA-PSS";
-    const verdict = verifyManifest(manifest, { now: NOW });
+    const verdict = verifyManifest(manifest, { now: NOW, pinnedKeys: TEST_KEYS });
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.reason).toMatch(/only ed25519/i);
   });
@@ -148,18 +174,18 @@ describe("signature verification", () => {
   it("rejects a malformed signature string", () => {
     const manifest = signed(payload());
     (manifest.signature as { signature: string }).signature = "zz";
-    expect(verifyManifest(manifest, { now: NOW }).ok).toBe(false);
+    expect(verifyManifest(manifest, { now: NOW, pinnedKeys: TEST_KEYS }).ok).toBe(false);
   });
 
   it("rejects an expired manifest", () => {
-    const verdict = verifyManifest(signed(payload()), { now: new Date("2026-12-01T00:00:00Z") });
+    const verdict = verifyManifest(signed(payload()), { now: new Date("2026-12-01T00:00:00Z"), pinnedKeys: TEST_KEYS });
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.reason).toMatch(/expired/i);
   });
 
   it("rejects an unsupported manifest version", () => {
     const p = payload({ manifestVersion: 99 });
-    const verdict = verifyManifest(signed(p), { now: NOW });
+    const verdict = verifyManifest(signed(p), { now: NOW, pinnedKeys: TEST_KEYS });
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.reason).toMatch(/unsupported manifest version/i);
   });
@@ -219,7 +245,7 @@ describe("entry validation", () => {
   it("refuses a signed manifest containing a bad entry", () => {
     const p = payload();
     (p.markets.IN as { url: string }).url = "http://insecure.test/pack.bin";
-    const verdict = verifyManifest(signed(p), { now: NOW });
+    const verdict = verifyManifest(signed(p), { now: NOW, pinnedKeys: TEST_KEYS });
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.reason).toMatch(/https/i);
   });
