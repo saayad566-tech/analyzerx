@@ -19,3 +19,6 @@
 
 | K13 | info | Live FCM delivery is unverified in this environment (needs the operator's Firebase service account + a device) | Implemented + unit-tested; Expo remains the default free path when FCM is unconfigured |
 | K14 | info | `push_tokens` has no index beyond its primary key | Deliberate: `ORDER BY token` is served by the PK; an extra 2 KB-wide index would be redundant |
+
+| K15 | info | No native file picker: `expo-document-picker` is not a dependency, and adding one would break `--frozen-lockfile` CI | OHLCV is loaded by paste/clipboard, plus a clearly-labelled synthetic demo series |
+| K16 | info | Backtest costs model commission + slippage only — not short borrow/financing, market impact, or size limits | Documented in `lib/quant/backtest.ts`; sufficient for single-instrument research, not for capacity analysis |
