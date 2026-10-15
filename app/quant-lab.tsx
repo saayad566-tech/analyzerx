@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import * as Clipboard from "expo-clipboard";
+import * as Clipboard from "@/lib/platform/clipboard";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system/legacy";
+import * as FileSystem from "@/lib/platform/file-system";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useMarketContext } from "@/lib/market-context";
