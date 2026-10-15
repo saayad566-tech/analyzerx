@@ -122,14 +122,23 @@ const marketSeedDirectory: Record<string, StockSearchResult[]> = {
   ],
 };
 
-const researchCandidates: ScreenerCandidate[] = [
-  { symbol: "LT", name: "Larsen & Toubro", sector: "Capital goods", metricsAvailable: false, redFlags: [], evidence: ["Order-to-capex storyline available", "Institutional flow context available"], expansionSignal: true, triggerKeys: ["capacityExpansion", "orderBook", "largeOrder", "macroTechnical"] },
-  { symbol: "WAAREEENER", name: "Waaree Energies", sector: "Renewable energy", metricsAvailable: false, redFlags: [], evidence: ["Capacity expansion storyline available", "Renewable-energy sector signal available"], expansionSignal: true, triggerKeys: ["expansion", "capacityExpansion", "newSector", "orderBook", "largeOrder", "corporateFinancial", "macroTechnical"] },
-  { symbol: "TITAGARH", name: "Titagarh Rail Systems", sector: "Railways", metricsAvailable: false, redFlags: [], evidence: ["Government order storyline available", "Execution-stage event history available"], expansionSignal: false, triggerKeys: ["orderBook", "largeOrder", "macroTechnical"] },
-];
+// Market-scoped research candidates. Selecting a market shows only that market's candidates.
+const marketResearchCandidates: Record<string, ScreenerCandidate[]> = {
+  IN: [
+    { symbol: "LT", name: "Larsen & Toubro", sector: "Capital goods", metricsAvailable: false, redFlags: [], evidence: ["Order-to-capex storyline available", "Institutional flow context available"], expansionSignal: true, triggerKeys: ["capacityExpansion", "orderBook", "largeOrder", "macroTechnical"] },
+    { symbol: "WAAREEENER", name: "Waaree Energies", sector: "Renewable energy", metricsAvailable: false, redFlags: [], evidence: ["Capacity expansion storyline available", "Renewable-energy sector signal available"], expansionSignal: true, triggerKeys: ["expansion", "capacityExpansion", "newSector", "orderBook", "largeOrder", "corporateFinancial", "macroTechnical"] },
+    { symbol: "TITAGARH", name: "Titagarh Rail Systems", sector: "Railways", metricsAvailable: false, redFlags: [], evidence: ["Government order storyline available", "Execution-stage event history available"], expansionSignal: false, triggerKeys: ["orderBook", "largeOrder", "macroTechnical"] },
+  ],
+  US: [
+    { symbol: "MSFT", name: "Microsoft", sector: "Technology", metricsAvailable: false, redFlags: [], evidence: ["AI data-centre storyline available", "Institutional flow context available"], expansionSignal: true, triggerKeys: ["capacityExpansion", "orderBook", "largeOrder", "macroTechnical"] },
+    { symbol: "VRT", name: "Vertiv Holdings", sector: "Data-center infrastructure", metricsAvailable: false, redFlags: [], evidence: ["Capacity expansion storyline available", "Thermal-management order signal available"], expansionSignal: true, triggerKeys: ["expansion", "capacityExpansion", "orderBook", "largeOrder", "macroTechnical"] },
+    { symbol: "PWR", name: "Quanta Services", sector: "Electrical infrastructure", metricsAvailable: false, redFlags: [], evidence: ["Federal award storyline available", "Grid-modernization signal available"], expansionSignal: false, triggerKeys: ["orderBook", "largeOrder", "macroTechnical"] },
+  ],
+};
 
 export default function ScreenerScreen() {
   const { marketId } = useMarketContext();
+  const researchCandidates = useMemo(() => marketResearchCandidates[marketId] ?? [], [marketId]);
   const [enabledFilters, setEnabledFilters] = useState<FilterKey[]>([]);
   const [showOnlyEvidence, setShowOnlyEvidence] = useState(true);
   const [analysisQuery, setAnalysisQuery] = useState("");
@@ -161,7 +170,7 @@ export default function ScreenerScreen() {
     return () => clearTimeout(timeout);
   }, [analysisQuery]);
   const remoteSearch = trpc.market.search.useQuery({ query: remoteSearchQuery || "A", marketId }, { enabled: remoteSearchQuery.length >= 1, retry: false, staleTime: 30_000 });
-  const localSearchDirectory = useMemo<StockSearchResult[]>(() => marketSeedDirectory[marketId] ?? marketSeedDirectory.IN, [marketId]);
+  const localSearchDirectory = useMemo<StockSearchResult[]>(() => marketSeedDirectory[marketId] ?? [], [marketId]);
   const suggestions = useMemo(() => {
     const remote = (remoteSearch.data?.results ?? []) as StockSearchResult[];
     const query = analysisQuery.trim();
@@ -180,7 +189,7 @@ export default function ScreenerScreen() {
     if (direct) return selectStock(direct);
   };
   const handleSearchChange = (value: string) => { setAnalysisQuery(value); setSelectedSymbol(null); setSelectedStock(null); };
-  const analysisTarget = selectedSymbol ? researchCandidates.find((candidate) => candidate.symbol === selectedSymbol) ?? { symbol: selectedSymbol, name: selectedStock?.name ?? "Requested company", sector: selectedStock?.sector ?? "Indian equities", metricsAvailable: false, redFlags: [], evidence: [], expansionSignal: false, triggerKeys: [] } : null;
+  const analysisTarget = selectedSymbol ? researchCandidates.find((candidate) => candidate.symbol === selectedSymbol) ?? { symbol: selectedSymbol, name: selectedStock?.name ?? "Requested company", sector: selectedStock?.sector ?? "Selected market equities", metricsAvailable: false, redFlags: [], evidence: [], expansionSignal: false, triggerKeys: [] } : null;
   const legacyAnalysisTarget = analysisTarget as NonNullable<typeof analysisTarget>;
   const indianSnapshot = trpc.market.indianSnapshot.useQuery({ symbol: selectedSymbol ?? "RELIANCE" }, { enabled: Boolean(selectedSymbol), retry: false });
   const fundamentalAnalysis = trpc.market.fundamentals.useQuery(
