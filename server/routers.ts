@@ -586,10 +586,10 @@ export const appRouter = router({
     observations: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol, limit: z.number().int().min(1).max(500).default(100) })).query(async ({ input }) => ({ symbol: input.symbol, market: await getMarketObservationsForSymbol(input.symbol, input.limit), fundamentals: await getFundamentalObservationsForSymbol(input.symbol, input.limit) })),
     watchlistEvidence: publicProcedure.input(z.object({ marketId: marketIdSchema, symbols: z.array(symbolInput.shape.symbol).min(1).max(50) })).query(async ({ input }) => { const rows = await getLatestEventProjections(input.marketId, 500); return input.symbols.map((symbol) => ({ symbol, events: rows.filter((row) => row.symbol === symbol).slice(0, 20) })); }),
     universe: publicProcedure.query(async () => fetchNseUniverse()),
-    positioning: publicProcedure.input(symbolInput).query(async ({ input }) => getPositioningCoverage(input.symbol)),
-    sectorNames: publicProcedure.query(() => getAvailableSectorNames()),
+    positioning: publicProcedure.input(z.object({ marketId: marketIdSchema, symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/) })).query(async ({ input }) => getPositioningCoverage(input.symbol, input.marketId)),
+    sectorNames: publicProcedure.input(z.object({ marketId: marketIdSchema })).query(({ input }) => getAvailableSectorNames(input.marketId)),
     history: publicProcedure.input(z.object({ marketId: marketIdSchema, symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/), range: z.string().trim().min(1).max(12).default("6mo"), interval: z.string().trim().min(1).max(12).default("1d") })).query(({ input }) => priceHistory(input.symbol, input.range, input.interval, input.marketId)),
-    sectorConstituents: publicProcedure.input(z.object({ marketId: marketIdSchema, sector: z.string().trim().min(1).max(80), sort: z.enum(["score", "fii", "dii", "marketCap", "changePercent", "pe"]).default("score"), direction: z.enum(["asc", "desc"]).default("desc"), range: z.enum(["TODAY", "THREE_DAYS", "ONE_WEEK", "ONE_MONTH", "QTD"]).default("TODAY"), limit: z.number().int().min(1).max(100).default(100) })).query(({ input }) => getSectorConstituents(input.sector, { sort: input.sort as SectorSort, direction: input.direction, range: input.range, limit: input.limit })),
+    sectorConstituents: publicProcedure.input(z.object({ marketId: marketIdSchema, sector: z.string().trim().min(1).max(80), sort: z.enum(["score", "fii", "dii", "marketCap", "changePercent", "pe"]).default("score"), direction: z.enum(["asc", "desc"]).default("desc"), range: z.enum(["TODAY", "THREE_DAYS", "ONE_WEEK", "ONE_MONTH", "QTD"]).default("TODAY"), limit: z.number().int().min(1).max(100).default(100) })).query(({ input }) => getSectorConstituents(input.sector, input.marketId, { sort: input.sort as SectorSort, direction: input.direction, range: input.range, limit: input.limit })),
     indiaStockMcpStatus: publicProcedure.query(() => getIndiaStockMcpStatus()),
     indiaStockMcpSnapshot: publicProcedure.input(symbolInput).query(({ input }) => getIndiaStockMcpSnapshot(input.symbol)),
     indiaStockMcpHistory: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol, from: z.string().date(), to: z.string().date(), interval: z.enum(["1d", "1wk", "1mo"]).default("1d") })).query(({ input }) => getIndiaStockMcpHistory(input.symbol, input.from, input.to, input.interval)),
@@ -626,7 +626,13 @@ export const appRouter = router({
         },
       };
     }),
-    institutionalFlows: publicProcedure.input(z.object({ range: z.enum(["TODAY", "THREE_DAYS", "ONE_WEEK", "ONE_MONTH", "QTD"]).default("TODAY") }).optional()).query(({ input }) => fetchNseInstitutionalFlows({ range: input?.range as FlowRange | undefined })),
+    // The NSE FII/DII report is an Indian source. Requesting it for another market would
+    // present Indian flows under a non-Indian heading.
+    institutionalFlows: publicProcedure.input(z.object({ marketId: marketIdSchema, range: z.enum(["TODAY", "THREE_DAYS", "ONE_WEEK", "ONE_MONTH", "QTD"]).default("TODAY") })).query(({ input }) =>
+      input.marketId === "IN"
+        ? fetchNseInstitutionalFlows({ range: input.range as FlowRange | undefined })
+        : Promise.resolve({ status: "unavailable" as const, reportDate: null, freshnessLabel: null, range: input.range, rows: [], source: null, history: [], upstream: null }),
+    ),
     fundamentals: publicProcedure.input(symbolInput).query(({ input }) => analyzeFundamentals(input.symbol, input.marketId)),
     report: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol, marketId: marketIdSchema })).query(async ({ input }) => {
       const market = getMarketProfile(input.marketId as MarketId);
