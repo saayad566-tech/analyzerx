@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import { router } from "expo-router";
+import { router } from "@/lib/navigation/router";
 import { ScreenContainer } from "@/components/screen-container";
 import { DEFAULT_ALERT_NOTIFICATION_PREFERENCES, loadAlertNotificationPreferences, loadAlertState, saveAlertNotificationPreferences, saveAlertState, type AlertNotificationPreferences } from "@/lib/local-preferences";
 import { trpc } from "@/lib/trpc";
