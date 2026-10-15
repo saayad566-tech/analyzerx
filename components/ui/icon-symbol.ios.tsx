@@ -1,32 +1,22 @@
-import { SymbolView, SymbolViewProps, SymbolWeight } from "expo-symbols";
+import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { StyleProp, ViewStyle } from "react-native";
 
+/**
+ * Icon rendering on iOS.
+ *
+ * This previously used Apple's SF Symbols. It now uses the same vector icon set as Android, so a
+ * single icon name resolves identically on both platforms and the app carries one icon dependency.
+ */
 export function IconSymbol({
   name,
   size = 24,
   color,
   style,
-  weight = "regular",
 }: {
-  name: SymbolViewProps["name"];
+  name: string;
   size?: number;
   color: string;
   style?: StyleProp<ViewStyle>;
-  weight?: SymbolWeight;
 }) {
-  return (
-    <SymbolView
-      weight={weight}
-      tintColor={color}
-      resizeMode="scaleAspectFit"
-      name={name}
-      style={[
-        {
-          width: size,
-          height: size,
-        },
-        style,
-      ]}
-    />
-  );
+  return <MaterialIcons name={name} size={size} color={color} style={style} />;
 }
