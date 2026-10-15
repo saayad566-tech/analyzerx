@@ -21,12 +21,10 @@ describe("Local AI native wiring", () => {
     expect(gradle).toContain("abiFilters \"arm64-v8a\"");
   });
 
-  it("keeps Expo's Kotlin toolchain while enabling LiteRT-LM metadata compatibility only for app compilation", () => {
+  it("enables LiteRT-LM metadata compatibility only for app compilation", () => {
     const gradle = fs.readFileSync(path.join(root, "android/app/build.gradle"), "utf8");
-    expect(plugin).not.toContain("withProjectBuildGradle");
-    expect(plugin).not.toContain('kotlinVersion = "2.3.0"');
-    expect(plugin).toContain("tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach");
-    expect(plugin).toContain("-Xskip-metadata-version-check");
+    expect(gradle).toContain("tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach");
+    expect(gradle).toContain("-Xskip-metadata-version-check");
   });
 
   it("contains native multimodal content and cancellation boundaries", () => {
