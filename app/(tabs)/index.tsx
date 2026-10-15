@@ -12,7 +12,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { router } from "expo-router";
+import { router } from "@/lib/navigation/router";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { WebCalendarRangePicker } from "@/components/web-calendar-range-picker";
