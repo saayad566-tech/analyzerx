@@ -13,7 +13,7 @@ import { answerGeneralChat, type GeneralChatMessage } from "./general-chat";
 import { buildDeepScore } from "./scoring";
 import { describeMarketCoverage, searchCountries } from "../lib/market-registry";
 import { analyzeSentiment, getSentimentAvailability } from "./sentiment";
-import { fetchNseInstitutionalFlows, type FlowRange } from "./nse-flows";
+import { fetchNseInstitutionalFlows, unavailableInstitutionalFlows, type FlowRange } from "./nse-flows";
 import { getLatestSourceRecords, getSourceRecordsForSymbol, getUserMarketPreference, upsertUserMarketPreference, saveNewsRelevanceFeedback, undoNewsRelevanceFeedback, listUserNewsRelevanceFeedback, listHeldNewsArticles, getHeldNewsArticle, reviewHeldNewsArticle, saveNewsEvent } from "./db";
 import { getSourceCatalog } from "./source-catalog";
 import { listUserNotifications, markUserNotificationRead, markAllUserNotificationsRead } from "./db";
@@ -631,7 +631,7 @@ export const appRouter = router({
     institutionalFlows: publicProcedure.input(z.object({ marketId: marketIdSchema, range: z.enum(["TODAY", "THREE_DAYS", "ONE_WEEK", "ONE_MONTH", "QTD"]).default("TODAY") })).query(({ input }) =>
       input.marketId === "IN"
         ? fetchNseInstitutionalFlows({ range: input.range as FlowRange | undefined })
-        : Promise.resolve({ status: "unavailable" as const, reportDate: null, freshnessLabel: null, range: input.range, rows: [], source: null, history: [], upstream: null }),
+        : Promise.resolve(unavailableInstitutionalFlows(input.range as FlowRange, "The NSE FII/DII report is an Indian source and is not requested for this market.")),
     ),
     fundamentals: publicProcedure.input(symbolInput).query(({ input }) => analyzeFundamentals(input.symbol, input.marketId)),
     report: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol, marketId: marketIdSchema })).query(async ({ input }) => {
