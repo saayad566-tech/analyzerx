@@ -58,7 +58,7 @@ export default function SectorsScreen() {
   // else. A non-Indian market never receives a substituted flow figure.
   const isIndia = market.id === "IN";
   const institutionalQuery = trpc.market.institutionalFlows.useQuery(
-    { range: "TODAY" },
+    { marketId: market.id, range: "TODAY" },
     { retry: false, staleTime: 60_000, refetchInterval: 120_000, refetchIntervalInBackground: false, enabled: isIndia },
   );
 
