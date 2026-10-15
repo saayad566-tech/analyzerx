@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "@/lib/platform/secure-store";
 import { Platform } from "react-native";
 
 export type RunnerStatus = "disconnected" | "pairing" | "paired" | "starting" | "idle" | "running" | "paused" | "degraded" | "offline" | "error";
