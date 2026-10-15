@@ -1,9 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { NativeModules, Platform } from "react-native";
-import * as Battery from "expo-battery";
-import * as FileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
-import * as SecureStore from "expo-secure-store";
+import * as Battery from "@/lib/platform/battery";
+import * as FileSystem from "@/lib/platform/file-system";
+import * as Sharing from "@/lib/platform/share";
+import * as SecureStore from "@/lib/platform/secure-store";
 import { localAIInferenceSamplesToCsv } from "./local-ai-telemetry-core";
 import type { LocalAIInferenceSample } from "./local-ai-telemetry-core";
 
