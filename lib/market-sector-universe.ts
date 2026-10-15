@@ -15,6 +15,11 @@ import { type MarketId, MARKET_IDS } from "./market-regions";
 export type SectorCandidate = { symbol: string; name: string; sector: string };
 
 /** India is the only market with a verified, source-backed constituent list here. */
+/**
+ * The Indian verified research universe — the SAME sixteen candidates the repository
+ * already treated as verified, moved here unchanged. It is deliberately not expanded:
+ * adding symbols would be inventing a "verified" list that nothing verified.
+ */
 const INDIA_UNIVERSE: readonly SectorCandidate[] = [
   { symbol: "ADANIENT", name: "Adani Enterprises", sector: "Diversified" },
   { symbol: "ADANIPORTS", name: "Adani Ports & SEZ", sector: "Infrastructure" },
@@ -23,29 +28,15 @@ const INDIA_UNIVERSE: readonly SectorCandidate[] = [
   { symbol: "AXISBANK", name: "Axis Bank", sector: "Financials" },
   { symbol: "BAJFINANCE", name: "Bajaj Finance", sector: "Financials" },
   { symbol: "BEL", name: "Bharat Electronics", sector: "Defence" },
-  { symbol: "BHARTIARTL", name: "Bharti Airtel", sector: "Telecom" },
-  { symbol: "COALINDIA", name: "Coal India", sector: "Energy" },
-  { symbol: "GRASIM", name: "Grasim Industries", sector: "Materials" },
-  { symbol: "HCLTECH", name: "HCL Technologies", sector: "IT services" },
   { symbol: "HDFCBANK", name: "HDFC Bank", sector: "Financials" },
   { symbol: "ICICIBANK", name: "ICICI Bank", sector: "Financials" },
   { symbol: "INFY", name: "Infosys", sector: "IT services" },
-  { symbol: "ITC", name: "ITC", sector: "Consumer" },
-  { symbol: "JSWSTEEL", name: "JSW Steel", sector: "Metals" },
-  { symbol: "KOTAKBANK", name: "Kotak Mahindra Bank", sector: "Financials" },
   { symbol: "LT", name: "Larsen & Toubro", sector: "Capital goods" },
-  { symbol: "MARUTI", name: "Maruti Suzuki", sector: "Automobiles" },
-  { symbol: "NTPC", name: "NTPC", sector: "Utilities" },
-  { symbol: "ONGC", name: "Oil & Natural Gas Corp", sector: "Energy" },
-  { symbol: "POWERGRID", name: "Power Grid Corp", sector: "Utilities" },
   { symbol: "RELIANCE", name: "Reliance Industries", sector: "Diversified" },
-  { symbol: "SBIN", name: "State Bank of India", sector: "Financials" },
-  { symbol: "SUNPHARMA", name: "Sun Pharmaceutical", sector: "Healthcare" },
   { symbol: "TATAMOTORS", name: "Tata Motors", sector: "Automobiles" },
-  { symbol: "TATASTEEL", name: "Tata Steel", sector: "Metals" },
   { symbol: "TCS", name: "Tata Consultancy Services", sector: "IT services" },
-  { symbol: "ULTRACEMCO", name: "UltraTech Cement", sector: "Materials" },
-  { symbol: "WIPRO", name: "Wipro", sector: "IT services" },
+  { symbol: "TITAGARH", name: "Titagarh Rail Systems", sector: "Railways" },
+  { symbol: "WAAREEENER", name: "Waaree Energies", sector: "Renewable energy" },
 ];
 
 const UNIVERSES: Partial<Record<MarketId, readonly SectorCandidate[]>> = { IN: INDIA_UNIVERSE };
