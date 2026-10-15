@@ -1,6 +1,7 @@
 import "@/global.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack, usePathname, router } from "expo-router";
+import { usePathname, router } from "@/lib/navigation/router";
+import RootNavigator from "@/lib/navigation/root-navigator";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { StatusBar } from "react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -165,12 +166,7 @@ export default function RootLayout() {
           {/* A render error in any screen is caught here and turned into a
               recoverable screen instead of closing the app. */}
           <ErrorBoundary>
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="news/[id]" options={{ title: "Story" }} />
-              <Stack.Screen name="filings" options={{ title: "Filing Intelligence" }} />
-              <Stack.Screen name="oauth/callback" />
-            </Stack>
+            <RootNavigator />
           </ErrorBoundary>
           <StatusBar barStyle="default" />
           </MarketProvider>
