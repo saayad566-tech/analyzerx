@@ -1,5 +1,5 @@
 import { Pressable, Text, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import { router } from "expo-router";
 
 export function DetailHeader({ title, eyebrow = "DETAIL" }: { title: string; eyebrow?: string }) {
