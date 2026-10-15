@@ -3,7 +3,7 @@ import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, T
 import { router, useLocalSearchParams } from "@/lib/navigation/router";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import * as Clipboard from "@/lib/platform/clipboard";
-import * as DocumentPicker from "expo-document-picker";
+import * as DocumentPicker from "@/lib/platform/document-picker";
 import * as FileSystem from "@/lib/platform/file-system";
 
 import { ScreenContainer } from "@/components/screen-container";
