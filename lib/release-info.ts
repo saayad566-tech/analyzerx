@@ -1,4 +1,4 @@
-import Constants from "expo-constants";
+import Constants from "@/lib/platform/constants";
 
 export type AnalyzerXReleaseInfo = {
   version: string;
