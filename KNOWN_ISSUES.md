@@ -48,3 +48,8 @@
 | K33 | open | Expo removal not performed | Removing 28 expo-family packages that back navigation, storage, auth, push and the build pipeline would leave a codebase that cannot build. EAS is not actually in use; the APK builds with Gradle. Migration scoped in DECISIONS.md D-015 |
 | K34 | open | Workflow run status cannot be read | The GitHub Actions read tools are unavailable to this agent (TOOL_NOT_FOUND). Commits can be pushed; pipeline results cannot be verified from here |
 | K35 | open | No .apk can be produced in this sandbox | No Android SDK/NDK, Java, Gradle or device, and a ~500MB heap ceiling. The CI workflow builds a signed APK on a runner |
+
+| K36 | resolved | `bundle-verify.yml` depended on `expo export` | Rewritten to verify the bundle with a pure Gradle `assembleDebug` build. `build:web` (the expo export script) is deleted |
+| K37 | resolved | `eas.json` present | Deleted, and the script that read it rewritten. No EAS command was ever in the build path — the APK is built by Gradle |
+| K38 | resolved | `expo-crypto` used for artifact hashing | Replaced with the in-repo SHA-256 (digest-identical), removing the native crypto dependency |
+| K39 | open | 25 expo-family packages remain | These are the app's own framework: expo-router drives navigation across 39 screens; expo-file-system backs the ledger, activity log, resource packs and signal history; expo-secure-store backs auth; expo-notifications backs push. Removing them requires bare replacements — see DECISIONS.md D-015 |
