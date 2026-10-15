@@ -1,6 +1,6 @@
 import { NativeEventEmitter, NativeModules, Platform } from "react-native";
-import * as Device from "expo-device";
-import * as FileSystem from "expo-file-system/legacy";
+import * as Device from "@/lib/platform/device";
+import * as FileSystem from "@/lib/platform/file-system";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export * from "./local-ai-policy";
