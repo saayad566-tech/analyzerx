@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
-import * as FileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
+import * as FileSystem from "@/lib/platform/file-system";
+import * as Sharing from "@/lib/platform/share";
 
 export type ArchiveExportPayload = {
   fileName: string;
