@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useAuth } from "@/hooks/use-auth";
-import { router } from "expo-router";
+import { router } from "@/lib/navigation/router";
 import { trpc } from "@/lib/trpc";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
