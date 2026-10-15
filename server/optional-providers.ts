@@ -14,18 +14,51 @@ export type ProviderArticle = {
   publishedAt: string;
 };
 
+const REQUEST_TIMEOUT_MS = 10_000;
+const MAX_ATTEMPTS = 3;
+const MAX_BACKOFF_MS = 8_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Exponential backoff with jitter, capped. */
+function backoffMs(attempt: number): number {
+  return Math.min(MAX_BACKOFF_MS, 500 * 2 ** (attempt - 1)) + Math.floor(Math.random() * 200);
+}
+
+/**
+ * Fetch JSON from a provider with a hard timeout and bounded retries.
+ *
+ * Retries network/timeout failures and the transient HTTP classes (408, 429, 5xx), honouring
+ * `Retry-After` when the provider sends it. Non-retryable 4xx responses fail immediately. The
+ * provider's health is recorded exactly once per call, after the last attempt.
+ */
 async function requestJson(url: URL, providerId: string, headers?: HeadersInit) {
   const startedAt = Date.now();
-  try {
-    const response = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) });
-    if (!response.ok) throw new Error(`Provider returned HTTP ${response.status}`);
-    const payload = await response.json() as Record<string, unknown>;
-    markProviderHealthy(providerId, Date.now() - startedAt, payload);
-    return payload;
-  } catch (error) {
-    markProviderRejected(providerId, error, Date.now() - startedAt);
-    throw error;
+  let lastError = new Error("The provider request did not run.");
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(url, { headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+      if (!response.ok) {
+        lastError = new Error(`Provider returned HTTP ${response.status}`);
+        const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+        if (!retryable || attempt === MAX_ATTEMPTS) break;
+        const retryAfter = Number(response.headers.get("retry-after"));
+        await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1_000, MAX_BACKOFF_MS) : backoffMs(attempt));
+        continue;
+      }
+      const payload = await response.json() as Record<string, unknown>;
+      markProviderHealthy(providerId, Date.now() - startedAt, payload);
+      return payload;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt === MAX_ATTEMPTS) break;
+      await sleep(backoffMs(attempt));
+    }
   }
+  markProviderRejected(providerId, lastError, Date.now() - startedAt);
+  throw lastError;
 }
 
 function decodeXml(value: string) {
