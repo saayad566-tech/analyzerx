@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { MODEL_CATALOGUE, MODEL_CATEGORIES, catalogueStats, findModel, implementedModels, modelsByCategory } from "../src/model-catalogue";
 import { RUNNABLE_MODELS, runModel, type ModelUniverse } from "../src/library-run";
 import { parseFundamentals } from "../src/fundamentals-io";
-import { SUPPLY_CHAIN_THEMES, classifyCandidate, findTheme, screenSupplyChain, type Candidate } from "../src/supply-chain";
+import { SUPPLY_CHAIN_THEMES, classifyCandidate, findTheme, screenSupplyChain, screenSupplyChainScoped, type Candidate } from "../src/supply-chain";
 import type { Fundamentals } from "../src/fundamentals";
 
 const current: Fundamentals = {
@@ -171,5 +171,40 @@ describe("the directive's named themes are present and classify correctly", () =
   it("still reports unmatched candidates rather than force-fitting them", () => {
     const screen = screenSupplyChain("ev-transition", [{ symbol: "SHOP", name: "Retail Co", description: "grocery" }])!;
     expect(screen.unmatched.map((item) => item.symbol)).toEqual(["SHOP"]);
+  });
+});
+
+describe("supply-chain screening is market-scoped", () => {
+  const companies: Candidate[] = [{ symbol: "LIT", name: "Lithium Miner", description: "lithium mining and refining" }];
+
+  it("screens a universe tagged for the active market", () => {
+    const result = screenSupplyChainScoped("ev-transition", { marketId: "IN", companies }, "IN");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.screen.layers.tertiary.map((item) => item.candidate.symbol)).toContain("LIT");
+  });
+
+  it("refuses a universe tagged for another market", () => {
+    // The regression this guards: the section used to screen whatever was loaded, so switching the
+    // active market left the previous region's companies on screen.
+    const result = screenSupplyChainScoped("ev-transition", { marketId: "US", companies }, "IN");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain("Cross-market supply-chain screening is refused");
+  });
+
+  it("refuses when no universe is loaded", () => {
+    const result = screenSupplyChainScoped("ev-transition", null, "IN");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain("Load a fundamentals universe");
+  });
+
+  it("refuses an empty universe", () => {
+    const result = screenSupplyChainScoped("ev-transition", { marketId: "IN", companies: [] }, "IN");
+    expect(result.ok).toBe(false);
+  });
+
+  it("refuses an unknown theme", () => {
+    const result = screenSupplyChainScoped("does-not-exist", { marketId: "IN", companies }, "IN");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain("No supply-chain theme named");
   });
 });
