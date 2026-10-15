@@ -154,10 +154,12 @@ export function buildFamaFrenchFactors(assets: FactorAsset[]): FamaFrenchResult 
   const observations = Math.min(...assets.map((asset) => asset.returns.length));
   if (observations < 2) return null;
 
-  const meanReturns = assets.map((asset) => asset.returns.slice(0, observations).reduce((sum, value) => sum + value, 0) / observations);
-  const market = Array.from({ length: observations }, () => meanReturns.reduce((sum, mean) => sum + mean, 0) / assets.length);
+  // The market factor is the equal-weighted return of the universe **each period**. Averaging each
+  // asset's mean return instead would produce a constant series with no time variation at all.
+  const market = Array.from({ length: observations }, (_, t) => assets.reduce((sum, asset) => sum + asset.returns[t], 0) / assets.length);
 
   const spread = (characteristic: (asset: FactorAsset) => number): { values: number[]; long: number; short: number } => {
+
     const sorted = [...assets].sort((a, b) => characteristic(b) - characteristic(a));
     const legSize = Math.max(1, Math.floor(sorted.length / 3));
     const long = sorted.slice(0, legSize);
