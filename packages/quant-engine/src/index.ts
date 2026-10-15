@@ -21,3 +21,7 @@ export * from "./tracker";
 export * from "./scores";
 export * from "./risk";
 export * from "./model-catalogue";
+export * from "./portfolio";
+export * from "./patterns";
+export * from "./valuation";
+export * from "./ledger";
