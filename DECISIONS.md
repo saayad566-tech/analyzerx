@@ -36,3 +36,16 @@ models (39 runnable). It is not padded to reach the directive's headline count.
 strategy + market + symbol + entry time, so re-recording a position updates it instead of inflating
 the win rate. Every record is shape-validated when read back: a corrupted or older payload is dropped
 rather than silently becoming a metric.
+
+## D-013 — The signal history is hash-chained, append-only and never trimmed
+Each record carries SHA-256 of its own content plus the previous record's hash, so an edit, a deletion
+or a rewritten-and-resealed record is detectable from that point onward. The chain is global rather
+than per-market so the sequence and link checks remain meaningful; the UI filters for display. Records
+are never trimmed: at the 2,000-record cap the append is refused and reported. Publishing refuses a
+chain that does not verify. `evaluateRecord` produces a separate, later report and never writes back
+into the original record, so a published suggestion stays exactly as published.
+
+## D-014 — SHA-256 lives in the engine
+Moved from `lib/resource-packs/hash.ts` to `packages/quant-engine/src/hash.ts` so the resource-pack
+integrity path and the signal chain share one implementation, and so the dependency direction stays
+one-way (app → packages). The old path is a shim; its tests passing is the proof the move is clean.
