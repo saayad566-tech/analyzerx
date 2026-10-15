@@ -60,3 +60,6 @@
 | K42 | resolved | Fire-and-forget calls used `void async()` without a `.catch` | 31 sites converted to `fireAndForget(...)`, which records the rejection to the activity log; a process-level guard in `app/_layout.tsx` covers the remaining multi-line sites |
 
 | K43 | info | Six conditional integration tests skip without credentials | `token ? it : it.skip` / `describe.skipIf(!runIntegration)` for Finnhub, SEC EDGAR, NSE and TinyFish. Correctly gated — they need a live key or network. Forcing them green would be faking a result |
+
+| K44 | resolved | `@expo/vector-icons` was the app's icon set | Replaced with `react-native-vector-icons` across 39 files; the Expo-only `glyphMap` type replaced by `IoniconName`; the native font-linking gradle fragment added |
+| K45 | open | 24 expo-family packages remain | Stages 2-4 of MIGRATION_PLAN.md. Stage 3 (`expo-router`, 43 files) and Stage 4 (native project regeneration) are architectural and need device/CI verification — tsc cannot validate navigation or a native build |
