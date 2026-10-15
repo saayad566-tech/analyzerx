@@ -48,6 +48,30 @@ export const flowRangeMeta: Record<FlowRange, { label: string; description: stri
   QTD: { label: "Quarter to date", description: "Available sessions since the current quarter began" },
 };
 
+/**
+ * An explicit, empty result for a market whose institutional flows are not connected.
+ *
+ * Market isolation: NSE FII/DII participant flows are India-only. For any other market we return
+ * this instead of the Indian numbers, so a US selection never shows NSE flows.
+ */
+export function unsupportedInstitutionalFlows(range: FlowRange, country: string): NseInstitutionalFlows {
+  return {
+    status: "unavailable",
+    source: "Market-scoped institutional flows",
+    upstream: "NSE",
+    reportDate: null,
+    fetchedAt: new Date().toISOString(),
+    freshnessLabel: `Not connected for ${country}`,
+    freshnessBusinessDays: null,
+    rows: [],
+    history: [],
+    range,
+    rangeLabel: flowRangeMeta[range].label,
+    comparison: [],
+    error: `${country} institutional flows are not connected. NSE FII/DII participant data is India-only and is never substituted for another market.`,
+  };
+}
+
 function numberFrom(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value !== "string") return null;
