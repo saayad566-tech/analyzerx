@@ -302,6 +302,8 @@ export const eventProjections = mysqlTable("event_projections", {
   sourceRecordId: varchar("sourceRecordId", { length: 96 }),
   sourceUrl: text("sourceUrl").notNull(),
   sourceKey: varchar("sourceKey", { length: 64 }).notNull(),
+  /** Market scope for the event. Enforces that markets never mix; null on legacy rows. */
+  marketId: varchar("marketId", { length: 8 }),
   eventAt: timestamp("eventAt").notNull(),
   detectedAt: timestamp("detectedAt").notNull(),
   staleAt: timestamp("staleAt"),
