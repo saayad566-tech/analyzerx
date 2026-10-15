@@ -1,10 +1,11 @@
 import { router } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSyncExternalStore } from "react";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/hooks/use-auth";
 import { getWorkspaceSyncSnapshot, requestWorkspaceSyncRetry, resolveWorkspaceSyncConflict, subscribeWorkspaceSync } from "@/lib/workspace-sync-state";
+import type { IoniconName } from "@/lib/icon-names";
 
 const amber = "#F4B860";
 const teal = "#4FD1C5";
@@ -14,7 +15,7 @@ const border = "#26364D";
 const text = "#F4F7FB";
 const muted = "#91A2B8";
 
-function AccountRow({ icon, label, detail, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; detail: string; onPress: () => void }) {
+function AccountRow({ icon, label, detail, onPress }: { icon: IoniconName; label: string; detail: string; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.pressed]} accessibilityRole="button" accessibilityLabel={label}>
       <View style={styles.rowIcon}><Ionicons name={icon} size={18} color={amber} /></View>
