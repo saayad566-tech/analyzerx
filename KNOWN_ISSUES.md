@@ -57,4 +57,6 @@
 | K40 | resolved | A whole test suite was skipped with a stale TODO | `tests/auth.logout.test.ts` was `describe.skip` claiming auth was unimplemented; `auth.logout` exists in server/routers.ts. Un-skipped — and running it exposed a real crash (K41) |
 | K41 | resolved | `getParentDomain` crashed on a missing host header | `isIpAddress(host)` called `host.includes(":")` unguarded, so a request with no host header 500'd the logout endpoint instead of degrading. Guarded at the boundary |
 
-| K42 | open | 34 fire-and-forget calls use `void async()` without a `.catch` | `void` marks intent but does not handle rejection, so a failing storage or network call surfaces as an unhandled rejection. Deliberately not mass-edited in one pass: each site needs its own decision (log, ignore, or surface to the user) rather than a blanket swallow |
+| K42 | resolved | Fire-and-forget calls used `void async()` without a `.catch` | 31 sites converted to `fireAndForget(...)`, which records the rejection to the activity log; a process-level guard in `app/_layout.tsx` covers the remaining multi-line sites |
+
+| K43 | info | Six conditional integration tests skip without credentials | `token ? it : it.skip` / `describe.skipIf(!runIntegration)` for Finnhub, SEC EDGAR, NSE and TinyFish. Correctly gated — they need a live key or network. Forcing them green would be faking a result |
