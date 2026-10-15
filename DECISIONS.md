@@ -11,3 +11,22 @@
 | 7 | Add `marketId` to flows + graph procedures | Server must scope like the client does | Client-side filtering only |
 | 8 | Add **no** new dependencies | Keep install/CI stable; zod/expo-crypto/expo-file-system already present | New HTTP/zip libs |
 | 9 | Publish via GitHub MCP to a branch + PR | Non-destructive; keeps history reviewable | Force-push to main |
+
+## D-009 — Bundle verification moves to CI (not the local sandbox)
+The directive states that bundle verification belongs in CI. A local Metro run cannot complete here:
+`expo export` fails in the Expo CLI's HTTP layer (undici's WASM llhttp), and driving Metro directly
+gets through resolution but dies at the transform stage on React Native's own polyfills. Added
+`.github/workflows/bundle-verify.yml`, which runs `expo export --platform web` on push and asserts the
+bundle produced output. Resolution is additionally proven locally by driving `metro`'s `runBuild`.
+
+## D-010 — The app stays at the repository root
+The directive names `apps/analyzerx`. The requirement it expresses — decoupling the quant engine from
+the client app — is satisfied by `packages/quant-engine` with a one-way dependency and relative-path
+shims. Renaming the app directory would touch tsconfig paths, babel config, metro config, app.json,
+eas.json, the APK workflow and every shim, with zero behaviour change and a real chance of breaking
+the bundle. Recorded, not executed.
+
+## D-011 — The catalogue reports status honestly
+`model-catalogue.ts` marks a model `implemented: true` only where tested code exists, and names the
+module. Unimplemented models carry the reason. The catalogue is 100 book references plus 49 named
+models (39 runnable). It is not padded to reach the directive's headline count.
