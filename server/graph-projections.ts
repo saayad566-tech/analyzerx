@@ -1,4 +1,5 @@
 import { getLatestEventProjections } from "./db";
+import { type MarketId } from "../lib/market-regions";
 
 export type GraphNode = { id: string; label: string; type: "entity" | "event" | "storyline"; symbol?: string | null; caption: string; confidence: number; sourceUrl?: string | null };
 export type GraphEdge = { id: string; from: string; to: string; label: string; hop: number; confidence: number; evidenceStatus: "confirmed" | "partial" | "inferred"; sourceUrl: string; eventId: string; sourceCount: number; sourceUrls: string[]; contradiction: "none" | "mixed-direction" | "conflicting-sources"; clusterKey: string };
@@ -6,8 +7,8 @@ export type GraphEdge = { id: string; from: string; to: string; label: string; h
 function clamp(value: number) { return Math.max(0, Math.min(100, Math.round(value))); }
 function direction(sentiment: string | null | undefined) { return sentiment === "negative" ? "negative" : sentiment === "positive" ? "positive" : "neutral"; }
 
-export async function getRelationshipGraph(symbol?: string, maxHops = 2, limit = 80) {
-  const rows = await getLatestEventProjections(500);
+export async function getRelationshipGraph(marketId: MarketId, symbol?: string, maxHops = 2, limit = 80) {
+  const rows = await getLatestEventProjections(marketId, 500);
   const selected = symbol ? rows.filter((row) => row.symbol === symbol.toUpperCase()) : rows;
   const nodes = new Map<string, GraphNode>();
   const clusters = new Map<string, { from: string; to: string; label: string; hop: number; confidence: number; sourceUrls: Set<string>; eventIds: Set<string>; directions: Set<string>; latest: string }>();

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { type MarketId } from "../lib/market-regions";
 import { getLatestSourceRecords, upsertEventProjection } from "./db";
 import { resolveEntity } from "./entities";
 import { officialRecordToArticle } from "./live-smart-alerts";
@@ -52,9 +53,9 @@ export async function projectArticle(article: ExtractedNews, sourceRecordId?: st
   return { stored, projection, entityResolution: entity };
 }
 
-export async function projectLatestEvidence(limit = 250) {
-  const [news, records] = await Promise.all([getLatestTrackedNews(limit), getLatestSourceRecords(limit)]);
-  const official = records.map((record) => ({ article: officialRecordToArticle(record), recordId: record.id })).filter((item: { article: ExtractedNews | null; recordId: string }): item is { article: ExtractedNews; recordId: string } => Boolean(item.article));
+export async function projectLatestEvidence(marketId: MarketId, limit = 250) {
+  const [news, records] = await Promise.all([getLatestTrackedNews(limit), getLatestSourceRecords(marketId, limit)]);
+  const official = records.map((record) => ({ article: officialRecordToArticle(record, marketId), recordId: record.id })).filter((item: { article: ExtractedNews | null; recordId: string }): item is { article: ExtractedNews; recordId: string } => Boolean(item.article));
   const deduped = new Map<string, { article: ExtractedNews; recordId?: string }>();
   for (const article of news) deduped.set(`${article.symbol}:${article.url}`, { article });
   for (const item of official) deduped.set(`${item.article.symbol}:${item.article.url}`, item);

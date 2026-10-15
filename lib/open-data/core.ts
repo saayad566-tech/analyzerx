@@ -51,7 +51,20 @@ export type Provenance = {
 export type Sourced<T> = { value: T | null; provenance: Provenance };
 
 const UA = "AnalyzerX/1.4 (Android; open-data; +https://analyzerx.app)";
-export const CACHE_PREFIX = "analyzerx.od.v1.";
+// Bumped v1 -> v2. Every key now carries a market id, so the old unscoped entries
+// must not be read: a v1 "quote:AAPL" could have been written under any market.
+export const CACHE_PREFIX = "analyzerx.od.v2.";
+
+/**
+ * Namespace a cache key by market.
+ *
+ * Every market-scoped read and write goes through this, so the same symbol under two
+ * markets is two different entries and an Indian value can never be served for a US
+ * request (or vice versa).
+ */
+export function scopedCacheKey(marketId: string, key: string): string {
+  return `${marketId}:${key}`;
+}
 
 export function nowIso() {
   return new Date().toISOString();
@@ -383,7 +396,7 @@ export function isIndexSymbol(symbol: string) {
 }
 
 /** Map an app symbol to the Yahoo Finance ticker for a given market. */
-export function toYahooSymbol(symbol: string, marketId: MarketId = "IN"): string {
+export function toYahooSymbol(symbol: string, marketId: MarketId): string {
   const clean = symbol.trim().toUpperCase();
   if (!clean) return clean;
   if (isIndexSymbol(clean)) return clean;

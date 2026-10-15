@@ -4,7 +4,7 @@ import { parseSecurityWiseRows, rankSecurityWiseFlows } from "../server/security
 
 describe("sector intelligence", () => {
   it("exposes only the accepted verified sector universe", () => {
-    const sectors = getAvailableSectorNames();
+    const sectors = getAvailableSectorNames("IN");
     expect(sectors).toContain("Renewable energy");
     expect(sectors).toContain("Financials");
     expect(sectors.length).toBeGreaterThan(3);

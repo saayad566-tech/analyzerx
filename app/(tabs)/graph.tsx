@@ -1,4 +1,5 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useMarketContext } from "@/lib/market-context";
 import { useMemo, useState } from "react";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -10,10 +11,11 @@ const teal = "#4FD1C5";
 const violet = "#A78BFA";
 
 export default function GraphScreen() {
+  const { market } = useMarketContext();
   const [maxHops, setMaxHops] = useState<1 | 2>(2);
   const [contradictionFilter, setContradictionFilter] = useState<"all" | "conflicting">("all");
   const [minimumSources, setMinimumSources] = useState<1 | 2>(1);
-  const graphQuery = trpc.graph.projection.useQuery({ maxHops, limit: 80 }, { staleTime: 60_000, retry: false });
+  const graphQuery = trpc.graph.projection.useQuery({ marketId: market.id, maxHops, limit: 80 }, { staleTime: 60_000, retry: false });
   const graph = graphQuery.data;
   const entityNodes = useMemo(() => graph?.nodes.filter((node) => node.type === "entity") ?? [], [graph]);
   const visibleEdges = useMemo(() => (graph?.edges ?? []).filter((edge) => edge.sourceCount >= minimumSources && (contradictionFilter === "all" || edge.contradiction !== "none")), [contradictionFilter, graph?.edges, minimumSources]);

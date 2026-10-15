@@ -17,10 +17,6 @@ export function isValidDirectStockSymbol(value: string) {
   return symbol.length >= 1 && symbol.length <= 20 && /^[A-Z0-9.-]+$/.test(symbol) ? symbol : null;
 }
 
-export function createDirectStockResult(value: string): StockSearchResult | null {
-  return createDirectStockResultForMarket(value, "IN");
-}
-
 export function createDirectStockResultForMarket(value: string, marketId: MarketId): StockSearchResult | null {
   const symbol = isValidDirectStockSymbol(value);
   if (!symbol) return null;

@@ -60,11 +60,15 @@ describe("Local AI model registry", () => {
   });
 
   it("covers every catalogued model with an explicit lifecycle classification", () => {
-    expect(LOCAL_AI_MODELS.map((model) => model.id)).toEqual(["qwen3-06b", "gemma3-1b", "gemma4-e2b", "gemma4-e4b", "lfm25-12b", "qwen35-08b", "smollm3-3b", "bonsai-8b"]);
-    expect(LOCAL_AI_MODELS.filter((model) => model.installability === "verified_installable")).toHaveLength(3);
+    expect(LOCAL_AI_MODELS.map((model) => model.id)).toEqual(["qwen3-06b", "qwen3-06b-think", "gemma3-1b", "gemma4-e2b", "gemma4-e4b", "lfm25-12b", "qwen35-08b", "smollm3-3b", "bonsai-8b"]);
+    expect(LOCAL_AI_MODELS.filter((model) => model.installability === "verified_installable")).toHaveLength(4);
     expect(LOCAL_AI_MODELS.filter((model) => model.installability === "requires_account")).toHaveLength(1);
     expect(LOCAL_AI_MODELS.filter((model) => model.installability === "runtime_pending")).toHaveLength(4);
-    expect(getLocalAIModel("qwen3-06b")).toMatchObject({ sizeBytes: 497_664_000, format: "litertlm", installability: "verified_installable", artifactChecksum: { algorithm: "sha256", value: "b1baab462f6be49d70eada79d715c2c52cd9ece0cad00bddf6a2c097d23498e9" } });
+    // The default is the INT4 no-think build: smaller and roughly twice as quick on a CPU
+    // backend than the thinking build, with the publisher's own SHA-256 pinned.
+    expect(getLocalAIModel("qwen3-06b")).toMatchObject({ sizeBytes: 363_855_872, format: "litertlm", installability: "verified_installable", artifactChecksum: { algorithm: "sha256", value: "2df6821ec12702dafd33915e7a1a1adc7c4b053f3672fd9555dfaf3a114c4139" } });
+    // And the reasoning sibling is offered as a separate, explicit choice.
+    expect(getLocalAIModel("qwen3-06b-think")).toMatchObject({ format: "litertlm", installability: "verified_installable" });
     expect(LOCAL_AI_MODELS.filter((model) => model.installability !== "verified_installable").every((model) => model.sourceNote.length > 20)).toBe(true);
   });
 });

@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { KeyboardAwareScrollView } from "@/components/keyboard-aware-scroll-view";
 import { OperationProgressCard } from "@/components/operation-progress-card";
+import { LocalAIModelError, localAISession } from "@/lib/local-ai-session";
 import {
   LOCAL_AI_MODELS,
   assessLocalAIModel,
   deleteLocalAIModel,
   formatBytes,
-  getActiveLocalAIModelId,
   getLocalAIDeviceProfile,
   getLocalAIModelState,
-  getLocalAIRuntime,
   pauseLocalAIModelDownload,
   recommendLocalAIModel,
   setActiveLocalAIModelId,
@@ -47,7 +47,10 @@ export default function LocalAIScreen() {
 
   useEffect(() => {
     void refresh();
-    void getActiveLocalAIModelId().then(setLoadedModel);
+    // "Loaded" reflects the real runtime state from the session manager, not
+    // merely the selected model, so the UI never claims a model is loaded early.
+    setLoadedModel(localAISession.getSnapshot().loadedModelId);
+    return localAISession.subscribe((snapshot) => setLoadedModel(snapshot.loadedModelId));
   }, []);
 
   const assessments = useMemo(() => (device ? recommendLocalAIModel(device) : []), [device]);
@@ -76,23 +79,16 @@ export default function LocalAIScreen() {
     if (!device?.nativeRuntimeAvailable) return;
     setBusy(modelId);
     try {
-      const verifiedState = await getLocalAIModelState(modelId);
-      if (verifiedState.status !== "downloaded" || !verifiedState.localUri) {
-        await setActiveLocalAIModelId(null);
-        setLoadedModel(null);
-        await refresh();
-        Alert.alert("Model needs downloading", "The model file is no longer available on this device. Download it again before loading Local AI.");
-        return;
-      }
-      const runtime = getLocalAIRuntime();
-      const previousModel = await getActiveLocalAIModelId();
-      if (previousModel && previousModel !== modelId) await runtime.unload();
-      await runtime.load(verifiedState.localUri, device.backend === "unknown" ? "cpu" : device.backend);
+      // Verifies the artifact and loads it into the runtime; throws a
+      // LocalAIModelError naming the exact missing dependency when it cannot.
+      await localAISession.ensureModelLoaded(modelId);
       await setActiveLocalAIModelId(modelId);
       setLoadedModel(modelId);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "The native runtime could not load this model.";
-      if (/model file|selected model file|not available on this device/i.test(message)) {
+      const message = error instanceof LocalAIModelError
+        ? `${error.userMessage} ${error.nextAction}`
+        : error instanceof Error ? error.message : "The native runtime could not load this model.";
+      if (error instanceof LocalAIModelError) {
         await setActiveLocalAIModelId(null);
         setLoadedModel(null);
         await refresh();
@@ -103,7 +99,7 @@ export default function LocalAIScreen() {
 
   async function unloadModel(modelId: LocalAIModelId) {
     setBusy(modelId);
-    try { await getLocalAIRuntime().unload(); await setActiveLocalAIModelId(null); setLoadedModel((current) => current === modelId ? null : current); } catch (error) { Alert.alert("Could not unload model", error instanceof Error ? error.message : "Please try again."); } finally { setBusy(null); }
+    try { await localAISession.unload(); await setActiveLocalAIModelId(null); setLoadedModel((current) => current === modelId ? null : current); } catch (error) { Alert.alert("Could not unload model", error instanceof Error ? error.message : "Please try again."); } finally { setBusy(null); }
   }
 
   async function remove(modelId: LocalAIModelId) {
@@ -113,7 +109,7 @@ export default function LocalAIScreen() {
 
   return (
     <ScreenContainer className="px-4" edges={["top", "left", "right"]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+      <KeyboardAwareScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]} accessibilityLabel="Go back"><Ionicons name="chevron-back" size={20} color={ink} /></Pressable>
           <View style={styles.headerCopy}><Text style={styles.eyebrow}>LOCAL AI</Text><Text style={styles.title}>Use your own hardware</Text></View>
@@ -151,7 +147,7 @@ export default function LocalAIScreen() {
           </View>;
         })}
         <View style={styles.note}><Ionicons name="shield-checkmark-outline" size={17} color={teal} /><Text style={styles.noteText}>The main market workflows remain usable without local hardware. Auto mode uses Connected Assistant when native Local AI is unavailable; Local mode stays explicit and never pretends that an unverified model is loaded. Android native builds support load, stream, cancel, and unload only after the runtime and device gates pass.</Text></View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </ScreenContainer>
   );
 }

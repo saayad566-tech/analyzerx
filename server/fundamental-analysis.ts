@@ -1,4 +1,5 @@
 import { callIndiaStockMcpTool } from "./india-stock-mcp";
+import { type MarketId, marketIdForCountryName, marketIdForExchange, getMarketProfile } from "../lib/market-regions";
 
 import { runProvidersInParallel } from "./parallel-providers";
 import { fetchIndianOpenStock, normalizeIndianOpenQuote } from "./indian-open-api";
@@ -6,6 +7,7 @@ import { calculateQuantitativeMetrics, type QuantitativeMetric } from "./quantit
 import { buildMultibaggerThesis, type MultibaggerThesis } from "./multibagger-thesis";
 import { extractFilingEvidence, type FilingEvidence } from "./filing-evidence";
 import { classifyMarketCap, getMarketCapConvention, marketCapBandLabel, type MarketCapBand } from "../lib/market-cap";
+import { difference, percentChange, percentOf, product, quotient, ratio, sumValid } from "../lib/precision";
 
 type Basis = "reported" | "derived" | "estimated" | "unavailable";
 
@@ -81,7 +83,7 @@ export type FundamentalAnalysis = {
   resolvedSymbol: string;
   companyName: string;
   market: { exchange: string; currency: string; country: string; primaryFocus: boolean };
-  marketCap: { value: number | null; band: MarketCapBand; label: string; currency: string; convention: ReturnType<typeof getMarketCapConvention>; basis: "reported" | "unavailable" };
+  marketCap: { value: number | null; band: MarketCapBand; label: string; currency: string; convention: ReturnType<typeof getMarketCapConvention> | null; basis: "reported" | "unavailable" };
   redirect: { from: string; to: string; reason: string } | null;
   score: number;
   verdict: string;
@@ -362,7 +364,10 @@ function growthCagr(series: TrendPoint[], years: number) {
   const start = series.at(-(years + 1))?.value;
   const end = series.at(-1)?.value;
   if (start === undefined || end === undefined || start <= 0 || end <= 0) return undefined;
-  return ((end / start) ** (1 / years) - 1) * 100;
+  // Ratio is computed exactly; only the fractional-year root uses a float power.
+  const growthRatio = ratio(end, start);
+  if (growthRatio === null || growthRatio <= 0) return undefined;
+  return (growthRatio ** (1 / years) - 1) * 100;
 }
 
 function extractShareholdingLatest(section: string, label: string) {
@@ -422,8 +427,8 @@ async function fetchScreenerFallback(symbol: string): Promise<RawFundamentals> {
   // Screener market cap is commonly expressed in INR crore units; do not derive shares outstanding from it without an explicit unit contract.
   const sharesOutstanding = undefined;
   const eps = latest(epsHistory);
-  const pe = currentPrice !== undefined && eps !== undefined && eps > 0 ? currentPrice / eps : pagePe;
-  const roe = netIncome !== undefined && equity ? (netIncome / equity) * 100 : pageRoe;
+  const pe = currentPrice !== undefined && eps !== undefined && eps > 0 ? quotient(currentPrice, eps) ?? pagePe : pagePe;
+  const roe = netIncome !== undefined && equity ? percentOf(netIncome, equity) ?? pageRoe : pageRoe;
   const website = html.match(/<a[^>]+href=["'](https?:\/\/(?:www\.)?adani\.com[^"']*)["']/i)?.[1] ?? undefined;
   const about = html.match(/id=["']company-info["'][\s\S]{0,5000}?<p[^>]*>([\s\S]*?)<\/p>/i)?.[1];
   const history = { revenue: revenueHistory, eps: epsHistory, cashFlow: cfoHistory };
@@ -431,18 +436,18 @@ async function fetchScreenerFallback(symbol: string): Promise<RawFundamentals> {
     price: currentPrice,
     marketCap,
     pe,
-    priceToBook: currentPrice && bookValue ? currentPrice / bookValue : undefined,
+    priceToBook: currentPrice && bookValue ? quotient(currentPrice, bookValue) ?? undefined : undefined,
     roe,
     roce,
-    roa: netIncome !== undefined && totalAssets ? (netIncome / totalAssets) * 100 : undefined,
-    debtToEquity: totalDebt !== undefined && equity ? totalDebt / equity : undefined,
-    profitMargin: netIncome !== undefined && revenue ? (netIncome / revenue) * 100 : undefined,
-    operatingMargin: operatingProfit !== undefined && revenue ? (operatingProfit / revenue) * 100 : undefined,
+    roa: netIncome !== undefined && totalAssets ? percentOf(netIncome, totalAssets) ?? undefined : undefined,
+    debtToEquity: totalDebt !== undefined && equity ? quotient(totalDebt, equity) ?? undefined : undefined,
+    profitMargin: netIncome !== undefined && revenue ? percentOf(netIncome, revenue) ?? undefined : undefined,
+    operatingMargin: operatingProfit !== undefined && revenue ? percentOf(operatingProfit, revenue) ?? undefined : undefined,
     revenueGrowth: growthCagr(revenueHistory, 3) ?? growthCagr(revenueHistory, 5),
     earningsGrowth: growthCagr(netIncomeHistory, 3) ?? growthCagr(epsHistory, 3),
     operatingCashFlow,
     freeCashFlow,
-    capitalExpenditures: operatingCashFlow !== undefined && freeCashFlow !== undefined ? Math.max(0, operatingCashFlow - freeCashFlow) : undefined,
+    capitalExpenditures: operatingCashFlow !== undefined && freeCashFlow !== undefined ? Math.max(0, difference(operatingCashFlow, freeCashFlow) ?? 0) : undefined,
     netIncome,
     eps,
     sharesOutstanding,
@@ -450,7 +455,7 @@ async function fetchScreenerFallback(symbol: string): Promise<RawFundamentals> {
     totalAssets,
     totalEquity: equity,
     interestExpense,
-    interestCoverage: operatingProfit !== undefined && interestExpense && interestExpense > 0 ? operatingProfit / interestExpense : undefined,
+    interestCoverage: operatingProfit !== undefined && interestExpense && interestExpense > 0 ? quotient(operatingProfit, interestExpense) ?? undefined : undefined,
     promoterHolding,
     bookValue,
     companyName: html.match(/<h1[^>]*>([^<]+)<\/h1>/i)?.[1]?.trim(),
@@ -593,7 +598,7 @@ async function fetchSecCompanyFacts(symbol: string): Promise<RawFundamentals> {
     revenue: revenue.at(-1)?.value,
     eps: eps.at(-1)?.value,
     operatingCashFlow: latestCfo,
-    freeCashFlow: latestCfo !== undefined && latestCapex !== undefined ? latestCfo - Math.abs(latestCapex) : undefined,
+    freeCashFlow: latestCfo !== undefined && latestCapex !== undefined ? difference(latestCfo, Math.abs(latestCapex)) ?? undefined : undefined,
     capitalExpenditures: latestCapex,
     netIncome: netIncome.at(-1)?.value,
     totalAssets: assets.at(-1)?.value,
@@ -680,8 +685,18 @@ function addMetric(metrics: Record<string, Metric>, key: string, value: number |
 }
 
 function clamp(value: number, min = 0, max = 100) { return Math.max(min, Math.min(max, value)); }
-function scoreHigher(value: number, low: number, high: number) { return clamp(((value - low) / (high - low)) * 100); }
-function scoreLower(value: number, good: number, bad: number) { return clamp(((bad - value) / (bad - good)) * 100); }
+// Both scorers guard the degenerate zero-width band explicitly instead of
+// producing Infinity/NaN from a divide-by-zero, and treat non-finite inputs as 0.
+function scoreHigher(value: number, low: number, high: number) {
+  if (!Number.isFinite(value)) return 0;
+  if (high === low) return value >= high ? 100 : 0;
+  return clamp(percentOf(value - low, high - low) ?? 0);
+}
+function scoreLower(value: number, good: number, bad: number) {
+  if (!Number.isFinite(value)) return 0;
+  if (bad === good) return value <= good ? 100 : 0;
+  return clamp(percentOf(bad - value, bad - good) ?? 0);
+}
 
 export function buildAnalysis(requestedSymbol: string, resolvedSymbol: string, redirect: FundamentalAnalysis["redirect"], raw: RawFundamentals, sources: FundamentalAnalysis["sources"]): FundamentalAnalysis {
   const inferredIndian = resolvedSymbol.endsWith(".NS") || resolvedSymbol.endsWith(".BO") || ["RELIANCE", "TCS", "INFY", "TATAMOTORS", "TMCV", "TMPV", "TATAPOWER", "ADANIENT", "ADANIPORTS", "JIOFIN", "HDFCBANK", "APOLLOHOSP", "LT"].includes(resolvedSymbol);
@@ -689,12 +704,20 @@ export function buildAnalysis(requestedSymbol: string, resolvedSymbol: string, r
   const baseline = sectorBaselines[sector] ?? sectorBaselines["Global equities"];
   const exchange = raw.exchange ?? (resolvedSymbol.endsWith(".NS") ? "NSE" : resolvedSymbol.endsWith(".BO") ? "BSE" : /^[A-Z]+$/.test(resolvedSymbol) && ["RELIANCE", "TATAMOTORS", "TATAPOWER", "ADANIENT", "ADANIPORTS", "JIOFIN"].includes(resolvedSymbol) ? "NSE" : "Global / unresolved exchange");
   const currency = raw.currency ?? (exchange === "NSE" || exchange === "BSE" ? "INR" : "Local currency unavailable");
-  const exchangeCountry: Record<string, string> = { NASDAQ: "United States", "NASDAQ NMS - GLOBAL MARKET": "United States", NYQ: "United States", NYSE: "United States", GER: "Germany", FRA: "Germany", JPX: "Japan", TSE: "Japan", LSE: "United Kingdom", TOR: "Canada", ASX: "Australia", HKG: "Hong Kong", KSC: "South Korea", SHG: "China", SZS: "China", SET: "Thailand", BSE: "India", NSE: "India" };
-  const country = raw.country ?? exchangeCountry[exchange] ?? (exchange === "NSE" || exchange === "BSE" ? "India" : "Country unavailable");
-  const marketKey = country === "India" ? "IN" : Object.entries({ "United States": "US", "United Kingdom": "GB", Canada: "CA", Australia: "AU", Japan: "JP", Singapore: "SG", "Hong Kong": "HK", Germany: "DE", France: "FR" }).find(([label]) => label === country)?.[1] ?? "UNKNOWN";
-  const marketCapConvention = getMarketCapConvention(marketKey);
-  const marketCapValue = raw.marketCap === undefined ? null : country === "India" && raw.marketCap > 1_000_000 ? raw.marketCap / 10_000_000 : raw.marketCap;
-  const marketCapBand = classifyMarketCap(marketKey, marketCapValue);
+  // Both maps used to be inlined here. They drifted from the market registry, and an
+  // unrecognised value silently became "UNKNOWN", which then produced the wrong
+  // market-cap convention and band for the company. The registry is now the only source:
+  // the market is resolved from the exchange code, and the country label is read back
+  // from the resolved profile rather than being guessed independently.
+  const marketKey = raw.country
+    ? marketIdForCountryName(raw.country)
+    : marketIdForExchange(exchange);
+  const country = marketKey === "UNKNOWN"
+    ? (raw.country ?? "Country unavailable")
+    : getMarketProfile(marketKey).country;
+  const marketCapConvention = marketKey === "UNKNOWN" ? null : getMarketCapConvention(marketKey);
+  const marketCapValue = raw.marketCap === undefined ? null : country === "India" && raw.marketCap > 1_000_000 ? quotient(raw.marketCap, 10_000_000) ?? raw.marketCap : raw.marketCap;
+  const marketCapBand = marketKey === "UNKNOWN" ? "unknown" : classifyMarketCap(marketKey, marketCapValue);
   const metrics: Record<string, Metric> = {};
   const history = raw.history ?? emptyHistoricalTrends();
   const quantitativeMetrics = calculateQuantitativeMetrics({
@@ -725,11 +748,11 @@ export function buildAnalysis(requestedSymbol: string, resolvedSymbol: string, r
     history,
   });
   const latestReportedCfo = history.cashFlow.at(-1)?.value;
-  const cfo = raw.operatingCashFlow ?? latestReportedCfo ?? (raw.netIncome !== undefined ? raw.netIncome * 0.9 : undefined);
+  const cfo = raw.operatingCashFlow ?? latestReportedCfo ?? (raw.netIncome !== undefined ? product(raw.netIncome, 0.9) ?? undefined : undefined);
   const cfoBasis: Exclude<Basis, "unavailable"> = raw.operatingCashFlow !== undefined ? "reported" : latestReportedCfo !== undefined ? "reported" : raw.netIncome !== undefined ? "derived" : "estimated";
-  const fcf = raw.freeCashFlow ?? (cfo !== undefined && raw.capitalExpenditures !== undefined ? cfo - Math.abs(raw.capitalExpenditures) : undefined);
+  const fcf = raw.freeCashFlow ?? (cfo !== undefined && raw.capitalExpenditures !== undefined ? difference(cfo, Math.abs(raw.capitalExpenditures)) ?? undefined : undefined);
   const fcfBasis: Exclude<Basis, "unavailable"> = raw.freeCashFlow !== undefined ? "reported" : fcf !== undefined ? "derived" : "estimated";
-  const cashConversion = cfo !== undefined && raw.netIncome !== undefined && raw.netIncome !== 0 ? cfo / raw.netIncome : undefined;
+  const cashConversion = cfo !== undefined && raw.netIncome !== undefined && raw.netIncome !== 0 ? quotient(cfo, raw.netIncome) ?? undefined : undefined;
   addMetric(metrics, "roe", raw.roe, baseline.roe!, "Primary/secondary/web sources");
   addMetric(metrics, "roa", raw.roa, baseline.roa!, "Primary/secondary/web sources");
   addMetric(metrics, "debtToEquity", raw.debtToEquity, baseline.debtToEquity!, "Primary/secondary/web sources");
@@ -871,8 +894,8 @@ export function buildAnalysis(requestedSymbol: string, resolvedSymbol: string, r
   const sma20 = sma(20);
   const sma50 = sma(50);
   const currentPrice = price;
-  const oneYearChangePct = priceSeries.length >= 2 && priceSeries[0] !== 0 ? ((priceSeries.at(-1)! - priceSeries[0]) / priceSeries[0]) * 100 : null;
-  const rsi14 = priceSeries.length >= 15 ? (() => { const changes = priceSeries.slice(-15).map((value, index, values) => index === 0 ? 0 : value - values[index - 1]); const gains = changes.slice(1).filter((change) => change > 0); const losses = changes.slice(1).filter((change) => change < 0).map((change) => Math.abs(change)); const avgGain = gains.reduce((sum, value) => sum + value, 0) / 14; const avgLoss = losses.reduce((sum, value) => sum + value, 0) / 14; return avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss)); })() : null;
+  const oneYearChangePct = priceSeries.length >= 2 ? percentChange(priceSeries[0], priceSeries.at(-1)!) : null;
+  const rsi14 = priceSeries.length >= 15 ? (() => { const changes = priceSeries.slice(-15).map((value, index, values) => index === 0 ? 0 : difference(value, values[index - 1]) ?? 0); const gains = changes.slice(1).filter((change) => change > 0); const losses = changes.slice(1).filter((change) => change < 0).map((change) => Math.abs(change)); const avgGain = (sumValid(gains) ?? 0) / 14; const avgLoss = (sumValid(losses) ?? 0) / 14; if (avgLoss === 0) return 100; const relativeStrength = quotient(avgGain, avgLoss); if (relativeStrength === null) return 100; return difference(100, quotient(100, 1 + relativeStrength) ?? 0) ?? 100; })() : null;
   const technicalTrend: FundamentalAnalysis["stockAnalysis"]["technical"]["trend"] = currentPrice === null || sma20 === null ? "Unavailable" : currentPrice > sma20 && (sma50 === null || currentPrice > sma50) ? "Bullish" : currentPrice < sma20 && (sma50 === null || currentPrice < sma50) ? "Bearish" : "Neutral";
   const technicalBasis: Basis = priceSeries.length >= 2 ? "reported" : "unavailable";
   const stockAnalysis: FundamentalAnalysis["stockAnalysis"] = {
@@ -923,7 +946,9 @@ export function buildAnalysis(requestedSymbol: string, resolvedSymbol: string, r
     resolvedSymbol,
     companyName: normalizedCompanyName,
     market: { exchange, currency, country, primaryFocus: country === "India" },
-    marketCap: { value: marketCapValue, band: marketCapBand, label: marketCapBandLabel(marketCapBand), currency: marketCapConvention.currency, convention: marketCapConvention, basis: marketCapValue === null ? "unavailable" : "reported" },
+    marketCap: { value: marketCapValue, band: marketCapBand, label: marketCapBandLabel(marketCapBand), // When the market is unknown there is no convention, so the currency falls back to the
+    // one already resolved for this symbol rather than being guessed from a market.
+    currency: marketCapConvention?.currency ?? currency, convention: marketCapConvention, basis: marketCapValue === null ? "unavailable" : "reported" },
     redirect,
     score,
     verdict: rating === "Exceptional" || rating === "Strong" ? "Strong research profile" : rating === "High Risk" ? "High-risk / incomplete evidence" : "Mixed research profile",
@@ -946,7 +971,7 @@ export function buildAnalysis(requestedSymbol: string, resolvedSymbol: string, r
   };
 }
 
-export async function analyzeFundamentals(requestedSymbol: string): Promise<FundamentalAnalysis> {
+export async function analyzeFundamentals(requestedSymbol: string, marketId: MarketId): Promise<FundamentalAnalysis> {
   const requested = requestedSymbol.trim().toUpperCase();
   const requestedBase = requested.replace(/\.(NS|BO)$/i, "");
   const alias = corporateAliases[requested] ?? corporateAliases[requestedBase];
@@ -954,13 +979,18 @@ export async function analyzeFundamentals(requestedSymbol: string): Promise<Fund
   const resolved = alias ? `${alias.symbol}${suffix}` : requested;
   const redirect = alias ? { from: requested, to: resolved, reason: alias.reason } : null;
 
+  // The Indian providers are gated on the requested market. They were previously enabled for
+  // every market, so a US or French symbol still queried Indian quote and fundamental
+  // services. SEC filings are US-specific and are gated the same way.
+  const isIndia = marketId === "IN";
+  const isUnitedStates = marketId === "US";
   const results = await runProvidersInParallel<RawFundamentals>([
-    { id: "indian-api", tier: "primary", enabled: Boolean(process.env.INDIAN_API_KEY), run: () => fetchPrimary(resolved) },
+    { id: "indian-api", tier: "primary", enabled: isIndia && Boolean(process.env.INDIAN_API_KEY), run: () => fetchPrimary(resolved) },
     { id: "finnhub", tier: "primary", enabled: Boolean(process.env.FINNHUB_API_KEY), run: () => fetchFinnhubGlobal(resolved) },
-    { id: "sec-company-facts", tier: "primary", enabled: true, run: () => fetchSecCompanyFacts(resolved) },
-    { id: "india-stock-mcp", tier: "secondary", enabled: true, run: () => fetchSecondary(resolved) },
-    { id: "indian-open-api", tier: "secondary", enabled: true, run: () => fetchIndianOpenFundamentals(resolved) },
-    { id: "screener-public", tier: "web-fallback", enabled: true, run: () => fetchScreenerFallback(resolved) },
+    { id: "sec-company-facts", tier: "primary", enabled: isUnitedStates, run: () => fetchSecCompanyFacts(resolved) },
+    { id: "india-stock-mcp", tier: "secondary", enabled: isIndia, run: () => fetchSecondary(resolved) },
+    { id: "indian-open-api", tier: "secondary", enabled: isIndia, run: () => fetchIndianOpenFundamentals(resolved) },
+    { id: "screener-public", tier: "web-fallback", enabled: isIndia, run: () => fetchScreenerFallback(resolved) },
     { id: "yahoo-chart", tier: "web-fallback", enabled: true, run: () => fetchWebFallback(resolved) },
     { id: "public-company-profile", tier: "web-fallback", enabled: true, run: () => fetchPublicCompanyProfile(resolved) },
   ], 12_000);

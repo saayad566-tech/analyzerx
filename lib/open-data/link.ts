@@ -28,8 +28,12 @@ import {
   sectorConstituents,
   snapshot,
   stockNews,
+  type SectorConstituent,
 } from "./engine";
 import { NSE_INDEX_FILES, type NewsArticle } from "./sources";
+import { requireMarketId, getMarketProfile } from "../market-regions";
+import { sectorNamesForMarket } from "../market-sector-universe";
+import { seedUniverseForMarket } from "../market-universe";
 import { queryArchive, storeStats } from "./store";
 import { FALLBACK_UNIVERSE } from "./universe-fallback";
 import { catalogSummary, collectorStats, runCollectionCycle } from "./collector";
@@ -53,10 +57,20 @@ function str(input: Input, key: string, fallback = ""): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+/**
+ * Resolve the market for a local procedure.
+ *
+ * This previously defaulted to "IN" and fell back to "IN" for any unrecognised value.
+ * That is the root cause of the cross-market leak: the Screener called
+ * `market.multiAssetTiming` with no input, so this helper returned India, and every
+ * market was served Indian benchmarks and Indian news regardless of the selection.
+ *
+ * A market is now REQUIRED. A missing or invalid one throws rather than being silently
+ * replaced with India, because showing one market's data as another's is a correctness
+ * failure, not a degradation.
+ */
 function market(input: Input): MarketId {
-  const value = str(input, "marketId", "IN").toUpperCase();
-  const valid = ["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"];
-  return (valid.includes(value) ? value : "IN") as MarketId;
+  return requireMarketId(str(input, "marketId", ""));
 }
 
 /* ------------------------------------------------------------------ *
@@ -150,11 +164,11 @@ function projectionFromArticle(article: NewsArticle) {
  * that shape, so the on-device layer must emit exactly it. Emitting camelCase
  * here left `impact_score` and `published_at` undefined on the news tracker.
  */
-function toArchiveArticle(article: NewsArticle & { collectedAt?: string | null }) {
+function toArchiveArticle(article: NewsArticle & { collectedAt?: string | null }, marketId: MarketId) {
   const published = article.publishedAt ?? article.collectedAt ?? nowIso();
   return {
     id: article.id,
-    marketId: "IN" as const,
+    marketId,
     symbol: article.symbol,
     headline: article.headline,
     summary: article.summary,
@@ -171,8 +185,8 @@ function toArchiveArticle(article: NewsArticle & { collectedAt?: string | null }
   };
 }
 
-async function eventProjections(limit = 100, symbol?: string) {
-  const payload = symbol ? await stockNews(symbol, 40) : await marketNews(60);
+async function eventProjections(marketId: MarketId, limit = 100, symbol?: string) {
+  const payload = symbol ? await stockNews(symbol, 40, marketId) : await marketNews(marketId, 60);
   return payload.articles.slice(0, limit).map(projectionFromArticle);
 }
 
@@ -194,7 +208,7 @@ function officialFilingLinks(symbol: string) {
  * Deterministic local chat (no LLM, no server)
  * ------------------------------------------------------------------ */
 
-async function groundedAnswer(question: string, symbol: string, marketId: MarketId = "IN") {
+async function groundedAnswer(question: string, symbol: string, marketId: MarketId) {
   const clean = (symbol || question.match(/\b([A-Z]{2,12})\b/)?.[1] || "").toUpperCase();
   const parts: string[] = [];
   const sources: Array<{ label: string; detail: string; url?: string }> = [];
@@ -204,7 +218,7 @@ async function groundedAnswer(question: string, symbol: string, marketId: Market
     const [snap, fund, news] = await Promise.allSettled([
       snapshot(clean, marketId),
       fundamentals(clean, marketId),
-      stockNews(clean, 6),
+      stockNews(clean, 6, marketId),
     ]);
     if (snap.status === "fulfilled" && snap.value.quote) {
       const q = snap.value.quote;
@@ -230,7 +244,7 @@ async function groundedAnswer(question: string, symbol: string, marketId: Market
       dataAsOf = dataAsOf ?? news.value.fetchedAt;
     }
   } else {
-    const market = await marketNews(6);
+    const market = await marketNews(marketId, 6);
     parts.push("Ask about a specific ticker for a sourced answer. Latest market headlines:");
     for (const article of market.articles.slice(0, 3)) {
       parts.push(`• ${article.headline} (${article.source})`);
@@ -278,7 +292,7 @@ const HANDLERS: Record<string, Handler> = {
     const marketId = market(input);
     const snap = await snapshot(symbol, marketId);
     const analysis = await fundamentals(symbol, marketId).catch(() => null);
-    const news = await stockNews(symbol, 6).catch(() => null);
+    const news = await stockNews(symbol, 6, marketId).catch(() => null);
     return {
       ...snap,
       asOf: snap.asOf,
@@ -300,7 +314,7 @@ const HANDLERS: Record<string, Handler> = {
   "market.profile": async (input) => {
     const symbol = str(input, "symbol");
     const marketId = market(input);
-    const [marketSnap, fund, news] = await Promise.allSettled([snapshot(symbol, marketId), fundamentals(symbol, marketId), stockNews(symbol)]);
+    const [marketSnap, fund, news] = await Promise.allSettled([snapshot(symbol, marketId), fundamentals(symbol, marketId), stockNews(symbol, 40, marketId)]);
     return {
       symbol,
       asOf: nowIso(),
@@ -321,7 +335,21 @@ const HANDLERS: Record<string, Handler> = {
   "market.institutionalFlows": (input) => institutionalFlows(str(input, "range", "TODAY")),
   "market.sectorConstituents": async (input) => {
     const sector = str(input, "sector");
-    const base = await sectorConstituents(sector, Number(input?.limit ?? 100) || 100);
+    // The constituent index is the NSE index set, which is India-only. For any other
+    // market there is no free equivalent, so this returns an explicit unsupported
+    // state with no rows rather than Indian constituents under a foreign heading.
+    const constituentsMarketId = market(input);
+    const base = constituentsMarketId === "IN"
+      ? await sectorConstituents(sector, Number(input?.limit ?? 100) || 100)
+      : {
+          sector,
+          asOf: nowIso(),
+          constituents: [] as SectorConstituent[],
+          source: "No constituent index is available for this market",
+          error: null,
+          status: "unsupported" as const,
+          reason: `Sector constituents are not available for ${constituentsMarketId}. AnalyzerX shows nothing here rather than another market's constituents.`,
+        };
     const flows = await institutionalFlows(str(input, "range", "TODAY")).catch(() => null);
     const fii = flows?.rows.find((r) => r.participant === "FII/FPI");
     const dii = flows?.rows.find((r) => r.participant === "DII");
@@ -332,7 +360,7 @@ const HANDLERS: Record<string, Handler> = {
     const scored = await Promise.all(
       base.constituents.slice(0, SCORED_LIMIT).map(async (row) => {
         try {
-          const [analysis, snap] = await Promise.all([fundamentals(row.symbol, "IN"), snapshot(row.symbol, "IN")]);
+          const [analysis, snap] = await Promise.all([fundamentals(row.symbol, constituentsMarketId), snapshot(row.symbol, constituentsMarketId)]);
           return {
             symbol: row.symbol,
             name: row.name,
@@ -397,21 +425,27 @@ const HANDLERS: Record<string, Handler> = {
         reportDate: flows?.reportDate ?? null,
       },
       securityWiseFlow: { available: false, reportDate: null, topFii: [], topDii: [] },
-      coverageLabel: base.error ? "Unavailable" : `${base.constituents.length} constituents from the NSE index list`,
-      limitations: base.error
-        ? [base.error]
-        : [
+      // Coverage status comes from the registry resolution, not from parsing an
+      // error string, so an uncovered sector reads as "unsupported" rather than
+      // as a failed request.
+      status: base.status,
+      reason: base.reason,
+      coverageLabel: base.status === "supported" ? `${base.constituents.length} constituents from the NSE index list` : "Unavailable",
+      limitations: base.status === "supported"
+        ? [
             `Fundamental scores are computed on-device for the first ${Math.min(SCORED_LIMIT, base.constituents.length)} constituents; the remainder are shown unscored rather than estimated.`,
             unavailableSort ? "Security-wise FII/DII attribution requires an exchange feed; those rows stay at the bottom and are never inferred." : "Security-wise flow needs an exchange feed.",
-          ],
+          ]
+        : [base.reason ?? base.error ?? "This sector is not covered by a verified NSE constituent index."],
     };
   },
   "market.peerComparison": async (input) => {
-    const result = await peerComparison(str(input, "symbol"));
+    const result = await peerComparison(str(input, "symbol"), market(input));
     return { ...result, note: result.peers.length ? result.comparisonBasis : "No peer set was found for this symbol from the NSE index lists." };
   },
-  "market.multiAssetTiming": () => multiAssetTiming(),
-  "market.sectorNames": () => Object.keys(NSE_INDEX_FILES).map((key) => key.replace(/^NIFTY/, "").replace(/([A-Z]+)/g, (m) => m[0] + m.slice(1).toLowerCase())),
+  "market.multiAssetTiming": (input) => multiAssetTiming(market(input)),
+  // Was NSE-only for every market. Now derived from the requested market's own universe.
+  "market.sectorNames": (input) => sectorNamesForMarket(market(input)),
   "market.officialFilingLinks": (input) => ({ links: officialFilingLinks(str(input, "symbol")), note: "Official regulator and exchange filing entry points; no scraping is performed." }),
   "market.filings": async (input) => ({ symbol: str(input, "symbol"), records: [], entryLinks: officialFilingLinks(str(input, "symbol")) }),
   "market.history": (input) => priceHistory(str(input, "symbol"), str(input, "range", "6mo"), str(input, "interval", "1d"), market(input)),
@@ -420,7 +454,7 @@ const HANDLERS: Record<string, Handler> = {
     const [snap, analysis, news] = await Promise.all([
       snapshot(symbol, "IN"),
       fundamentals(symbol, "IN").catch(() => null),
-      stockNews(symbol, 8).catch(() => null),
+      stockNews(symbol, 8, "IN").catch(() => null),
     ]);
     return {
       available: Boolean(snap.quote),
@@ -471,7 +505,7 @@ const HANDLERS: Record<string, Handler> = {
     unavailable: (Array.isArray(input?.symbols) ? (input?.symbols as string[]) : []).map((symbol) => ({ symbol: symbol.toUpperCase(), reason: "SEC XBRL comparison needs a validated structured filing adapter for this market." })),
     refreshedAt: nowIso(),
     marketId: market(input),
-    marketLabel: "United States",
+    marketLabel: getMarketProfile(market(input)).country,
   }),
   "market.secFilingComparisonExport": async (input) => {
     const symbols = (Array.isArray(input?.symbols) ? (input?.symbols as string[]) : []).map((s) => s.toUpperCase());
@@ -479,7 +513,7 @@ const HANDLERS: Record<string, Handler> = {
     return {
       fileName: `${base}.md`, pdfFileName: `${base}.pdf`, csvFileName: `${base}.csv`, chartFileName: `${base}.svg`,
       mimeType: "text/markdown", pdfMimeType: "application/pdf", csvMimeType: "text/csv", chartMimeType: "image/svg+xml",
-      marketId: market(input), marketLabel: "United States",
+      marketId: market(input), marketLabel: getMarketProfile(market(input)).country,
       content: `# Filing comparison\n\nUnavailable: no validated structured filing adapter for the selected symbols (${symbols.join(", ")}).\n`,
       csvContent: "symbol,reason\n" + symbols.map((s) => `${s},no validated structured filing adapter`).join("\n"),
       chartContent: "",
@@ -489,14 +523,14 @@ const HANDLERS: Record<string, Handler> = {
   "market.report": async (input) => {
     const symbol = str(input, "symbol");
     const marketId = market(input);
-    const [report, news] = await Promise.all([fundamentals(symbol, marketId), stockNews(symbol, 20)]);
+    const [report, news] = await Promise.all([fundamentals(symbol, marketId), stockNews(symbol, 20, marketId)]);
     const markdown = `# Selected market: ${report.market.country} (${marketId})\n\n${report.stockAnalysis.conclusion}\n\n## Score\n${report.score}/100 — ${report.verdict}\n\n## Sources\n${report.sources.map((s) => `- ${s.name} (${s.status})`).join("\n")}\n`;
     return {
       symbol: report.resolvedSymbol,
       marketId,
       marketLabel: report.market.country,
-      fileName: `analyzerx-${report.resolvedSymbol}-1.4.0.pdf`,
-      markdownFileName: `analyzerx-${report.resolvedSymbol}-1.4.0.md`,
+      fileName: `analyzerx-${report.resolvedSymbol}-3.34.0.pdf`,
+      markdownFileName: `analyzerx-${report.resolvedSymbol}-3.34.0.md`,
       format: "pdf",
       content: markdown,
       pdfBase64: "",
@@ -513,13 +547,19 @@ const HANDLERS: Record<string, Handler> = {
       fisher: "Fisher scuttlebutt",
       "small-cap-compounder": "Small-cap compounder",
     };
-    const universe = await nseUniverse();
+    // Was the NSE universe with fundamentals pinned to "IN", so this screen screened
+    // Indian companies for every market. It now screens the requested market's own
+    // universe.
+    const requestedMarket = market(input);
+    const universe = requestedMarket === "IN"
+      ? await nseUniverse()
+      : { securities: seedUniverseForMarket(requestedMarket).map((symbol) => ({ symbol, name: symbol, industry: null })), errors: [] as string[] };
     const sample = universe.securities.slice(0, 15);
     const signals = (
       await Promise.all(
         sample.map(async (security) => {
           try {
-            const analysis = await fundamentals(security.symbol, "IN");
+            const analysis = await fundamentals(security.symbol, requestedMarket);
             return {
               symbol: security.symbol,
               name: security.name,
@@ -546,7 +586,7 @@ const HANDLERS: Record<string, Handler> = {
       sectors,
       signals,
       candidates: signals,
-      note: "Rule-based screen over reported annual fundamentals for a sample of the NSE universe; not a prediction of returns.",
+      note: `Rule-based screen over reported annual fundamentals for a sample of the ${requestedMarket} universe; not a prediction of returns.`,
     };
   },
   "market.derivatives": async (input) => ({
@@ -577,7 +617,7 @@ const HANDLERS: Record<string, Handler> = {
   "news.stock": async (input) => {
     const symbol = str(input, "symbol");
     const marketId = market(input);
-    const payload = await stockNews(symbol, Number(input?.limit ?? 40) || 40);
+    const payload = await stockNews(symbol, Number(input?.limit ?? 40) || 40, market(input));
     return { available: payload.articles.length > 0, symbol: payload.symbol, marketId, providerFailures: payload.providerFailures, freshArticleCount: payload.freshArticleCount, stale: payload.stale, fetchedAt: payload.fetchedAt, articles: payload.articles, sources: payload.sources, error: null };
   },
   // Single article lookup for the news detail screen. Reads the phone's own
@@ -588,10 +628,10 @@ const HANDLERS: Record<string, Handler> = {
     if (!id) return null;
     const archived = await queryArchive({ limit: 2000 });
     const found = archived.articles.find((article) => article.id === id);
-    if (found) return toArchiveArticle(found);
-    const live = await marketNews(200).catch(() => ({ articles: [] as NewsArticle[] }));
+    if (found) return toArchiveArticle(found, market(input));
+    const live = await marketNews(market(input), 200).catch(() => ({ articles: [] as NewsArticle[] }));
     const liveMatch = live.articles.find((article) => article.id === id);
-    return liveMatch ? toArchiveArticle(liveMatch) : null;
+    return liveMatch ? toArchiveArticle(liveMatch, market(input)) : null;
   },
   "news.archive": async (input) => {
     const days = Number(input?.days ?? 30) || 30;
@@ -617,7 +657,7 @@ const HANDLERS: Record<string, Handler> = {
       offset: (Number(input?.page ?? 0) || 0) * (Math.min(500, Number(input?.limit ?? 200) || 200)),
     });
 
-    let articles = stored.articles.map(toArchiveArticle);
+    let articles = stored.articles.map((article) => toArchiveArticle(article, market(input)));
     let total = stored.total;
     let returned = stored.returned;
     let hasMore = stored.hasMore;
@@ -628,11 +668,11 @@ const HANDLERS: Record<string, Handler> = {
     // First run on a fresh install: top the archive up with a live pass so the
     // screen is never empty while history builds.
     if (articles.length === 0) {
-      const payload = await marketNews(200);
+      const payload = await marketNews(market(input), 200);
       const live = symbol
         ? payload.articles.filter((a) => a.symbol === symbol || a.headline.toUpperCase().includes(symbol.toUpperCase()))
         : payload.articles;
-      articles = live.map((a) => toArchiveArticle({ ...a, collectedAt: nowIso() }));
+      articles = live.map((a) => toArchiveArticle({ ...a, collectedAt: nowIso() }, market(input)));
       total = live.length;
       returned = live.length;
       hasMore = false;
@@ -689,25 +729,25 @@ const HANDLERS: Record<string, Handler> = {
   },
   "news.refresh": async (input) => {
     await runCollectionCycle({ batchSize: 18, budgetMs: 15_000, symbols: str(input, "symbol") ? [str(input, "symbol")] : [] }).catch(() => undefined);
-    return stockNews(str(input, "symbol"), 40);
+    return stockNews(str(input, "symbol"), 40, market(input));
   },
   "news.flagIrrelevant": async (input) => localSet("news.flagged", input ?? {}),
   "news.undoIrrelevant": async () => localSet("news.flagged", {}),
   "news.reviewHeld": async () => ({ items: await localGet("news.held", []), held: await localGet("news.held", []) }),
   "news.held": async () => ({ items: await localGet("news.held", []), held: await localGet("news.held", []) }),
   "news.archiveExport": async (input) => {
-    const payload = await marketNews(500);
+    const payload = await marketNews(market(input), 500);
     const rows = payload.articles;
     const header = "date,headline,source,sentiment,url";
     const csv = [header, ...rows.map((a) => [a.publishedAt ?? "", `"${a.headline.replace(/"/g, '""')}"`, a.source, a.sentiment, a.url].join(","))].join("\n");
-    return { fileName: "analyzerx-news-archive.csv", mimeType: "text/csv", rowCount: rows.length, content: csv, marketId: market(input), marketLabel: "India" };
+    return { fileName: "analyzerx-news-archive.csv", mimeType: "text/csv", rowCount: rows.length, content: csv, marketId: market(input), marketLabel: getMarketProfile(market(input)).country };
   },
 
   /* ---- events ---- */
-  "events.latest": (input) => eventProjections(Number(input?.limit ?? 100) || 100),
-  "events.timeline": (input) => eventProjections(Number(input?.limit ?? 100) || 100, str(input, "symbol")),
+  "events.latest": (input) => eventProjections(market(input), Number(input?.limit ?? 100) || 100),
+  "events.timeline": (input) => eventProjections(market(input), Number(input?.limit ?? 100) || 100, str(input, "symbol")),
   "events.storyline": async () => [],
-  "events.search": (input) => eventProjections(500).then((rows) => rows.filter((row) => JSON.stringify(row).toLowerCase().includes(str(input, "query").toLowerCase())).slice(0, Number(input?.limit ?? 100) || 100)),
+  "events.search": (input) => eventProjections(market(input), 500).then((rows) => rows.filter((row) => JSON.stringify(row).toLowerCase().includes(str(input, "query").toLowerCase())).slice(0, Number(input?.limit ?? 100) || 100)),
 
   /* ---- graph ---- */
   "graph.projection": async (input) => {
@@ -724,7 +764,7 @@ const HANDLERS: Record<string, Handler> = {
     // graph from the phone's own archive so the tab is populated from real,
     // already-collected evidence rather than waiting for a server.
     const articles: Array<{ symbol: string; source: string }> = symbol
-      ? ((await stockNews(symbol, 20).catch(() => ({ articles: [] }))).articles as Array<{ symbol: string; source: string }>)
+      ? ((await stockNews(symbol, 20, market(input)).catch(() => ({ articles: [] }))).articles as Array<{ symbol: string; source: string }>)
       : ((await queryArchive({ limit: 300, order: "newest" })).articles as Array<{ symbol: string; source: string }>);
 
     const bySymbol = new Map<string, { count: number; sources: Map<string, number> }>();
@@ -818,8 +858,8 @@ const HANDLERS: Record<string, Handler> = {
 
   /* ---- alerts / recommendations ---- */
   "smartAlerts.discover": async (input) => ({ rules: [], results: [], evaluatedAt: nowIso(), symbol: str(input, "symbol"), note: "Alert evaluation runs over live news on-device." }),
-  "autonomousRecommendations.discover": async () => {
-    const payload = await marketNews(40);
+  "autonomousRecommendations.discover": async (input) => {
+    const payload = await marketNews(market(input), 40);
     const candidates = payload.articles
       .filter((a) => a.impactScore >= 65 && a.symbol)
       .slice(0, 10)
@@ -867,8 +907,8 @@ const HANDLERS: Record<string, Handler> = {
   },
   "sources.nseCollectors": async () => [{ key: "nse-equity-master", status: "live", cadence: "daily" }, { key: "nse-index-constituents", status: "live", cadence: "daily" }, { key: "nse-fii-dii", status: "live", cadence: "intraday" }],
   "sources.regionalCollectors": async () => [],
-  "sources.publicMacro": async () => {
-    const timing = await multiAssetTiming();
+  "sources.publicMacro": async (input) => {
+    const timing = await multiAssetTiming(market(input));
     const macro = timing.signals.filter((s) => s.type === "macro");
     return {
       checkedAt: timing.generatedAt,
@@ -938,8 +978,8 @@ async function researchRun(input: Input) {
   const marketId = market(input);
   const [fund, news, signals, flows] = await Promise.allSettled([
     symbol ? fundamentals(symbol, marketId) : Promise.resolve(null),
-    symbol ? stockNews(symbol, 12) : marketNews(12),
-    multiAssetTiming(),
+    symbol ? stockNews(symbol, 12, marketId) : marketNews(marketId, 12),
+    multiAssetTiming(marketId),
     marketId === "IN" ? institutionalFlows("TODAY") : Promise.resolve(null),
   ]);
   const agents = [
@@ -957,7 +997,7 @@ async function researchRun(input: Input) {
   const result = {
     runId: `local-${Date.now().toString(36)}`,
     marketId,
-    marketLabel: "India",
+    marketLabel: getMarketProfile(market(input)).country,
     symbol: symbol || null,
     status: "completed",
     runtime: "deterministic",

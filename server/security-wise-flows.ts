@@ -1,3 +1,5 @@
+import { difference, round } from "../lib/precision";
+
 export type SecurityWiseFlow = {
   symbol: string;
   reportDate: string | null;
@@ -46,8 +48,8 @@ function normalize(record: Record<string, unknown>, source: string): SecurityWis
   const diiBuy = numberFrom(first(record, ["dii_buy", "domestic_buy", "diiPurchase"]));
   const diiSell = numberFrom(first(record, ["dii_sell", "domestic_sell", "diiSale"]));
   const diiNetValue = numberFrom(first(record, ["dii_net", "domestic_net", "diiNet"]));
-  const fiiNet = fiiNetValue ?? (fiiBuy !== null && fiiSell !== null ? Number((fiiBuy - fiiSell).toFixed(2)) : null);
-  const diiNet = diiNetValue ?? (diiBuy !== null && diiSell !== null ? Number((diiBuy - diiSell).toFixed(2)) : null);
+  const fiiNet = fiiNetValue ?? (fiiBuy !== null && fiiSell !== null ? round(difference(fiiBuy, fiiSell), 2) : null);
+  const diiNet = diiNetValue ?? (diiBuy !== null && diiSell !== null ? round(difference(diiBuy, diiSell), 2) : null);
   if (fiiBuy === null && fiiSell === null && fiiNet === null && diiBuy === null && diiSell === null && diiNet === null) return null;
   return { symbol, reportDate: dateFrom(first(record, ["date", "report_date", "reportDate", "trade_date"])), fiiBuy, fiiSell, fiiNet, diiBuy, diiSell, diiNet, source };
 }

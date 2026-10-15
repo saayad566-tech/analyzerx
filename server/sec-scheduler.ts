@@ -12,7 +12,7 @@ function configuredSymbols(): string[] { return [...new Set<string>((process.env
 function intervalMs() { return Math.max(300_000, Number(process.env.SEC_EDGAR_INTERVAL_MS ?? 900_000)); }
 
 async function knownAccessions(symbol: string): Promise<Set<string>> {
-  const records = await getSourceRecordsForSymbol(symbol, 2000);
+  const records = await getSourceRecordsForSymbol("US", symbol, 2000);
   return new Set(records.filter((record) => record.sourceKey === "sec-edgar-submissions" && record.externalId).map((record) => record.externalId as string));
 }
 

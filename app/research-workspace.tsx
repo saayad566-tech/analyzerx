@@ -3,6 +3,9 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useAuth } from "@/hooks/use-auth";
 import { router } from "expo-router";
 import { trpc } from "@/lib/trpc";
+import { metricBasis } from "@/lib/safe-access";
+import { useMarketContext } from "@/lib/market-context";
+import { resolveMarketScopedSymbol } from "@/lib/market-defaults";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ScreenContainer } from "@/components/screen-container";
@@ -17,23 +20,24 @@ function Action({ icon, label, route }: { icon: keyof typeof Ionicons.glyphMap; 
 }
 
 export default function ResearchWorkspaceScreen() {
+  const { market, marketId } = useMarketContext();
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [watchlist, setWatchlist] = useState<string[]>([]);
   const [savedScreens, setSavedScreens] = useState<SavedScreen[]>([]);
   const { isAuthenticated } = useAuth();
-  const ownedWatchlist = trpc.account.watchlist.useQuery(undefined, { enabled: isAuthenticated, retry: false, staleTime: 60_000 });
-  const ownedScreens = trpc.account.savedScreens.useQuery(undefined, { enabled: isAuthenticated, retry: false, staleTime: 60_000 });
+  const ownedWatchlist = trpc.account.watchlist.useQuery({ marketId }, { enabled: isAuthenticated, retry: false, staleTime: 60_000 });
+  const ownedScreens = trpc.account.savedScreens.useQuery({ marketId }, { enabled: isAuthenticated, retry: false, staleTime: 60_000 });
   const serverWatchlist = (ownedWatchlist.data ?? []).map((item) => item.symbol);
   const effectiveWatchlist = isAuthenticated && ownedWatchlist.data ? serverWatchlist : watchlist;
   const effectiveSavedScreens = isAuthenticated && ownedScreens.data ? ownedScreens.data : savedScreens;
   const latestSymbol = recentSearches[0] ?? effectiveWatchlist[0] ?? null;
-  const financialAnalysis = trpc.market.fundamentals.useQuery({ symbol: latestSymbol ?? "RELIANCE" }, { enabled: Boolean(latestSymbol), retry: false, staleTime: 60_000 });
-  const watchlistEvidence = trpc.market.watchlistEvidence.useQuery({ symbols: effectiveWatchlist.length ? effectiveWatchlist : ["RELIANCE"] }, { enabled: effectiveWatchlist.length > 0, retry: false, staleTime: 60_000 });
+  const financialAnalysis = trpc.market.fundamentals.useQuery({ marketId: market.id, symbol: resolveMarketScopedSymbol(latestSymbol, marketId) ?? "" }, { enabled: Boolean(latestSymbol), retry: false, staleTime: 60_000 });
+  const watchlistEvidence = trpc.market.watchlistEvidence.useQuery({ marketId: market.id, symbols: effectiveWatchlist.length ? effectiveWatchlist : (resolveMarketScopedSymbol(null, marketId) ? [resolveMarketScopedSymbol(null, marketId)!] : []) }, { enabled: effectiveWatchlist.length > 0, retry: false, staleTime: 60_000 });
   const watchlistEventCounts = useMemo(() => new Map((watchlistEvidence.data ?? []).map((item) => [item.symbol, item.events.length])), [watchlistEvidence.data]);
   const openFinancialAnalysis = (symbol: string) => router.push({ pathname: "/screener", params: { symbol } });
 
   useEffect(() => {
-    void Promise.all([loadRecentSearches(), loadWatchlist(), loadSavedScreens()]).then(([recent, savedWatchlist, screens]) => {
+    void Promise.all([loadRecentSearches(marketId), loadWatchlist(marketId), loadSavedScreens(marketId)]).then(([recent, savedWatchlist, screens]) => {
       setRecentSearches(recent);
       setWatchlist(savedWatchlist);
       setSavedScreens(screens);
@@ -44,7 +48,7 @@ export default function ResearchWorkspaceScreen() {
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
       <View style={styles.header}><View><Text style={styles.eyebrow}>AI RESEARCH COCKPIT</Text><Text style={styles.title}>Research Workspace</Text><Text style={styles.subtitle}>A durable home for the investigations you return to.</Text></View><Pressable onPress={() => router.back()} style={styles.close}><Ionicons name="close" size={19} color="#F4F7FB" /></Pressable></View><MarketScopeChip />
       <View style={styles.hero}><View style={styles.heroIcon}><Ionicons name="sparkles-outline" size={21} color={amber} /></View><Text style={styles.heroTitle}>Turn signals into a repeatable process</Text><Text style={styles.heroBody}>Jump from a saved symbol to fundamentals, flows, sectors, storylines, news, and alerts without losing your place. All local items remain explicit and editable.</Text><Pressable onPress={() => router.push("/screener")} style={styles.primary}><Text style={styles.primaryText}>Start new investigation</Text><Ionicons name="arrow-forward" size={16} color="#09111F" /></Pressable></View>
-      {latestSymbol ? <View style={styles.analysisCard}><View style={styles.analysisHeader}><View><Text style={styles.eyebrow}>LATEST FINANCIAL ANALYSIS</Text><Text style={styles.analysisTitle}>{financialAnalysis.data?.companyName ?? latestSymbol}</Text><Text style={styles.analysisMeta}>{financialAnalysis.data?.resolvedSymbol ?? latestSymbol} · {financialAnalysis.isLoading ? "Building source-backed analysis…" : financialAnalysis.data ? `${financialAnalysis.data.coverage.score}/100 coverage` : "Analysis unavailable"}</Text></View><View style={styles.analysisScore}><Text style={styles.analysisScoreValue}>{financialAnalysis.data?.score ?? "—"}</Text><Text style={styles.analysisScoreLabel}>/ 100</Text></View></View>{financialAnalysis.isLoading ? <Text style={styles.analysisBody}>Retrieving financial health, profitability, growth, cash flow, valuation, moat, risks, and evidence.</Text> : financialAnalysis.data ? <><Text style={styles.verdict}>{financialAnalysis.data.verdict}</Text><View style={styles.pillarGrid}>{financialAnalysis.data.categories.map((category) => <View key={category.key} style={styles.pillar}><Text style={styles.pillarLabel}>{category.label}</Text><Text style={styles.pillarScore}>{category.score}/{category.max}</Text></View>)}</View><Text style={styles.analysisBody}>Cash flow: {financialAnalysis.data.metrics.operatingCashFlow.basis} · Fair value: {financialAnalysis.data.fairValue.basis} · {financialAnalysis.data.coverage.verified} verified, {financialAnalysis.data.coverage.estimated} estimated, {financialAnalysis.data.coverage.unavailable} unavailable sections.</Text><Pressable onPress={() => openFinancialAnalysis(latestSymbol)} style={styles.primary}><Text style={styles.primaryText}>Open full financial analysis</Text><Ionicons name="arrow-forward" size={16} color="#09111F" /></Pressable></> : <Text style={styles.analysisBody}>The financial-analysis service did not return a verified result. Cached workspace items remain available; retry from the full analysis route.</Text>}</View> : null}
+      {latestSymbol ? <View style={styles.analysisCard}><View style={styles.analysisHeader}><View><Text style={styles.eyebrow}>LATEST FINANCIAL ANALYSIS</Text><Text style={styles.analysisTitle}>{financialAnalysis.data?.companyName ?? latestSymbol}</Text><Text style={styles.analysisMeta}>{financialAnalysis.data?.resolvedSymbol ?? latestSymbol} · {financialAnalysis.isLoading ? "Building source-backed analysis…" : financialAnalysis.data ? `${financialAnalysis.data.coverage.score}/100 coverage` : "Analysis unavailable"}</Text></View><View style={styles.analysisScore}><Text style={styles.analysisScoreValue}>{financialAnalysis.data?.score ?? "—"}</Text><Text style={styles.analysisScoreLabel}>/ 100</Text></View></View>{financialAnalysis.isLoading ? <Text style={styles.analysisBody}>Retrieving financial health, profitability, growth, cash flow, valuation, moat, risks, and evidence.</Text> : financialAnalysis.data ? <><Text style={styles.verdict}>{financialAnalysis.data.verdict}</Text><View style={styles.pillarGrid}>{financialAnalysis.data.categories.map((category) => <View key={category.key} style={styles.pillar}><Text style={styles.pillarLabel}>{category.label}</Text><Text style={styles.pillarScore}>{category.score}/{category.max}</Text></View>)}</View><Text style={styles.analysisBody}>Cash flow: {metricBasis(financialAnalysis.data.metrics.operatingCashFlow)} · Fair value: {metricBasis(financialAnalysis.data.fairValue)} · {financialAnalysis.data.coverage.verified} verified, {financialAnalysis.data.coverage.estimated} estimated, {financialAnalysis.data.coverage.unavailable} unavailable sections.</Text><Pressable onPress={() => openFinancialAnalysis(latestSymbol)} style={styles.primary}><Text style={styles.primaryText}>Open full financial analysis</Text><Ionicons name="arrow-forward" size={16} color="#09111F" /></Pressable></> : <Text style={styles.analysisBody}>The financial-analysis service did not return a verified result. Cached workspace items remain available; retry from the full analysis route.</Text>}</View> : null}
       <Text style={styles.sectionTitle}>Fast intelligence routes</Text>
       <View style={styles.stack}><Action icon="search-outline" label="Global stock research" route="/screener" /><Action icon="notifications-outline" label="Catalyst and risk alerts" route="/alerts" /><Action icon="swap-horizontal-outline" label="Institutional market flows" route="/flows" /><Action icon="grid-outline" label="Sector opportunity radar" route="/sectors" /><Action icon="git-network-outline" label="Storylines and relationships" route="/storylines" /><Action icon="sparkles-outline" label="Multi-agent Research Desk" route="/research-desk" /></View>
       <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Recent symbols</Text><Text style={styles.count}>{recentSearches.length}</Text></View>

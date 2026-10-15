@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { marketIdSchema } from "../lib/market-schema";
 import { COOKIE_NAME } from "../shared/const.js";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -9,7 +10,10 @@ import { getProviderHealth } from "./provider-health";
 import { runProviderNow } from "./provider-actions";
 import { answerMarketChat, collectGroundedMarketContext, type MarketChatAttachment, type MarketChatMessage } from "./market-chat";
 import { answerGeneralChat, type GeneralChatMessage } from "./general-chat";
-import { fetchNseInstitutionalFlows, type FlowRange } from "./nse-flows";
+import { buildDeepScore } from "./scoring";
+import { describeMarketCoverage, searchCountries } from "../lib/market-registry";
+import { analyzeSentiment, getSentimentAvailability } from "./sentiment";
+import { fetchNseInstitutionalFlows, unavailableInstitutionalFlows, type FlowRange } from "./nse-flows";
 import { getLatestSourceRecords, getSourceRecordsForSymbol, getUserMarketPreference, upsertUserMarketPreference, saveNewsRelevanceFeedback, undoNewsRelevanceFeedback, listUserNewsRelevanceFeedback, listHeldNewsArticles, getHeldNewsArticle, reviewHeldNewsArticle, saveNewsEvent } from "./db";
 import { getSourceCatalog } from "./source-catalog";
 import { listUserNotifications, markUserNotificationRead, markAllUserNotificationsRead } from "./db";
@@ -28,6 +32,7 @@ import { comparePeers, getOfficialFilingLinks } from "./advanced-research";
 import { fundamentalAnalysisToMarkdown, fundamentalAnalysisToPdf, reportFileName } from "./research-report";
 import { fetchDerivativesSnapshot, getDerivativesSourceCatalog } from "./derivatives";
 import { getMultiAssetTimingSignals, getMultibaggerSignals, type MultibaggerStrategyId } from "./research-signals";
+import { priceHistory } from "../lib/open-data/engine";
 import { discoverLiveSmartAlerts, persistSmartAlertDiscovery } from "./live-smart-alerts";
 import { getAutonomousRecommendation, getEventProjectionsForStoryline, getEventProjectionsForSymbol, getFundamentalObservationsForSymbol, getLatestEventProjections, getMarketObservationsForSymbol, getSmartAlertHistory, getUserAlertResult, listUserAlertResultsPage, getResearchRun, listResearchRuns, listResearchAgentRuns, getUserNotificationPreferences, listProviderHealthHistory, getEnabledUserPushTokens, listUserAlertResults, listUserAlertRules, listUserSavedResearch, listUserSavedScreens, listUserWatchlistItems, revokeUserAlertRule, revokeUserPushToken, revokeUserSavedResearch, revokeUserSavedScreen, revokeUserWatchlistItem, upsertUserAlertRule, upsertUserNotificationPreferences, upsertUserPushToken, upsertUserSavedResearch, upsertUserSavedScreen, upsertUserWatchlistItem, cancelResearchRun } from "./db";
 import { normalizeMonitoringQuery, type SmartAlertDiscovery } from "./smart-event-alerts";
@@ -48,6 +53,8 @@ import { getRuntimeHealth } from "./runtime-health";
 
 const symbolInput = z.object({
   symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/).transform((value) => value.toUpperCase()),
+  // Explicit market scope. Without it a caller silently defaulted to India.
+  marketId: marketIdSchema,
 });
 
 type FinnhubQuote = {
@@ -228,19 +235,32 @@ function normalizeNews(items: FinnhubNewsItem[]) {
     }));
 }
 
-async function fetchMarketSnapshot(symbol: string) {
+async function fetchMarketSnapshot(symbol: string, requestedMarketId?: string) {
   const now = new Date();
-  const snapshotMarketId = /\.(NS|BO)$/i.test(symbol) ? "IN" as const : undefined;
+  // Honour the caller's explicit market. The suffix is only a fallback for
+  // callers that supply none, and a bare international ticker must never be
+  // assumed to be Indian.
+  const snapshotMarketId = (requestedMarketId ?? (/(\.NS|\.BO)$/i.test(symbol) ? "IN" : undefined)) as
+    | "IN" | "US" | "GB" | "CA" | "AU" | "JP" | "SG" | "HK" | "DE" | "FR" | undefined;
+  // An ABSENT market is not an Indian market. This used to read
+  // `snapshotMarketId === "IN" || snapshotMarketId === undefined`, so any caller that
+  // omitted the market was served the India-only NSE/Indian-API snapshot, which is the
+  // silent substitution the comment above says must never happen.
+  const isIndianMarket = snapshotMarketId === "IN";
   const to = now.toISOString().slice(0, 10);
   const fromDate = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
   const from = fromDate.toISOString().slice(0, 10);
   const [quoteResult, newsResult, indianOpenResult, trackedNewsResult] = await Promise.allSettled([
     fetchFinnhub<FinnhubQuote>("quote", { symbol }),
     fetchFinnhub<FinnhubNewsItem[]>("company-news", { symbol, from, to }),
-    fetchIndianOpenStock(symbol),
+    isIndianMarket ? fetchIndianOpenStock(symbol) : Promise.resolve(null),
     getLatestTrackedNews(10, symbol, snapshotMarketId),
   ]);
-  const indianOpen = indianOpenResult.status === "fulfilled" ? normalizeIndianOpenQuote(indianOpenResult.value) : null;
+  // A non-Indian market resolves null here, so the India-specific normalizer is
+  // only applied when a real Indian payload came back.
+  const indianOpen = indianOpenResult.status === "fulfilled" && indianOpenResult.value
+    ? normalizeIndianOpenQuote(indianOpenResult.value)
+    : null;
   const finnhubQuote = quoteResult.status === "fulfilled" ? normalizeQuote(quoteResult.value) : null;
   const trackedNews = trackedNewsResult.status === "fulfilled" ? trackedNewsResult.value.slice(0, 10).map((item) => ({
     id: item.id ?? null,
@@ -274,22 +294,22 @@ export const appRouter = router({
     health: publicProcedure.query(() => getRuntimeHealth()),
   }),
   graph: router({
-    projection: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol.optional(), maxHops: z.number().int().min(1).max(2).default(2), limit: z.number().int().min(1).max(100).default(80) }).optional()).query(({ input }) => getRelationshipGraph(input?.symbol, input?.maxHops ?? 2, input?.limit ?? 80)),
+    projection: publicProcedure.input(z.object({ marketId: marketIdSchema, symbol: symbolInput.shape.symbol.optional(), maxHops: z.number().int().min(1).max(2).default(2), limit: z.number().int().min(1).max(100).default(80) })).query(({ input }) => getRelationshipGraph(input.marketId, input.symbol, input.maxHops, input.limit)),
   }),
   events: router({
-    latest: publicProcedure.input(z.object({ limit: z.number().int().min(1).max(500).default(100), lookbackDays: z.number().int().min(1).max(730).default(365) }).optional()).query(({ input }) => getLatestEventProjections(input?.limit ?? 100, input?.lookbackDays ?? 365)),
-    timeline: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol, limit: z.number().int().min(1).max(500).default(100), lookbackDays: z.number().int().min(1).max(730).default(365) })).query(({ input }) => getEventProjectionsForSymbol(input.symbol, input.limit, input.lookbackDays)),
+    latest: publicProcedure.input(z.object({ marketId: marketIdSchema, limit: z.number().int().min(1).max(500).default(100), lookbackDays: z.number().int().min(1).max(730).default(365) })).query(({ input }) => getLatestEventProjections(input.marketId, input.limit, input.lookbackDays)),
+    timeline: publicProcedure.input(z.object({ marketId: marketIdSchema, symbol: symbolInput.shape.symbol, limit: z.number().int().min(1).max(500).default(100), lookbackDays: z.number().int().min(1).max(730).default(365) })).query(({ input }) => getEventProjectionsForSymbol(input.marketId, input.symbol, input.limit, input.lookbackDays)),
     storyline: publicProcedure.input(z.object({ storylineKey: z.string().trim().min(1).max(160), limit: z.number().int().min(1).max(500).default(100) })).query(({ input }) => getEventProjectionsForStoryline(input.storylineKey, input.limit)),
-    search: publicProcedure.input(z.object({ query: z.string().trim().min(1).max(80), limit: z.number().int().min(1).max(500).default(100) })).query(async ({ input }) => { const rows = await getLatestEventProjections(500); const query = input.query.toLowerCase(); return rows.filter((row) => `${row.symbol ?? ""} ${row.title} ${row.summary} ${row.eventType} ${row.storylineKey ?? ""}`.toLowerCase().includes(query)).slice(0, input.limit); }),
+    search: publicProcedure.input(z.object({ marketId: marketIdSchema, query: z.string().trim().min(1).max(80), limit: z.number().int().min(1).max(500).default(100) })).query(async ({ input }) => { const rows = await getLatestEventProjections(input.marketId, 500); const query = input.query.toLowerCase(); return rows.filter((row) => `${row.symbol ?? ""} ${row.title} ${row.summary} ${row.eventType} ${row.storylineKey ?? ""}`.toLowerCase().includes(query)).slice(0, input.limit); }),
   }),
   account: router({
-    watchlist: protectedProcedure.query(({ ctx }) => listUserWatchlistItems(ctx.user.id)),
+    watchlist: protectedProcedure.input(z.object({ marketId: marketIdSchema })).query(({ ctx, input }) => listUserWatchlistItems(input.marketId, ctx.user.id)),
     watchlistUpsert: protectedProcedure.input(z.object({ symbol: symbolInput.shape.symbol, entityId: z.string().max(96).nullable().optional() })).mutation(({ ctx, input }) => upsertUserWatchlistItem(ctx.user.id, input.symbol, input.entityId)),
     watchlistRevoke: protectedProcedure.input(z.object({ symbol: symbolInput.shape.symbol })).mutation(({ ctx, input }) => revokeUserWatchlistItem(ctx.user.id, input.symbol)),
-    savedScreens: protectedProcedure.query(({ ctx }) => listUserSavedScreens(ctx.user.id)),
+    savedScreens: protectedProcedure.input(z.object({ marketId: marketIdSchema })).query(({ ctx, input }) => listUserSavedScreens(input.marketId, ctx.user.id)),
     savedScreenUpsert: protectedProcedure.input(z.object({ name: z.string().trim().min(1).max(120), filters: z.array(z.string().trim().min(1).max(160)).max(50) })).mutation(({ ctx, input }) => upsertUserSavedScreen(ctx.user.id, { name: input.name, filtersJson: JSON.stringify(input.filters) })),
     savedScreenRevoke: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ ctx, input }) => revokeUserSavedScreen(ctx.user.id, input.id)),
-    alertRules: protectedProcedure.query(({ ctx }) => listUserAlertRules(ctx.user.id)),
+    alertRules: protectedProcedure.input(z.object({ marketId: marketIdSchema })).query(({ ctx, input }) => listUserAlertRules(input.marketId, ctx.user.id)),
     alertRuleUpsert: protectedProcedure.input(z.object({ id: z.string().trim().min(1).max(96), title: z.string().trim().min(1).max(255), query: z.string().trim().min(1).max(4_000), enabled: z.boolean().optional() })).mutation(({ ctx, input }) => upsertUserAlertRule(ctx.user.id, input)),
     alertRuleRevoke: protectedProcedure.input(z.object({ id: z.string().trim().min(1).max(96) })).mutation(({ ctx, input }) => revokeUserAlertRule(ctx.user.id, input.id)),
     alertResults: protectedProcedure.input(z.object({ limit: z.number().int().min(1).max(200).default(100) }).optional()).query(({ ctx, input }) => listUserAlertResults(ctx.user.id, input?.limit ?? 100)),
@@ -305,7 +325,7 @@ export const appRouter = router({
     notifications: protectedProcedure.input(z.object({ limit: z.number().int().min(1).max(100).default(30), cursor: z.string().datetime().optional(), marketId: z.string().trim().max(8).optional(), unreadOnly: z.boolean().default(false) }).optional()).query(({ ctx, input }) => listUserNotifications(ctx.user.id, input ?? { limit: 30, unreadOnly: false })),
     notificationRead: protectedProcedure.input(z.object({ id: z.string().trim().min(1).max(160) })).mutation(({ ctx, input }) => markUserNotificationRead(ctx.user.id, input.id)),
     notificationsReadAll: protectedProcedure.mutation(({ ctx }) => markAllUserNotificationsRead(ctx.user.id)),
-    savedResearch: protectedProcedure.query(({ ctx }) => listUserSavedResearch(ctx.user.id)),
+    savedResearch: protectedProcedure.input(z.object({ marketId: marketIdSchema })).query(({ ctx, input }) => listUserSavedResearch(input.marketId, ctx.user.id)),
     savedResearchUpsert: protectedProcedure.input(z.object({ id: z.string().trim().min(1).max(128), symbol: symbolInput.shape.symbol, title: z.string().trim().min(1).max(255), reportType: z.string().trim().min(1).max(64), storageKey: z.string().trim().max(512).nullable().optional(), source: z.record(z.string(), z.unknown()) })).mutation(({ ctx, input }) => upsertUserSavedResearch(ctx.user.id, { id: input.id, symbol: input.symbol, title: input.title, reportType: input.reportType, storageKey: input.storageKey ?? null, sourceJson: JSON.stringify(input.source), revokedAt: null })),
     savedResearchRevoke: protectedProcedure.input(z.object({ id: z.string().trim().min(1).max(128) })).mutation(({ ctx, input }) => revokeUserSavedResearch(ctx.user.id, input.id)),
   }),
@@ -318,13 +338,48 @@ export const appRouter = router({
     }),
   }),
   chat: router({
-    ask: publicProcedure.input(z.object({ message: z.string().trim().max(2_000).default(""), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN"), history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(1_000) })).max(8).default([]), attachments: z.array(z.object({ kind: z.enum(["image", "audio"]), dataUrl: z.string().max(8_000_000), mimeType: z.string().max(80), name: z.string().max(160).optional() })).max(2).default([]) })).mutation(({ input }) => answerMarketChat(input.message, input.symbol, input.history as MarketChatMessage[], input.attachments as MarketChatAttachment[], input.marketId)),
+    ask: publicProcedure.input(z.object({ message: z.string().trim().max(2_000).default(""), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), marketId: marketIdSchema, history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(1_000) })).max(8).default([]), attachments: z.array(z.object({ kind: z.enum(["image", "audio"]), dataUrl: z.string().max(8_000_000), mimeType: z.string().max(80), name: z.string().max(160).optional() })).max(2).default([]) })).mutation(({ input }) => answerMarketChat(input.message, input.marketId, input.symbol, input.history as MarketChatMessage[], input.attachments as MarketChatAttachment[])),
     general: publicProcedure.input(z.object({ message: z.string().trim().min(1).max(2_000), history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(1_000) })).max(20).default([]) })).mutation(({ input }) => answerGeneralChat(input.message, input.history as GeneralChatMessage[])),
-    ground: publicProcedure.input(z.object({ message: z.string().trim().min(1).max(2_000), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN") })).mutation(({ input }) => collectGroundedMarketContext(input.message, input.symbol, input.marketId)),
+    ground: publicProcedure.input(z.object({ message: z.string().trim().min(1).max(2_000), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), marketId: marketIdSchema })).mutation(({ input }) => collectGroundedMarketContext(input.message, input.symbol, input.marketId)),
+  }),
+  scoring: router({
+    // Institutional Deep Score for a symbol (Engine A). Returns the composite,
+    // confidence, grade, pillar breakdown, per-metric explainability, overlay and
+    // the percentile source, so the UI never overstates what it knows.
+    deepScore: publicProcedure
+      .input(z.object({ symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/), marketId: marketIdSchema }))
+      .mutation(({ input }) => buildDeepScore(input.symbol, input.marketId)),
+  }),
+  sentiment: router({
+    // Availability is reported honestly: with no server-side credential this is
+    // `not-configured`, never a fabricated score (audit mandate §11.4).
+    status: publicProcedure.query(() => getSentimentAvailability()),
+    analyze: publicProcedure
+      .input(z.object({
+        articles: z.array(z.object({
+          id: z.string().trim().min(1).max(300),
+          title: z.string().trim().max(500),
+          text: z.string().max(20_000),
+          publisher: z.string().trim().max(200).optional(),
+          url: z.string().trim().max(2_000).optional(),
+          publishedAt: z.string().max(40).nullable().optional(),
+        })).max(12),
+      }))
+      .mutation(({ input }) => analyzeSentiment(input.articles)),
+  }),
+  marketRegistry: router({
+    // Known-vs-supported market identity. A country present in the registry but
+    // without an adapter is reported as Not Implemented, never as supported.
+    search: publicProcedure
+      .input(z.object({ query: z.string().trim().max(60), limit: z.number().int().min(1).max(20).default(8) }))
+      .query(({ input }) => searchCountries(input.query, input.limit)),
+    coverage: publicProcedure
+      .input(z.object({ marketId: z.string().trim().min(2).max(3) }))
+      .query(({ input }) => describeMarketCoverage(input.marketId)),
   }),
   researchDesk: router({
-    run: publicProcedure.input(z.object({ message: z.string().trim().min(1).max(2_000), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN"), depth: z.enum(["quick", "standard", "deep"]).default("standard"), includeAgents: z.array(z.enum(RESEARCH_AGENT_TYPES as unknown as [ResearchAgentType, ...ResearchAgentType[]])).max(8).optional() })).mutation(({ input }) => runResearchDesk(input)),
-    runOwned: protectedProcedure.input(z.object({ message: z.string().trim().min(1).max(2_000), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN"), depth: z.enum(["quick", "standard", "deep"]).default("standard"), includeAgents: z.array(z.enum(RESEARCH_AGENT_TYPES as unknown as [ResearchAgentType, ...ResearchAgentType[]])).max(8).optional(), runtimePreference: z.enum(["auto", "hosted", "local", "deterministic"]).default("auto"), device: z.object({ platform: z.string().max(32).nullable().optional(), totalMemoryBytes: z.number().int().nullable().optional(), cpuArchitectures: z.array(z.string().max(32)).max(8).optional(), nativeRuntimeAvailable: z.boolean().optional(), activeModelId: z.string().max(64).nullable().optional(), localModelReady: z.boolean().optional() }).optional() })).mutation(({ ctx, input }) => runOwnedResearchDesk(ctx.user.id, input as Parameters<typeof runOwnedResearchDesk>[1])),
+    run: publicProcedure.input(z.object({ message: z.string().trim().min(1).max(2_000), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), marketId: marketIdSchema, depth: z.enum(["quick", "standard", "deep"]).default("standard"), includeAgents: z.array(z.enum(RESEARCH_AGENT_TYPES as unknown as [ResearchAgentType, ...ResearchAgentType[]])).max(8).optional() })).mutation(({ input }) => runResearchDesk(input)),
+    runOwned: protectedProcedure.input(z.object({ message: z.string().trim().min(1).max(2_000), symbol: z.string().trim().max(20).regex(/^[A-Za-z0-9.-]+$/).optional(), marketId: marketIdSchema, depth: z.enum(["quick", "standard", "deep"]).default("standard"), includeAgents: z.array(z.enum(RESEARCH_AGENT_TYPES as unknown as [ResearchAgentType, ...ResearchAgentType[]])).max(8).optional(), runtimePreference: z.enum(["auto", "hosted", "local", "deterministic"]).default("auto"), device: z.object({ platform: z.string().max(32).nullable().optional(), totalMemoryBytes: z.number().int().nullable().optional(), cpuArchitectures: z.array(z.string().max(32)).max(8).optional(), nativeRuntimeAvailable: z.boolean().optional(), activeModelId: z.string().max(64).nullable().optional(), localModelReady: z.boolean().optional() }).optional() })).mutation(({ ctx, input }) => runOwnedResearchDesk(ctx.user.id, input as Parameters<typeof runOwnedResearchDesk>[1])),
     listOwned: protectedProcedure.input(z.object({ limit: z.number().int().min(1).max(100).default(30), marketId: z.enum(["ALL", "IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("ALL") })).query(({ ctx, input }) => listResearchRuns(ctx.user.id, input)),
     status: protectedProcedure.input(z.object({ runId: z.string().trim().min(1).max(160) })).query(({ ctx, input }) => getOwnedResearchDeskResult(ctx.user.id, input.runId)),
     retry: protectedProcedure.input(z.object({ runId: z.string().trim().min(1).max(160) })).mutation(({ ctx, input }) => retryOwnedResearchDesk(ctx.user.id, input.runId)),
@@ -349,18 +404,18 @@ export const appRouter = router({
     gdeltBudget: publicProcedure.query(() => getGdeltBudgetStatus()),
     health: adminProcedure.query(() => getProviderHealth()),
     history: adminProcedure.input(z.object({ providerId: z.string().trim().min(1).max(64).optional(), limit: z.number().int().min(1).max(200).default(50) }).optional()).query(({ input }) => listProviderHealthHistory(input?.providerId, input?.limit ?? 50)),
-    runNow: adminProcedure.input(z.object({ providerId: z.string().trim().min(1).max(64), symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/).optional() })).mutation(async ({ input }) => {
+    runNow: adminProcedure.input(z.object({ marketId: marketIdSchema, providerId: z.string().trim().min(1).max(64), symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/).optional() })).mutation(async ({ input }) => {
       try {
-        return await runProviderNow(input.providerId, input.symbol);
+        return await runProviderNow(input.providerId, input.symbol, input.marketId);
       } catch (error) {
-        return { providerId: input.providerId, symbol: input.symbol?.toUpperCase() ?? "RELIANCE", status: "failed" as const, records: 0, summary: String(error), health: getProviderHealth().find((item) => item.id === input.providerId) ?? null };
+        return { providerId: input.providerId, symbol: input.symbol?.toUpperCase() ?? "", status: "failed" as const, records: 0, summary: String(error), health: getProviderHealth().find((item) => item.id === input.providerId) ?? null };
       }
     }),
     webResearch: publicProcedure.query(() => getProviderRegistry().filter((provider) => provider.domain === "web-research")),
   }),
   sources: router({
     list: publicProcedure.query(() => getSourceCatalog()),
-    latest: publicProcedure.input(z.object({ limit: z.number().int().min(1).max(100).default(50) })).query(({ input }) => getLatestSourceRecords(input.limit)),
+    latest: publicProcedure.input(z.object({ marketId: marketIdSchema, limit: z.number().int().min(1).max(100).default(50) })).query(({ input }) => getLatestSourceRecords(input.marketId, input.limit)),
     ingest: adminProcedure.input(z.object({ sourceKey: z.string().trim().min(1).max(64) })).mutation(({ input }) => ingestCatalogSource(input.sourceKey)),
     ingestSecCompany: adminProcedure.input(symbolInput).mutation(({ input }) => ingestSecCompany(input.symbol)),
     ingestFcaIssuer: adminProcedure.input(z.object({ query: z.string().trim().min(1).max(128) })).mutation(({ input }) => ingestFcaIssuer(input.query)),
@@ -369,13 +424,13 @@ export const appRouter = router({
     runNseCollector: adminProcedure.input(z.object({ key: z.string().trim().min(1).max(64) })).mutation(({ input }) => runNseCollector(input.key)),
     regionalCollectors: publicProcedure.query(() => getRegionalCollectorRegistry()),
     publicMacro: publicProcedure.query(() => fetchPublicMacroContext()),
-    runRegionalCollector: adminProcedure.input(z.object({ marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]), symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/).optional() })).mutation(({ input }) => runRegionalCollector(input.marketId, input.symbol)),
+    runRegionalCollector: adminProcedure.input(z.object({ marketId: marketIdSchema, symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/).optional() })).mutation(({ input }) => runRegionalCollector(input.marketId, input.symbol)),
   }),
   news: router({
     status: publicProcedure.query(() => getNewsTrackerStatus()),
-    latest: publicProcedure.input(z.object({ limit: z.number().int().min(1).max(100).default(50), symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/).transform((value) => value.toUpperCase()).optional(), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN") })).query(({ input }) => getLatestTrackedNews(input.limit, input.symbol, input.marketId)),
-    archive: publicProcedure.input(z.object({ days: z.union([z.literal(30), z.literal(90), z.literal(180), z.literal(270), z.literal(365)]).default(30), startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), page: z.number().int().min(0).max(50).default(0), limit: z.number().int().min(1).max(200).default(100), symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/).transform((value) => value.toUpperCase()).optional(), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN"), archiveScope: z.enum(["All archive", "Special Events"]).default("All archive"), archiveSentiment: z.enum(["All sentiment", "Positive", "Neutral", "Negative"]).default("All sentiment"), archiveOrder: z.enum(["Newest first", "Oldest first", "Impact low → high", "Impact high → low"]).default("Newest first") })).query(({ input }) => getHistoricalTrackedNews(input)),
-    archiveExport: publicProcedure.input(z.object({ format: z.enum(["csv", "pdf"]), days: z.union([z.literal(30), z.literal(90), z.literal(180), z.literal(270), z.literal(365)]).default(30), startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/).transform((value) => value.toUpperCase()).optional(), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN"), archiveScope: z.enum(["All archive", "Special Events"]).default("All archive"), archiveSentiment: z.enum(["All sentiment", "Positive", "Neutral", "Negative"]).default("All sentiment"), archiveOrder: z.enum(["Newest first", "Oldest first", "Impact low → high", "Impact high → low"]).default("Newest first") })).query(async ({ input }) => {
+    latest: publicProcedure.input(z.object({ limit: z.number().int().min(1).max(100).default(50), symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/).transform((value) => value.toUpperCase()).optional(), marketId: marketIdSchema })).query(({ input }) => getLatestTrackedNews(input.limit, input.symbol, input.marketId)),
+    archive: publicProcedure.input(z.object({ days: z.union([z.literal(30), z.literal(90), z.literal(180), z.literal(270), z.literal(365)]).default(30), startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), page: z.number().int().min(0).max(50).default(0), limit: z.number().int().min(1).max(200).default(100), symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/).transform((value) => value.toUpperCase()).optional(), marketId: marketIdSchema, archiveScope: z.enum(["All archive", "Special Events"]).default("All archive"), archiveSentiment: z.enum(["All sentiment", "Positive", "Neutral", "Negative"]).default("All sentiment"), archiveOrder: z.enum(["Newest first", "Oldest first", "Impact low → high", "Impact high → low"]).default("Newest first") })).query(({ input }) => getHistoricalTrackedNews(input)),
+    archiveExport: publicProcedure.input(z.object({ format: z.enum(["csv", "pdf"]), days: z.union([z.literal(30), z.literal(90), z.literal(180), z.literal(270), z.literal(365)]).default(30), startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/).transform((value) => value.toUpperCase()).optional(), marketId: marketIdSchema, archiveScope: z.enum(["All archive", "Special Events"]).default("All archive"), archiveSentiment: z.enum(["All sentiment", "Positive", "Neutral", "Negative"]).default("All sentiment"), archiveOrder: z.enum(["Newest first", "Oldest first", "Impact low → high", "Impact high → low"]).default("Newest first") })).query(async ({ input }) => {
       const firstPage = await getHistoricalTrackedNews({ ...input, page: 0, limit: 200 });
       if (firstPage.coverage === "invalid") throw new Error(firstPage.rangeError ?? "The selected archive range is invalid.");
       const validFirstPage = firstPage as Exclude<typeof firstPage, { coverage: "invalid" }>;
@@ -392,7 +447,7 @@ export const appRouter = router({
       if (input.format === "csv") return { fileName: `${baseName}.csv`, mimeType: "text/csv", content: archiveToCsv(articles, filters), marketId: input.marketId, marketLabel: filters.marketLabel, rowCount: articles.length };
       return { fileName: `${baseName}.pdf`, mimeType: "application/pdf", contentBase64: (await archiveToPdf(articles, filters)).toString("base64"), marketId: input.marketId, marketLabel: filters.marketLabel, rowCount: articles.length };
     }),
-    stock: publicProcedure.input(symbolInput.extend({ marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN") })).query(async ({ input }) => {
+    stock: publicProcedure.input(symbolInput.extend({ marketId: marketIdSchema })).query(async ({ input }) => {
       try {
         const result = await fetchStockNewsNow(input.symbol, false, input.marketId);
         return { available: result.articles.length > 0, symbol: result.symbol, marketId: input.marketId, providerFailures: result.providerFailures, freshArticleCount: result.freshArticleCount, stale: result.stale, fetchedAt: result.fetchedAt, articles: result.articles, error: null };
@@ -400,7 +455,7 @@ export const appRouter = router({
         return { available: false, symbol: input.symbol, marketId: input.marketId, providerFailures: 0, freshArticleCount: 0, stale: false, fetchedAt: new Date().toISOString(), articles: [], error: String(error) };
       }
     }),
-    backfill: protectedProcedure.input(symbolInput.extend({ days: z.number().int().min(2).max(3650), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN") })).mutation(async ({ input }) => {
+    backfill: protectedProcedure.input(symbolInput.extend({ days: z.number().int().min(2).max(3650), marketId: marketIdSchema })).mutation(async ({ input }) => {
       try {
         const result = await backfillHistoricalNews(input.symbol, input.days, input.marketId);
         return { ok: true, symbol: result.symbol, marketId: input.marketId, requestedDays: input.days, articlesStoredOrReturned: result.articles.length, providerFailures: result.providerFailures, fetchedAt: result.fetchedAt, stale: result.stale, error: null };
@@ -408,34 +463,34 @@ export const appRouter = router({
         return { ok: false, symbol: input.symbol, marketId: input.marketId, requestedDays: input.days, articlesStoredOrReturned: 0, providerFailures: 1, fetchedAt: new Date().toISOString(), stale: true, error: String(error) };
       }
     }),
-    refresh: publicProcedure.input(symbolInput.partial().extend({ marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN") }).optional()).mutation(async ({ input }) => {
+    refresh: publicProcedure.input(symbolInput.partial().extend({ marketId: marketIdSchema }).optional()).mutation(async ({ input }) => {
       const [tracker, selected] = await Promise.all([
         pollNewsNow(),
         input?.symbol ? fetchStockNewsNow(input.symbol, true, input.marketId).catch((error) => ({ symbol: input.symbol, providerFailures: 1, freshArticleCount: 0, stale: true, fetchedAt: new Date().toISOString(), articles: [], error: String(error), refreshSuppressed: false })) : Promise.resolve(null),
       ]);
       return { tracker, selected };
     }),
-    flagIrrelevant: protectedProcedure.input(z.object({ marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]), symbol: z.string().trim().min(1).max(32).regex(/^[A-Za-z0-9.-]+$/).transform((value) => value.toUpperCase()), articleId: z.string().trim().min(1).max(128), articleHash: z.string().trim().min(16).max(128), headline: z.string().trim().min(1).max(2000), url: z.string().url().max(2048), reason: z.enum(["not_about_company", "wrong_market", "duplicate", "low_quality", "other"]).default("not_about_company") })).mutation(async ({ ctx, input }) => {
+    flagIrrelevant: protectedProcedure.input(z.object({ marketId: marketIdSchema, symbol: z.string().trim().min(1).max(32).regex(/^[A-Za-z0-9.-]+$/).transform((value) => value.toUpperCase()), articleId: z.string().trim().min(1).max(128), articleHash: z.string().trim().min(16).max(128), headline: z.string().trim().min(1).max(2000), url: z.string().url().max(2048), reason: z.enum(["not_about_company", "wrong_market", "duplicate", "low_quality", "other"]).default("not_about_company") })).mutation(async ({ ctx, input }) => {
       const saved = await saveNewsRelevanceFeedback({ id: `${ctx.user.id}:${input.marketId}:${input.articleId}`, userId: ctx.user.id, marketId: input.marketId, symbol: input.symbol, articleId: input.articleId, articleHash: input.articleHash, headline: input.headline, url: input.url, reason: input.reason, status: "active" });
       return { saved, articleId: input.articleId, marketId: input.marketId };
     }),
-    undoIrrelevant: protectedProcedure.input(z.object({ marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]), articleId: z.string().trim().min(1).max(128) })).mutation(async ({ ctx, input }) => {
+    undoIrrelevant: protectedProcedure.input(z.object({ marketId: marketIdSchema, articleId: z.string().trim().min(1).max(128) })).mutation(async ({ ctx, input }) => {
       const updated = await undoNewsRelevanceFeedback(ctx.user.id, input.articleId, input.marketId);
       return { updated, articleId: input.articleId, marketId: input.marketId };
     }),
-    myIrrelevant: protectedProcedure.input(z.object({ marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]), articleIds: z.array(z.string().trim().min(1).max(128)).max(500).optional() })).query(({ ctx, input }) => listUserNewsRelevanceFeedback(ctx.user.id, input.marketId, input.articleIds)),
-    held: protectedProcedure.input(z.object({ marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]), status: z.enum(["held", "approved", "dismissed"]).default("held"), limit: z.number().int().min(1).max(200).default(100) })).query(async ({ input }) => {
+    myIrrelevant: protectedProcedure.input(z.object({ marketId: marketIdSchema, articleIds: z.array(z.string().trim().min(1).max(128)).max(500).optional() })).query(({ ctx, input }) => listUserNewsRelevanceFeedback(ctx.user.id, input.marketId, input.articleIds)),
+    held: protectedProcedure.input(z.object({ marketId: marketIdSchema, status: z.enum(["held", "approved", "dismissed"]).default("held"), limit: z.number().int().min(1).max(200).default(100) })).query(async ({ input }) => {
       const rows = await listHeldNewsArticles(input.marketId, input.status, input.limit);
       const parse = (value: string) => { try { return JSON.parse(value) as unknown; } catch { return []; } };
       return rows.map((row) => ({ ...row, matchedSymbols: parse(row.matchedSymbolsJson), matchedThemes: parse(row.matchedThemesJson), reasons: parse(row.reasonsJson), publishedAt: row.publishedAt.toISOString(), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(), reviewedAt: row.reviewedAt?.toISOString() ?? null }));
     }),
-    heldDetail: protectedProcedure.input(z.object({ marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]), id: z.string().trim().min(1).max(160) })).query(async ({ input }) => {
+    heldDetail: protectedProcedure.input(z.object({ marketId: marketIdSchema, id: z.string().trim().min(1).max(160) })).query(async ({ input }) => {
       const row = await getHeldNewsArticle(input.id, input.marketId);
       if (!row) return null;
       const parse = (value: string) => { try { return JSON.parse(value) as unknown; } catch { return []; } };
       return { ...row, matchedSymbols: parse(row.matchedSymbolsJson), matchedThemes: parse(row.matchedThemesJson), reasons: parse(row.reasonsJson), publishedAt: row.publishedAt.toISOString(), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(), reviewedAt: row.reviewedAt?.toISOString() ?? null };
     }),
-    reviewHeld: protectedProcedure.input(z.object({ marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]), id: z.string().trim().min(1).max(160), decision: z.enum(["approved", "dismissed"]), note: z.string().trim().max(500).optional() })).mutation(async ({ ctx, input }) => {
+    reviewHeld: protectedProcedure.input(z.object({ marketId: marketIdSchema, id: z.string().trim().min(1).max(160), decision: z.enum(["approved", "dismissed"]), note: z.string().trim().max(500).optional() })).mutation(async ({ ctx, input }) => {
       const reviewed = await reviewHeldNewsArticle(input.id, input.marketId, ctx.user.id, input.decision, input.note);
       if (!reviewed) return { updated: false, published: false, reason: "Article was already reviewed, missing, or unavailable." };
       if (input.decision === "approved") {
@@ -445,8 +500,8 @@ export const appRouter = router({
     }),
   }),
   autonomousRecommendations: router({
-    discover: publicProcedure.input(z.object({ lookbackDays: z.number().int().min(1).max(180).default(30), limit: z.number().int().min(1).max(100).default(50) }).optional()).query(({ input }) => discoverAutonomousRecommendations(input?.lookbackDays ?? 30, input?.limit ?? 50)),
-    latest: publicProcedure.input(z.object({ lookbackDays: z.number().int().min(1).max(180).default(30), limit: z.number().int().min(1).max(100).default(50), sort: z.enum(["impact", "confidence", "latest"]).default("impact") }).optional()).query(({ input }) => getPersistedAutonomousRecommendations(input ?? {})),
+    discover: publicProcedure.input(z.object({ marketId: marketIdSchema, lookbackDays: z.number().int().min(1).max(180).default(30), limit: z.number().int().min(1).max(100).default(50) })).query(({ input }) => discoverAutonomousRecommendations(input.marketId, input.lookbackDays, input.limit)),
+    latest: publicProcedure.input(z.object({ marketId: marketIdSchema, lookbackDays: z.number().int().min(1).max(180).default(30), limit: z.number().int().min(1).max(100).default(50), sort: z.enum(["impact", "confidence", "latest"]).default("impact") })).query(({ input }) => getPersistedAutonomousRecommendations(input)),
     detail: publicProcedure.input(z.object({ id: z.string().trim().min(1).max(160) })).query(async ({ input }) => {
       const record = await getAutonomousRecommendation(input.id);
       if (!record) return null;
@@ -455,7 +510,7 @@ export const appRouter = router({
     }),
   }),
   smartAlerts: router({
-    discover: publicProcedure.input(z.object({ query: z.string().trim().min(3).max(500), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN"), lookbackDays: z.number().int().min(1).max(180).default(30), limit: z.number().int().min(1).max(100).default(50), sort: z.enum(["match-score", "order-value", "order-revenue", "market-cap-impact", "latest-event", "sector", "potential-impact"]).default("match-score") })).query(async ({ input }): Promise<SmartAlertDiscovery & { delivery: Awaited<ReturnType<typeof persistSmartAlertDiscovery>> }> => {
+    discover: publicProcedure.input(z.object({ query: z.string().trim().min(3).max(500), marketId: marketIdSchema, lookbackDays: z.number().int().min(1).max(180).default(30), limit: z.number().int().min(1).max(100).default(50), sort: z.enum(["match-score", "order-value", "order-revenue", "market-cap-impact", "latest-event", "sector", "potential-impact"]).default("match-score") })).query(async ({ input }): Promise<SmartAlertDiscovery & { delivery: Awaited<ReturnType<typeof persistSmartAlertDiscovery>> }> => {
       const stableRuleId = `${input.marketId}-live-${input.query.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80)}`;
       const rule = normalizeMonitoringQuery(input.query, stableRuleId);
       const discovery = await discoverLiveSmartAlerts(rule, { marketId: input.marketId, lookbackDays: input.lookbackDays, limit: input.limit, sort: input.sort });
@@ -475,8 +530,8 @@ export const appRouter = router({
     history: publicProcedure.input(z.object({ ruleId: z.string().trim().min(1).max(96), marketId: z.enum(["ALL", "IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("ALL"), limit: z.number().int().min(1).max(100).default(50) })).query(({ input }) => getSmartAlertHistory(input.ruleId, input.limit, input.marketId)),
   }),
   market: router({
-    secFilings: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol, form: z.string().trim().max(20).optional(), from: z.string().date().optional(), to: z.string().date().optional() })).query(async ({ input }) => {
-      const records = await getSourceRecordsForSymbol(input.symbol, 2_000);
+    secFilings: publicProcedure.input(z.object({ marketId: marketIdSchema, symbol: symbolInput.shape.symbol, form: z.string().trim().max(20).optional(), from: z.string().date().optional(), to: z.string().date().optional() })).query(async ({ input }) => {
+      const records = await getSourceRecordsForSymbol(input.marketId, input.symbol, 2_000);
       const secRecords = records.filter((record) => /^sec-edgar|^sec-company-facts/i.test(record.sourceKey));
       const filings = filterFilingsForSymbol(secRecords, input.symbol).filter((filing) => !input.form || filing.filingType.toLowerCase().includes(input.form.toLowerCase())).filter((filing) => !input.from || !filing.publishedAt || filing.publishedAt.slice(0, 10) >= input.from).filter((filing) => !input.to || !filing.publishedAt || filing.publishedAt.slice(0, 10) <= input.to);
       const factsRecord = secRecords.find((record) => record.sourceKey === "sec-company-facts");
@@ -484,17 +539,17 @@ export const appRouter = router({
       if (factsRecord?.normalizedPayload) { try { const parsed = JSON.parse(factsRecord.normalizedPayload) as { facts?: unknown }; facts = Array.isArray(parsed.facts) ? parsed.facts.filter((fact): fact is typeof facts[number] => Boolean(fact && typeof fact === "object" && typeof (fact as { tag?: unknown }).tag === "string" && typeof (fact as { value?: unknown }).value === "number")) : []; } catch { facts = []; } }
       return { symbol: input.symbol, source: "SEC EDGAR", records: filings, facts: facts.slice(-500), refreshedAt: new Date().toISOString() };
     }),
-    secFilingComparison: publicProcedure.input(z.object({ symbols: z.array(symbolInput.shape.symbol).min(2).max(8), from: z.string().date().optional(), to: z.string().date().optional(), forms: z.array(z.string().trim().max(20)).max(10).optional(), metrics: z.array(z.string().trim().max(100)).max(20).default(DEFAULT_METRICS), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("US") })).query(async ({ input }) => {
+    secFilingComparison: publicProcedure.input(z.object({ symbols: z.array(symbolInput.shape.symbol).min(2).max(8), from: z.string().date().optional(), to: z.string().date().optional(), forms: z.array(z.string().trim().max(20)).max(10).optional(), metrics: z.array(z.string().trim().max(100)).max(20).default(DEFAULT_METRICS), marketId: marketIdSchema.default("US") })).query(async ({ input }) => {
       const market = getMarketProfile(input.marketId as MarketId);
       if (input.marketId !== "US") return { symbols: input.symbols.map((symbol) => symbol.toUpperCase()), from: input.from ?? null, to: input.to ?? null, forms: input.forms ?? [], metrics: input.metrics, points: [], unavailable: input.symbols.map((symbol) => ({ symbol: symbol.toUpperCase(), reason: `${market.country} XBRL comparison is unavailable until a validated structured filing adapter is promoted.` })), refreshedAt: new Date().toISOString(), marketId: market.id, marketLabel: market.country };
-      const recordsBySymbol = Object.fromEntries(await Promise.all(input.symbols.map(async (symbol) => [symbol.toUpperCase(), await getSourceRecordsForSymbol(symbol, 2_000)])));
+      const recordsBySymbol = Object.fromEntries(await Promise.all(input.symbols.map(async (symbol) => [symbol.toUpperCase(), await getSourceRecordsForSymbol(input.marketId, symbol, 2_000)])));
       return { ...buildFilingComparison(recordsBySymbol, input), marketId: market.id, marketLabel: market.country };
     }),
-    secFilingComparisonExport: publicProcedure.input(z.object({ symbols: z.array(symbolInput.shape.symbol).min(2).max(8), from: z.string().date().optional(), to: z.string().date().optional(), forms: z.array(z.string().trim().max(20)).max(10).optional(), metrics: z.array(z.string().trim().max(100)).max(20).default(DEFAULT_METRICS), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("US") })).query(async ({ input }) => {
+    secFilingComparisonExport: publicProcedure.input(z.object({ symbols: z.array(symbolInput.shape.symbol).min(2).max(8), from: z.string().date().optional(), to: z.string().date().optional(), forms: z.array(z.string().trim().max(20)).max(10).optional(), metrics: z.array(z.string().trim().max(100)).max(20).default(DEFAULT_METRICS), marketId: marketIdSchema.default("US") })).query(async ({ input }) => {
       const market = getMarketProfile(input.marketId as MarketId);
       const comparison = input.marketId !== "US"
         ? { symbols: input.symbols.map((symbol) => symbol.toUpperCase()), from: input.from ?? null, to: input.to ?? null, forms: input.forms ?? [], metrics: input.metrics, points: [], unavailable: input.symbols.map((symbol) => ({ symbol: symbol.toUpperCase(), reason: `${market.country} XBRL comparison is unavailable until a validated structured filing adapter is promoted.` })), refreshedAt: new Date().toISOString(), marketId: market.id, marketLabel: market.country }
-        : { ...buildFilingComparison(Object.fromEntries(await Promise.all(input.symbols.map(async (symbol) => [symbol.toUpperCase(), await getSourceRecordsForSymbol(symbol, 2_000)]))), input), marketId: market.id, marketLabel: market.country };
+        : { ...buildFilingComparison(Object.fromEntries(await Promise.all(input.symbols.map(async (symbol) => [symbol.toUpperCase(), await getSourceRecordsForSymbol(input.marketId, symbol, 2_000)]))), input), marketId: market.id, marketLabel: market.country };
       const safeSymbols = comparison.symbols.join("-").replace(/[^A-Z0-9-]/gi, "-").slice(0, 80);
       const baseName = `analyzerx-filing-comparison-${safeSymbols || "selected-market"}`;
       const [pdf, markdown] = await Promise.all([filingComparisonToPdf(comparison), Promise.resolve(filingComparisonToMarkdown(comparison))]);
@@ -502,11 +557,11 @@ export const appRouter = router({
     }),
     profile: publicProcedure.input(symbolInput).query(async ({ input }) => {
       const [market, fundamentals, news, filings, derivatives] = await Promise.allSettled([
-        fetchMarketSnapshot(input.symbol),
-        analyzeFundamentals(input.symbol),
-        fetchStockNewsNow(input.symbol),
-        getSourceRecordsForSymbol(input.symbol),
-        fetchDerivativesSnapshot(input.symbol),
+        fetchMarketSnapshot(input.symbol, input.marketId),
+        analyzeFundamentals(input.symbol, input.marketId),
+        fetchStockNewsNow(input.symbol, false, input.marketId),
+        getSourceRecordsForSymbol(input.marketId, input.symbol),
+        fetchDerivativesSnapshot(input.symbol, input.marketId),
       ]);
       const profile = {
         symbol: input.symbol,
@@ -527,23 +582,24 @@ export const appRouter = router({
       void persistProfileObservations(input.symbol, { market: profile.market, fundamentals: profile.fundamentals }).catch(() => undefined);
       return profile;
     }),
-    snapshot: publicProcedure.input(symbolInput).query(({ input }) => fetchMarketSnapshot(input.symbol)),
+    snapshot: publicProcedure.input(symbolInput).query(({ input }) => fetchMarketSnapshot(input.symbol, input.marketId)),
     observations: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol, limit: z.number().int().min(1).max(500).default(100) })).query(async ({ input }) => ({ symbol: input.symbol, market: await getMarketObservationsForSymbol(input.symbol, input.limit), fundamentals: await getFundamentalObservationsForSymbol(input.symbol, input.limit) })),
-    watchlistEvidence: publicProcedure.input(z.object({ symbols: z.array(symbolInput.shape.symbol).min(1).max(50) })).query(async ({ input }) => { const rows = await getLatestEventProjections(500); return input.symbols.map((symbol) => ({ symbol, events: rows.filter((row) => row.symbol === symbol).slice(0, 20) })); }),
+    watchlistEvidence: publicProcedure.input(z.object({ marketId: marketIdSchema, symbols: z.array(symbolInput.shape.symbol).min(1).max(50) })).query(async ({ input }) => { const rows = await getLatestEventProjections(input.marketId, 500); return input.symbols.map((symbol) => ({ symbol, events: rows.filter((row) => row.symbol === symbol).slice(0, 20) })); }),
     universe: publicProcedure.query(async () => fetchNseUniverse()),
-    positioning: publicProcedure.input(symbolInput).query(async ({ input }) => getPositioningCoverage(input.symbol)),
-    sectorNames: publicProcedure.query(() => getAvailableSectorNames()),
-    sectorConstituents: publicProcedure.input(z.object({ sector: z.string().trim().min(1).max(80), sort: z.enum(["score", "fii", "dii", "marketCap", "changePercent", "pe"]).default("score"), direction: z.enum(["asc", "desc"]).default("desc"), range: z.enum(["TODAY", "THREE_DAYS", "ONE_WEEK", "ONE_MONTH", "QTD"]).default("TODAY"), limit: z.number().int().min(1).max(100).default(100) })).query(({ input }) => getSectorConstituents(input.sector, { sort: input.sort as SectorSort, direction: input.direction, range: input.range, limit: input.limit })),
+    positioning: publicProcedure.input(z.object({ marketId: marketIdSchema, symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/) })).query(async ({ input }) => getPositioningCoverage(input.symbol, input.marketId)),
+    sectorNames: publicProcedure.input(z.object({ marketId: marketIdSchema })).query(({ input }) => getAvailableSectorNames(input.marketId)),
+    history: publicProcedure.input(z.object({ marketId: marketIdSchema, symbol: z.string().trim().min(1).max(20).regex(/^[A-Za-z0-9.-]+$/), range: z.string().trim().min(1).max(12).default("6mo"), interval: z.string().trim().min(1).max(12).default("1d") })).query(({ input }) => priceHistory(input.symbol, input.range, input.interval, input.marketId)),
+    sectorConstituents: publicProcedure.input(z.object({ marketId: marketIdSchema, sector: z.string().trim().min(1).max(80), sort: z.enum(["score", "fii", "dii", "marketCap", "changePercent", "pe"]).default("score"), direction: z.enum(["asc", "desc"]).default("desc"), range: z.enum(["TODAY", "THREE_DAYS", "ONE_WEEK", "ONE_MONTH", "QTD"]).default("TODAY"), limit: z.number().int().min(1).max(100).default(100) })).query(({ input }) => getSectorConstituents(input.sector, input.marketId, { sort: input.sort as SectorSort, direction: input.direction, range: input.range, limit: input.limit })),
     indiaStockMcpStatus: publicProcedure.query(() => getIndiaStockMcpStatus()),
     indiaStockMcpSnapshot: publicProcedure.input(symbolInput).query(({ input }) => getIndiaStockMcpSnapshot(input.symbol)),
     indiaStockMcpHistory: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol, from: z.string().date(), to: z.string().date(), interval: z.enum(["1d", "1wk", "1mo"]).default("1d") })).query(({ input }) => getIndiaStockMcpHistory(input.symbol, input.from, input.to, input.interval)),
     indiaStockMcpSearch: publicProcedure.input(z.object({ query: z.string().trim().min(1).max(60) })).query(({ input }) => searchIndiaStockMcp(input.query)),
-    search: publicProcedure.input(z.object({ query: z.string().trim().min(1).max(60), marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN") })).query(async ({ input }) => {
+    search: publicProcedure.input(z.object({ query: z.string().trim().min(1).max(60), marketId: marketIdSchema })).query(async ({ input }) => {
       const [indianResult, finnhubResult, indianOpenResult, projectionResult] = await Promise.allSettled([
         fetchIndianSearch(input.query),
         fetchFinnhub<FinnhubSearchResponse>("search", { q: input.query }),
         fetchIndianOpenSearch(input.query),
-        getLatestEventProjections(500),
+        getLatestEventProjections(input.marketId, 500),
       ]);
       const results = [
         ...(indianResult.status === "fulfilled" ? normalizeSearchResults(indianResult.value, "Indian API") : []),
@@ -570,22 +626,28 @@ export const appRouter = router({
         },
       };
     }),
-    institutionalFlows: publicProcedure.input(z.object({ range: z.enum(["TODAY", "THREE_DAYS", "ONE_WEEK", "ONE_MONTH", "QTD"]).default("TODAY") }).optional()).query(({ input }) => fetchNseInstitutionalFlows({ range: input?.range as FlowRange | undefined })),
-    fundamentals: publicProcedure.input(symbolInput).query(({ input }) => analyzeFundamentals(input.symbol)),
-    report: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol, marketId: z.enum(["IN", "US", "GB", "CA", "AU", "JP", "SG", "HK", "DE", "FR"]).default("IN") })).query(async ({ input }) => {
+    // The NSE FII/DII report is an Indian source. Requesting it for another market would
+    // present Indian flows under a non-Indian heading.
+    institutionalFlows: publicProcedure.input(z.object({ marketId: marketIdSchema, range: z.enum(["TODAY", "THREE_DAYS", "ONE_WEEK", "ONE_MONTH", "QTD"]).default("TODAY") })).query(({ input }) =>
+      input.marketId === "IN"
+        ? fetchNseInstitutionalFlows({ range: input.range as FlowRange | undefined })
+        : Promise.resolve(unavailableInstitutionalFlows(input.range as FlowRange, "The NSE FII/DII report is an Indian source and is not requested for this market.")),
+    ),
+    fundamentals: publicProcedure.input(symbolInput).query(({ input }) => analyzeFundamentals(input.symbol, input.marketId)),
+    report: publicProcedure.input(z.object({ symbol: symbolInput.shape.symbol, marketId: marketIdSchema })).query(async ({ input }) => {
       const market = getMarketProfile(input.marketId as MarketId);
-      const report = await analyzeFundamentals(input.symbol);
-      const news = await fetchStockNewsNow(report.resolvedSymbol);
+      const report = await analyzeFundamentals(input.symbol, input.marketId);
+      const news = await fetchStockNewsNow(report.resolvedSymbol, false, input.marketId);
       const [pdf, markdown] = await Promise.all([fundamentalAnalysisToPdf(report, news.articles, market.country), Promise.resolve(`${`# Selected market: ${market.country} (${market.id})`}\n\n${fundamentalAnalysisToMarkdown(report, news.articles)}`)]);
       return { symbol: report.resolvedSymbol, marketId: market.id, marketLabel: market.country, fileName: reportFileName(report, "pdf"), markdownFileName: reportFileName(report), format: "pdf", content: markdown, pdfBase64: pdf.toString("base64"), report, news: { fetchedAt: news.fetchedAt, freshArticleCount: news.freshArticleCount, stale: news.stale, providerFailures: news.providerFailures } };
     }),
-    peerComparison: publicProcedure.input(symbolInput).query(({ input }) => comparePeers(input.symbol)),
-    filings: publicProcedure.input(symbolInput).query(async ({ input }) => ({ symbol: input.symbol, records: filterFilingsForSymbol(await getLatestSourceRecords(500), input.symbol), entryLinks: getOfficialFilingLinks(input.symbol) })),
+    peerComparison: publicProcedure.input(symbolInput).query(({ input }) => comparePeers(input.symbol, input.marketId)),
+    filings: publicProcedure.input(symbolInput).query(async ({ input }) => ({ symbol: input.symbol, records: filterFilingsForSymbol(await getLatestSourceRecords(input.marketId, 500), input.symbol), entryLinks: getOfficialFilingLinks(input.symbol) })),
     officialFilingLinks: publicProcedure.input(symbolInput).query(({ input }) => getOfficialFilingLinks(input.symbol)),
-    derivatives: publicProcedure.input(symbolInput).query(({ input }) => fetchDerivativesSnapshot(input.symbol)),
+    derivatives: publicProcedure.input(symbolInput).query(({ input }) => fetchDerivativesSnapshot(input.symbol, input.marketId)),
     derivativesSources: publicProcedure.query(() => getDerivativesSourceCatalog()),
-    multibaggerSignals: publicProcedure.input(z.object({ strategyId: z.enum(["buffett-munger", "peter-lynch", "canslim", "greenblatt", "fisher", "small-cap-compounder"]).default("buffett-munger") }).optional()).query(({ input }) => getMultibaggerSignals((input?.strategyId ?? "buffett-munger") as MultibaggerStrategyId)),
-    multiAssetTiming: publicProcedure.query(() => getMultiAssetTimingSignals()),
+    multibaggerSignals: publicProcedure.input(z.object({ marketId: marketIdSchema, strategyId: z.enum(["buffett-munger", "peter-lynch", "canslim", "greenblatt", "fisher", "small-cap-compounder"]).default("buffett-munger") })).query(({ input }) => getMultibaggerSignals(input.marketId, input.strategyId as MultibaggerStrategyId)),
+    multiAssetTiming: publicProcedure.input(z.object({ marketId: marketIdSchema })).query(({ input }) => getMultiAssetTimingSignals(input.marketId)),
     indianSnapshot: publicProcedure.input(symbolInput).query(async ({ input }) => {
       try {
         const payload = await fetchIndian<IndianStockResponse>(input.symbol);

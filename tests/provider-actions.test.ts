@@ -4,7 +4,7 @@ import { markProviderRejected, resetProviderHealthForTests } from "../server/pro
 
 describe("provider manual actions", () => {
   it("returns a truthful unsupported result for providers without an app adapter", async () => {
-    const result = await runProviderNow("firecrawl", "RELIANCE");
+    const result = await runProviderNow("firecrawl", "RELIANCE", "IN");
     expect(result.status).toBe("unsupported");
     expect(result.records).toBe(0);
     expect(result.summary).toContain("No app-runtime adapter");
@@ -15,6 +15,6 @@ describe("provider manual actions", () => {
     markProviderRejected("gnews", new Error("HTTP 429 rate limit"));
     markProviderRejected("gnews", new Error("HTTP 429 rate limit"));
     markProviderRejected("gnews", new Error("HTTP 429 rate limit"));
-    await expect(runProviderNow("gnews", "RELIANCE")).rejects.toThrow("cooling down");
+    await expect(runProviderNow("gnews", "RELIANCE", "IN")).rejects.toThrow("cooling down");
   });
 });

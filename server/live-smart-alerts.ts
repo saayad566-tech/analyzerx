@@ -1,6 +1,6 @@
 import { analyzeFundamentals, type FundamentalAnalysis } from "./fundamental-analysis";
 import { getLatestTrackedNews, type ExtractedNews } from "./news-tracker";
-import { getMarketProfile, type MarketId } from "../lib/market-regions";
+import { getMarketProfile, requireMarketId, type MarketId } from "../lib/market-regions";
 import { getLatestSourceRecords, getSmartAlertResult, markSmartAlertNotified, upsertSmartAlertResult } from "./db";
 import { notifyOwner } from "./_core/notification";
 import { discoverEligibleStocks, type EventEvidence, type MarketCapBand, type MonitoringRule, type SmartAlertDiscovery, type SmartEventChain, type SmartEventType } from "./smart-event-alerts";
@@ -80,8 +80,10 @@ function sourceRecordSymbol(title: string, explicit?: string | null) {
 }
 const MARKET_SOURCE_KEYS: Record<MarketId, RegExp> = { IN: /^(nse|bse|sebi|nsdl|amfi|company-ir|investor-relations)/i, US: /^sec-(edgar|company-facts)/i, GB: /^uk-fca/i, CA: /^ca-sedar/i, AU: /^au-asx/i, JP: /^jp-jpx/i, SG: /^sg-sgx/i, HK: /^hk-hkex/i, DE: /^eu-esef/i, FR: /^(eu-esef|fr-amf)/i };
 
-export function officialRecordToArticle(record: Awaited<ReturnType<typeof getLatestSourceRecords>>[number], marketId: MarketId = "IN"): ExtractedNews | null {
-  const sourcePattern = MARKET_SOURCE_KEYS[marketId] ?? MARKET_SOURCE_KEYS.IN;
+export function officialRecordToArticle(record: Awaited<ReturnType<typeof getLatestSourceRecords>>[number], marketId: MarketId): ExtractedNews | null {
+  // No India fallback: an unmapped market yields no official-source pattern.
+  const sourcePattern = MARKET_SOURCE_KEYS[marketId];
+  if (!sourcePattern) return null;
   const official = sourcePattern.test(record.sourceKey) || /nse|bse|sebi|fca|sedar|asx|tdnet|sgx|hkex|esef|amf|investor.?relations|company.?ir/i.test(record.sourceUrl);
   if (!official || !record.title) return null;
   let payload: Record<string, unknown> = {};
@@ -133,15 +135,15 @@ export async function persistSmartAlertDiscovery(discovery: SmartAlertDiscovery,
 export async function discoverLiveSmartAlerts(rule: MonitoringRule, options: { lookbackDays?: number; limit?: number; sort?: SmartAlertDiscovery["sort"]; marketId?: MarketId } = {}): Promise<SmartAlertDiscovery> {
   const lookbackDays = Math.min(180, Math.max(1, options.lookbackDays ?? 30));
   const cutoff = Date.now() - lookbackDays * 86_400_000;
-  const marketId = options.marketId ?? "IN";
+  const marketId = requireMarketId(options.marketId);
   const market = getMarketProfile(marketId);
-  const [trackedArticles, sourceRecords] = await Promise.all([getLatestTrackedNews(250), getLatestSourceRecords(400)]);
+  const [trackedArticles, sourceRecords] = await Promise.all([getLatestTrackedNews(250), getLatestSourceRecords(marketId, 400)]);
   const officialArticles = sourceRecords.map((record) => officialRecordToArticle(record, marketId)).filter((article): article is ExtractedNews => Boolean(article));
   const articles = [...trackedArticles, ...officialArticles];
   const filtered = articles.filter((article) => Date.parse(article.published_at) >= cutoff && (marketId === "IN" || article.source === "news-tracker" || sourceStatus(article.source) === "verified"));
   const symbols = [...new Set(filtered.map((article) => article.symbol).filter(Boolean))];
   const profiles: Record<string, LiveAlertProfile> = {};
-  await Promise.all(symbols.slice(0, 30).map(async (symbol) => { try { const result = await analyzeFundamentals(symbol); profiles[symbol] = result; } catch { /* provider failures remain unavailable */ } }));
+  await Promise.all(symbols.slice(0, 30).map(async (symbol) => { try { const result = await analyzeFundamentals(symbol, marketId); profiles[symbol] = result; } catch { /* provider failures remain unavailable */ } }));
   const chains = filtered.map((article) => extractLiveEventChain(article, profiles)).filter((event): event is SmartEventChain => Boolean(event));
   const discovery = discoverEligibleStocks(rule, chains, options.sort ?? "match-score");
   return { ...discovery, eligibleStocks: discovery.eligibleStocks.slice(0, options.limit ?? 50), marketId, marketLabel: market.country };

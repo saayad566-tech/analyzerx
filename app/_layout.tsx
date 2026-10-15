@@ -1,6 +1,7 @@
 import "@/global.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, usePathname, router } from "expo-router";
+import { loadOnboarding } from "@/lib/market-lifecycle";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -24,6 +25,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-runtime";
 import { WorkspaceSync } from "@/components/workspace-sync";
 import { MarketProvider } from "@/lib/market-context";
+import { AppLifecycleProvider } from "@/lib/app-lifecycle";
 import { resolveBackAction, resolveRootBackFeedback } from "@/lib/navigation-back";
 import { AssistantModeGate } from "@/components/assistant-mode-gate";
 import { RuntimeReadinessProbe } from "@/components/runtime-readiness-probe";
@@ -34,6 +36,33 @@ const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
 Notifications.setNotificationHandler({
   handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: true }),
 });
+
+/**
+ * First-launch gate.
+ *
+ * The app previously went straight to /(tabs) on the default market, so a new user never
+ * chose a country. This sends a first-time user to /onboarding once, and only once: the
+ * flag is persisted, and a failure to read it is treated as "already onboarded" so a
+ * storage error can never trap the user in a loop.
+ */
+function FirstLaunchGate() {
+  const pathname = usePathname();
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const record = await loadOnboarding();
+        if (cancelled || record.completed) return;
+        if (pathname === "/onboarding") return;
+        router.replace("/onboarding");
+      } catch {
+        // Unreadable storage must not block the app.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pathname]);
+  return null;
+}
 
 function BackNavigationController() {
   const pathname = usePathname();
@@ -147,12 +176,14 @@ export default function RootLayout() {
 
   const content = (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      <AppLifecycleProvider>
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
         <QueryClientProvider client={queryClient}>
           <MarketProvider>
           <AssistantModeGate />
           <RuntimeReadinessProbe />
           <PushRegistration />
+          <FirstLaunchGate />
           <BackNavigationController />
           <WorkspaceSync />
           {/* Default to hiding native headers so raw route segments don't appear (e.g. "(tabs)", "products/[id]"). */}
@@ -162,6 +193,7 @@ export default function RootLayout() {
               recoverable screen instead of closing the app. */}
           <ErrorBoundary>
             <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="news/[id]" options={{ title: "Story" }} />
               <Stack.Screen name="filings" options={{ title: "Filing Intelligence" }} />
@@ -172,6 +204,7 @@ export default function RootLayout() {
           </MarketProvider>
         </QueryClientProvider>
       </trpc.Provider>
+      </AppLifecycleProvider>
     </GestureHandlerRootView>
   );
 

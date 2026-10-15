@@ -1,4 +1,5 @@
 import mysql from "mysql2";
+import { requireMarketId, type MarketId } from "../lib/market-regions";
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import { and, desc, eq, gte, like, lt, or, sql } from "drizzle-orm";
@@ -264,16 +265,24 @@ export async function saveSourceRecord(record: InsertSourceRecord): Promise<bool
   return true;
 }
 
-export async function getLatestSourceRecords(limit = 50) {
+/**
+ * Market-scoped source records.
+ *
+ * The where clause is what hides unclassified rows: a row whose marketId is UNKNOWN
+ * never equals a real market, so it cannot appear in ANY market's view. That is the
+ * rule the isolation mandate prescribes — an unclassifiable row is hidden, never
+ * assumed to be India.
+ */
+export async function getLatestSourceRecords(marketId: MarketId, limit = 50) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(sourceRecords).orderBy(desc(sourceRecords.retrievedAt)).limit(limit);
+  return db.select().from(sourceRecords).where(eq(sourceRecords.marketId, marketId)).orderBy(desc(sourceRecords.retrievedAt)).limit(limit);
 }
 
-export async function getSourceRecordsForSymbol(symbol: string, limit = 100) {
+export async function getSourceRecordsForSymbol(marketId: MarketId, symbol: string, limit = 100) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(sourceRecords).where(eq(sourceRecords.symbol, symbol.toUpperCase())).orderBy(desc(sourceRecords.retrievedAt)).limit(limit);
+  return db.select().from(sourceRecords).where(and(eq(sourceRecords.marketId, marketId), eq(sourceRecords.symbol, symbol.toUpperCase()))).orderBy(desc(sourceRecords.retrievedAt)).limit(limit);
 }
 
 export async function upsertPushToken(token: InsertPushToken): Promise<boolean> {
@@ -385,11 +394,11 @@ export async function upsertEventProjection(projection: InsertEventProjection): 
   return true;
 }
 
-export async function getEventProjectionsForSymbol(symbol: string, limit = 100, lookbackDays = 365): Promise<EventProjection[]> {
+export async function getEventProjectionsForSymbol(marketId: MarketId, symbol: string, limit = 100, lookbackDays = 365): Promise<EventProjection[]> {
   const db = await getDb();
   if (!db) return [];
   const cutoff = new Date(Date.now() - Math.min(730, Math.max(1, lookbackDays)) * 24 * 60 * 60 * 1000);
-  return db.select().from(eventProjections).where(and(eq(eventProjections.symbol, symbol.toUpperCase()), gte(eventProjections.eventAt, cutoff))).orderBy(desc(eventProjections.eventAt)).limit(Math.min(500, Math.max(1, limit)));
+  return db.select().from(eventProjections).where(and(eq(eventProjections.marketId, marketId), eq(eventProjections.symbol, symbol.toUpperCase()), gte(eventProjections.eventAt, cutoff))).orderBy(desc(eventProjections.eventAt)).limit(Math.min(500, Math.max(1, limit)));
 }
 
 export async function getEventProjectionsForStoryline(storylineKey: string, limit = 100): Promise<EventProjection[]> {
@@ -398,11 +407,11 @@ export async function getEventProjectionsForStoryline(storylineKey: string, limi
   return db.select().from(eventProjections).where(eq(eventProjections.storylineKey, storylineKey)).orderBy(desc(eventProjections.eventAt)).limit(Math.min(500, Math.max(1, limit)));
 }
 
-export async function getLatestEventProjections(limit = 200, lookbackDays = 365): Promise<EventProjection[]> {
+export async function getLatestEventProjections(marketId: MarketId, limit = 200, lookbackDays = 365): Promise<EventProjection[]> {
   const db = await getDb();
   if (!db) return [];
   const cutoff = new Date(Date.now() - Math.min(730, Math.max(1, lookbackDays)) * 24 * 60 * 60 * 1000);
-  return db.select().from(eventProjections).where(and(eq(eventProjections.status, "active"), gte(eventProjections.eventAt, cutoff))).orderBy(desc(eventProjections.eventAt)).limit(Math.min(500, Math.max(1, limit)));
+  return db.select().from(eventProjections).where(and(eq(eventProjections.marketId, marketId), eq(eventProjections.status, "active"), gte(eventProjections.eventAt, cutoff))).orderBy(desc(eventProjections.eventAt)).limit(Math.min(500, Math.max(1, limit)));
 }
 
 export async function getAutonomousRecommendation(id: string): Promise<AutonomousRecommendation | undefined> {
@@ -498,11 +507,13 @@ export async function markAutonomousRecommendationNotified(id: string): Promise<
   return true;
 }
 
-export async function getAutonomousRecommendations(lookbackDays = 30, limit = 50) {
+export async function getAutonomousRecommendations(marketId: MarketId, lookbackDays = 30, limit = 50) {
   const db = await getDb();
   if (!db) return [];
   const cutoff = new Date(Date.now() - Math.min(180, Math.max(1, lookbackDays)) * 86_400_000);
-  return db.select().from(autonomousRecommendations).where(sql`${autonomousRecommendations.eventTimestamp} >= ${cutoff}`).orderBy(desc(autonomousRecommendations.impactScore), desc(autonomousRecommendations.eventTimestamp)).limit(Math.min(100, Math.max(1, limit)));
+  // Market-scoped. This previously filtered only on the event timestamp, so every
+  // market's autonomous recommendations were returned for every market.
+  return db.select().from(autonomousRecommendations).where(and(eq(autonomousRecommendations.marketId, marketId), sql`${autonomousRecommendations.eventTimestamp} >= ${cutoff}`)).orderBy(desc(autonomousRecommendations.impactScore), desc(autonomousRecommendations.eventTimestamp)).limit(Math.min(100, Math.max(1, limit)));
 }
 
 
@@ -533,10 +544,10 @@ export async function upsertUserMarketPreference(userId: number, input: { market
   return { persisted: true, conflict, preference: await getUserMarketPreference(userId) } as const;
 }
 
-export async function listUserWatchlistItems(userId: number) {
+export async function listUserWatchlistItems(marketId: MarketId, userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(userWatchlistItems).where(sql`${userWatchlistItems.userId} = ${userId} AND ${userWatchlistItems.enabled} = true`).orderBy(desc(userWatchlistItems.updatedAt));
+  return db.select().from(userWatchlistItems).where(sql`${userWatchlistItems.marketId} = ${marketId} AND ${userWatchlistItems.userId} = ${userId} AND ${userWatchlistItems.enabled} = true`).orderBy(desc(userWatchlistItems.updatedAt));
 }
 
 export async function upsertUserWatchlistItem(userId: number, symbol: string, entityId?: string | null) {
@@ -558,10 +569,10 @@ export async function revokeUserWatchlistItem(userId: number, symbol: string) {
   return true;
 }
 
-export async function listUserSavedScreens(userId: number) {
+export async function listUserSavedScreens(marketId: MarketId, userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(userSavedScreens).where(sql`${userSavedScreens.userId} = ${userId} AND ${userSavedScreens.revokedAt} IS NULL`).orderBy(desc(userSavedScreens.updatedAt));
+  return db.select().from(userSavedScreens).where(sql`${userSavedScreens.marketId} = ${marketId} AND ${userSavedScreens.userId} = ${userId} AND ${userSavedScreens.revokedAt} IS NULL`).orderBy(desc(userSavedScreens.updatedAt));
 }
 
 export async function upsertUserSavedScreen(userId: number, input: { name: string; filtersJson: string }) {
@@ -580,10 +591,10 @@ export async function revokeUserSavedScreen(userId: number, id: number) {
   return true;
 }
 
-export async function listUserAlertRules(userId: number) {
+export async function listUserAlertRules(marketId: MarketId, userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(userAlertRules).where(sql`${userAlertRules.userId} = ${userId} AND ${userAlertRules.revokedAt} IS NULL`).orderBy(desc(userAlertRules.updatedAt));
+  return db.select().from(userAlertRules).where(sql`${userAlertRules.marketId} = ${marketId} AND ${userAlertRules.userId} = ${userId} AND ${userAlertRules.revokedAt} IS NULL`).orderBy(desc(userAlertRules.updatedAt));
 }
 
 export async function upsertUserAlertRule(userId: number, input: { id: string; title: string; query: string; enabled?: boolean }) {
@@ -646,7 +657,7 @@ export async function listUserAlertResultsPage(userId: number, input: { limit?: 
 export async function upsertUserAlertResult(userId: number, result: InsertUserAlertResult) {
   const db = await getDb();
   if (!db) return false;
-  await db.insert(userAlertResults).values({ ...result, userId, marketId: result.marketId ?? "IN" }).onDuplicateKeyUpdate({ set: { status: result.status, evidenceJson: result.evidenceJson, marketId: result.marketId ?? "IN", updatedAt: new Date(), revokedAt: null } });
+  await db.insert(userAlertResults).values({ ...result, userId, marketId: requireMarketId(result.marketId) }).onDuplicateKeyUpdate({ set: { status: result.status, evidenceJson: result.evidenceJson, marketId: requireMarketId(result.marketId), updatedAt: new Date(), revokedAt: null } });
   return true;
 }
 
@@ -720,10 +731,10 @@ export async function getEnabledUserPushTokens(userId: number) {
   return db.select().from(userPushTokens).where(sql`${userPushTokens.userId} = ${userId} AND ${userPushTokens.enabled} = true AND ${userPushTokens.revokedAt} IS NULL`);
 }
 
-export async function listUserSavedResearch(userId: number) {
+export async function listUserSavedResearch(marketId: MarketId, userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(userSavedResearch).where(sql`${userSavedResearch.userId} = ${userId} AND ${userSavedResearch.revokedAt} IS NULL`).orderBy(desc(userSavedResearch.updatedAt));
+  return db.select().from(userSavedResearch).where(sql`${userSavedResearch.marketId} = ${marketId} AND ${userSavedResearch.userId} = ${userId} AND ${userSavedResearch.revokedAt} IS NULL`).orderBy(desc(userSavedResearch.updatedAt));
 }
 
 export async function upsertUserSavedResearch(userId: number, input: Omit<InsertUserSavedResearch, "userId">) {

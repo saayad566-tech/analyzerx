@@ -1,3 +1,5 @@
+import { percentChangeConvention } from "../lib/flows-semantics";
+
 export type InstitutionalParticipant = "FII/FPI" | "DII";
 export type FlowRange = "TODAY" | "THREE_DAYS" | "ONE_WEEK" | "ONE_MONTH" | "QTD";
 
@@ -19,6 +21,29 @@ export type InstitutionalFlowComparison = {
   previousNet: number | null;
   changePct: number | null;
 };
+
+/**
+ * The shape returned when the NSE report is not requested at all — i.e. the active market is
+ * not India. Returning a value of the SAME type as a real report keeps every caller's type
+ * stable: a union here propagated an implicit-any through the Flows screen's callbacks.
+ */
+export function unavailableInstitutionalFlows(range: FlowRange, reason: string): NseInstitutionalFlows {
+  return {
+    status: "unavailable",
+    source: "Not requested for this market",
+    upstream: "NSE",
+    reportDate: null,
+    fetchedAt: new Date().toISOString(),
+    freshnessLabel: "Unavailable",
+    freshnessBusinessDays: null,
+    rows: [],
+    history: [],
+    range,
+    rangeLabel: flowRangeMeta[range]?.label ?? range,
+    comparison: [],
+    error: reason,
+  };
+}
 
 export type NseInstitutionalFlows = {
   status: NseFlowStatus;
@@ -199,8 +224,10 @@ function aggregate(records: InstitutionalHistoryRecord[]): InstitutionalFlowRow[
 }
 
 function percentChange(current: number | null, previous: number | null) {
-  if (current === null || previous === null || previous === 0) return null;
-  return Number((((current - previous) / Math.abs(previous)) * 100).toFixed(2));
+  // Documented convention (FIX 06): a signed net-flow quantity has no meaningful
+  // percentage change when the prior period was zero, or when the sign flipped
+  // between periods. Those cases return null rather than a misleading figure.
+  return percentChangeConvention(current, previous).pct;
 }
 
 function buildRangeResult(base: { status: NseFlowStatus; source: string; upstream: "NSE" | "NSE via intermediary"; reportDate: string | null; fetchedAt: string; freshnessLabel: string; freshnessBusinessDays: number | null; error: string | null }, history: InstitutionalHistoryRecord[], range: FlowRange) {

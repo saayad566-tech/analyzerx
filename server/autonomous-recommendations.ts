@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { type MarketId } from "../lib/market-regions";
 import { analyzeFundamentals, type FundamentalAnalysis } from "./fundamental-analysis";
 import { getLatestSourceRecords, getAutonomousRecommendation, getAutonomousRecommendations, markAutonomousRecommendationNotified, upsertAutonomousRecommendation } from "./db";
 import { notifyOwner } from "./_core/notification";
@@ -129,14 +130,14 @@ export function discoverAutonomousRecommendationsFromChains(events: SmartEventCh
   return { recommendations, generatedAt: new Date().toISOString(), lookbackDays, sourceCount: events.reduce((sum, event) => sum + event.evidence.length, 0), eventCount: events.length, rejectedCount: Math.max(0, events.length - recommendations.length), coverage: { trackedNews: 0, officialRecords: 0, providerFailures: [] } };
 }
 
-export async function discoverAutonomousRecommendations(lookbackDays = 30, limit = 50): Promise<AutonomousRecommendationDiscovery> {
-  const [trackedNews, records] = await Promise.all([getLatestTrackedNews(300), getLatestSourceRecords(500)]);
-  const officialArticles = records.map((record) => officialRecordToArticle(record)).filter((item): item is ExtractedNews => Boolean(item));
+export async function discoverAutonomousRecommendations(marketId: MarketId, lookbackDays = 30, limit = 50): Promise<AutonomousRecommendationDiscovery> {
+  const [trackedNews, records] = await Promise.all([getLatestTrackedNews(300, undefined, marketId), getLatestSourceRecords(marketId, 500)]);
+  const officialArticles = records.map((record) => officialRecordToArticle(record, marketId)).filter((item): item is ExtractedNews => Boolean(item));
   const articles = [...trackedNews, ...officialArticles].filter((article) => Date.parse(article.published_at) >= Date.now() - Math.min(180, Math.max(1, lookbackDays)) * 86_400_000);
   const symbols = [...new Set(articles.map((article) => article.symbol).filter(Boolean))].slice(0, 40);
   const profiles: Record<string, FundamentalAnalysis> = {};
   const providerFailures: string[] = [];
-  await Promise.all(symbols.map(async (symbol) => { try { profiles[symbol] = await analyzeFundamentals(symbol); } catch (error) { providerFailures.push(`${symbol}: ${String(error)}`); } }));
+  await Promise.all(symbols.map(async (symbol) => { try { profiles[symbol] = await analyzeFundamentals(symbol, marketId); } catch (error) { providerFailures.push(`${symbol}: ${String(error)}`); } }));
   const chains = articles.map((article) => extractLiveEventChain(article, profiles)).filter((event): event is SmartEventChain => Boolean(event));
   const result = discoverAutonomousRecommendationsFromChains(chains, lookbackDays);
   for (const recommendation of result.recommendations.slice(0, Math.min(100, limit))) {
@@ -156,7 +157,7 @@ export async function discoverAutonomousRecommendations(lookbackDays = 30, limit
   return { ...result, recommendations: result.recommendations.slice(0, limit), coverage: { trackedNews: trackedNews.length, officialRecords: officialArticles.length, providerFailures } };
 }
 
-export async function getPersistedAutonomousRecommendations(options: { lookbackDays?: number; limit?: number; sort?: "impact" | "confidence" | "latest" } = {}) {
-  const rows = await getAutonomousRecommendations(options.lookbackDays ?? 30, options.limit ?? 50);
+export async function getPersistedAutonomousRecommendations(options: { marketId: MarketId; lookbackDays?: number; limit?: number; sort?: "impact" | "confidence" | "latest" }) {
+  const rows = await getAutonomousRecommendations(options.marketId, options.lookbackDays ?? 30, options.limit ?? 50);
   return [...rows].sort((a, b) => options.sort === "confidence" ? b.confidenceScore - a.confidenceScore : options.sort === "latest" ? b.eventTimestamp.getTime() - a.eventTimestamp.getTime() : b.impactScore - a.impactScore);
 }

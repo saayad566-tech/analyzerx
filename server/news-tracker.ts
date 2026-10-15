@@ -4,7 +4,9 @@ import { getEnabledPushTokens, getImpactRankedNewsEvents, getLatestNewsEvents, g
 import { fetchOptionalNews } from "./optional-providers";
 import { classifyIndianNewsRelevance, classifyNewsPublication } from "./indian-news-relevance";
 import { fetchNseUniverse } from "./nse-universe";
-import { type MarketId } from "../lib/market-regions";
+import { seedUniverseForMarket } from "../lib/market-universe";
+import { publisherFeedUrlsFor } from "../lib/market-publisher-feeds";
+import { MARKET_IDS, resolveMarketId, type MarketId, type ResolvedMarketId } from "../lib/market-regions";
 import { filterAndSortArchiveArticles, type ArchiveOrder, type ArchiveScope, type ArchiveSentiment } from "../lib/news-archive";
 
 export type NewsCategory = "Tech" | "Finance" | "Markets" | "Crypto" | "General";
@@ -12,7 +14,7 @@ export type NewsSentiment = "Positive" | "Neutral" | "Negative";
 
 export type ExtractedNews = {
   id: string;
-  marketId?: MarketId;
+  marketId?: ResolvedMarketId;
   symbol: string;
   headline: string;
   category: NewsCategory;
@@ -28,7 +30,7 @@ export type ExtractedNews = {
 };
 
 type RawArticle = {
-  marketId?: MarketId;
+  marketId?: ResolvedMarketId;
   symbol: string;
   headline: string;
   summary?: string | null;
@@ -47,7 +49,7 @@ type TrackerStatus = {
   articlesStored: number;
   articlesHeld: number;
   notificationsSent: number;
-  coverageMode: "configured" | "nse-universe" | "fallback";
+  coverageMode: "configured" | "nse-universe" | "market-seed" | "fallback";
   universeCount: number;
   coveredSymbols: number;
   batchSize: number;
@@ -116,15 +118,31 @@ function uniqueSymbols(values: string[]) {
   return [...new Set(values.map((value) => value.trim().toUpperCase()).filter(Boolean))];
 }
 
-async function getCoverageBatch() {
+async function getCoverageBatch(marketId: MarketId) {
   const configured = uniqueSymbols((process.env.NEWS_TRACKER_SYMBOLS ?? "").split(","));
-  const priority = uniqueSymbols((process.env.NEWS_TRACKER_PRIORITY_SYMBOLS ?? DEFAULT_SYMBOLS.join(",")).split(","));
+  // The priority list is the SELECTED market's seed universe. It used to be a hardcoded
+  // Indian list for every market, so no other market ever collected symbol news.
+  const marketSeed = seedUniverseForMarket(marketId);
+  const priority = uniqueSymbols((process.env.NEWS_TRACKER_PRIORITY_SYMBOLS ?? marketSeed.join(",")).split(","));
   const requestedBatchSize = Number(process.env.NEWS_TRACKER_SYMBOL_BATCH_SIZE ?? 25);
   const batchSize = Math.min(100, Math.max(5, Number.isFinite(requestedBatchSize) ? requestedBatchSize : 25));
   if (configured.length) {
     const selected = uniqueSymbols([...priority, ...configured]).slice(0, batchSize);
     status.coverageMode = "configured";
     status.universeCount = configured.length;
+    status.coveredSymbols = selected.length;
+    status.batchSize = selected.length;
+    status.batchOffset = 0;
+    status.lastCoverageAt = new Date().toISOString();
+    return { symbols: selected, universeErrors: [] as string[] };
+  }
+  // Only India has a free, machine-readable full exchange universe (the NSE master).
+  // Every other market rotates through its seed list. That is a real coverage limit and
+  // is reported as such rather than being papered over with the Indian universe.
+  if (marketId !== "IN") {
+    const selected = uniqueSymbols(priority).slice(0, batchSize);
+    status.coverageMode = "market-seed";
+    status.universeCount = marketSeed.length;
     status.coveredSymbols = selected.length;
     status.batchSize = selected.length;
     status.batchOffset = 0;
@@ -160,13 +178,13 @@ async function getCoverageBatch() {
   }
 }
 
-async function fetchSymbolNewsInBatches(symbols: string[]) {
+async function fetchSymbolNewsInBatches(symbols: string[], marketId: MarketId) {
   const batchConcurrency = Math.min(5, Math.max(1, Number(process.env.NEWS_TRACKER_SYMBOL_CONCURRENCY ?? 2)));
   const results: PromiseSettledResult<RawArticle[]>[] = [];
   let rateLimited = Date.now() < finnhubRateLimitedUntil;
   for (let index = 0; index < symbols.length && !rateLimited; index += batchConcurrency) {
     const chunk = symbols.slice(index, index + batchConcurrency);
-    const chunkResults = await Promise.allSettled(chunk.map((symbol) => fetchFinnhubNews(symbol)));
+    const chunkResults = await Promise.allSettled(chunk.map((symbol) => fetchFinnhubNews(symbol, 1, marketId)));
     results.push(...chunkResults);
     rateLimited = chunkResults.some((result) => result.status === "rejected" && String(result.reason).includes("429"));
   }
@@ -189,7 +207,7 @@ function canonicalizeHeadline(value: string) {
 }
 
 export function canonicalArticleKey(article: Pick<RawArticle, "headline" | "marketId" | "symbol">) {
-  return `${article.marketId ?? "IN"}|${article.symbol.toUpperCase()}|${canonicalizeHeadline(article.headline)}`;
+  return `${resolveMarketId(article.marketId)}|${article.symbol.toUpperCase()}|${canonicalizeHeadline(article.headline)}`;
 }
 
 function hashArticle(article: Pick<RawArticle, "headline" | "url" | "marketId" | "symbol">) {
@@ -305,13 +323,13 @@ async function extractArticle(article: RawArticle): Promise<ExtractedNews> {
 }
 
 async function persistExtractedArticle(raw: RawArticle) {
-  const publication = classifyNewsPublication({ marketId: raw.marketId ?? "IN", headline: raw.headline, summary: raw.summary, symbol: raw.symbol, source: raw.source });
+  const publication = classifyNewsPublication({ marketId: resolveMarketId(raw.marketId), headline: raw.headline, summary: raw.summary, symbol: raw.symbol, source: raw.source });
   if (!publication.published) {
     status.articlesHeld += 1;
     const articleHash = hashArticle(raw);
     await saveHeldNewsArticle({
-      id: `${raw.marketId ?? "IN"}:${articleHash}`,
-      marketId: raw.marketId ?? "IN",
+      id: `${resolveMarketId(raw.marketId)}:${articleHash}`,
+      marketId: resolveMarketId(raw.marketId),
       symbol: raw.symbol === "MARKET" ? null : raw.symbol,
       articleId: articleHash,
       articleHash,
@@ -337,7 +355,7 @@ async function persistExtractedArticle(raw: RawArticle) {
   articles.set(id, extracted);
   await saveNewsEvent({
     id: extracted.id,
-      marketId: extracted.marketId ?? "IN",
+      marketId: resolveMarketId(extracted.marketId),
     symbol: extracted.symbol,
     headline: extracted.headline,
     category: extracted.category,
@@ -365,7 +383,7 @@ async function persistExtractedArticles(rawArticles: RawArticle[], concurrency =
   return results;
 }
 
-async function fetchFinnhubNews(symbol: string, days = 1, marketId: MarketId = "IN"): Promise<RawArticle[]> {
+async function fetchFinnhubNews(symbol: string, days: number, marketId: MarketId): Promise<RawArticle[]> {
   const token = process.env.FINNHUB_API_KEY;
     if (!token) throw new Error("Finnhub news provider is not configured");
   if (Date.now() < finnhubRateLimitedUntil) throw new Error("Finnhub rate-limit cooldown active");
@@ -396,7 +414,7 @@ async function fetchFinnhubNews(symbol: string, days = 1, marketId: MarketId = "
   }
 }
 
-async function fetchRssFeed(feedUrl: string, marketId: MarketId = "IN"): Promise<RawArticle[]> {
+async function fetchRssFeed(feedUrl: string, marketId: MarketId): Promise<RawArticle[]> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
@@ -448,7 +466,7 @@ export function labelMarketContextArticle(article: RawArticle, symbol: string): 
   return { ...article, symbol, source: `${article.source} · Market context` };
 }
 
-export async function fetchStockNewsNow(symbol: string, forceRefresh = false, marketId: MarketId = "IN", requestedDays?: number): Promise<StockNewsResult> {
+export async function fetchStockNewsNow(symbol: string, forceRefresh: boolean, marketId: MarketId, requestedDays?: number): Promise<StockNewsResult> {
   const normalizedSymbol = symbol.trim().toUpperCase();
   const cacheKey = `${marketId}:${normalizedSymbol}`;
   const cached = symbolNewsCache.get(cacheKey);
@@ -484,7 +502,7 @@ export async function fetchStockNewsNow(symbol: string, forceRefresh = false, ma
   return result;
 }
 
-export async function backfillHistoricalNews(symbol: string, days: number, marketId: MarketId = "IN") {
+export async function backfillHistoricalNews(symbol: string, days: number, marketId: MarketId) {
   const safeDays = Math.min(3650, Math.max(2, Math.floor(days)));
   return fetchStockNewsNow(symbol, true, marketId, safeDays);
 }
@@ -494,41 +512,69 @@ export async function pollNewsNow() {
   pollInFlight = true;
   status.lastAttemptAt = new Date().toISOString();
   try {
-    const coverage = await getCoverageBatch();
-    const symbols = coverage.symbols;
-    const rssUrls = (process.env.NEWS_TRACKER_RSS_URLS ?? "").split(",").map((item: string) => item.trim()).filter((item: string) => item.startsWith("http")).slice(0, 10);
-    const symbolBatch = await fetchSymbolNewsInBatches(symbols);
-    const symbolResults = symbolBatch.results;
-    const auxiliaryResults = await Promise.allSettled([
-      ...rssUrls.map((feedUrl: string) => fetchRssFeed(feedUrl, "IN")),
-      fetchOptionalNews(symbols, "IN").then((items) => items.map((item) => ({ ...item, marketId: "IN" as const, summary: item.summary ?? null } as RawArticle))),
-    ]);
+    // Each market polls its OWN universe. Previously a single Indian symbol list was
+    // fetched once and then relabelled with every market id, which is worse than
+    // useless: it wrote Indian symbols under a foreign market.
+    const coverageByMarket = new Map<MarketId, { symbols: string[]; universeErrors: string[] }>();
+    for (const marketId of MARKET_IDS) {
+      coverageByMarket.set(marketId, await getCoverageBatch(marketId));
+    }
+    const inCoverage = coverageByMarket.get("IN") ?? { symbols: [], universeErrors: [] };
+    const symbols = inCoverage.symbols;
+    // Per-market publisher feeds from the catalog, plus any operator override.
+    const rssOverride = (process.env.NEWS_TRACKER_RSS_URLS ?? "").split(",").map((item: string) => item.trim()).filter((item: string) => item.startsWith("http"));
+    // Poll EVERY configured market with its own scope. Previously this polled once with
+    // a hardcoded "IN", so every market's news came from the Indian edition.
+    const polledMarkets = MARKET_IDS;
+    // Symbol news used to be fetched once with a hardcoded "IN", so every market's
+    // symbol coverage was Indian. Poll each configured market with its own scope.
+    const symbolBatches = await Promise.allSettled(polledMarkets.map((marketId) => fetchSymbolNewsInBatches(coverageByMarket.get(marketId)?.symbols ?? [], marketId)));
+    const symbolResults = symbolBatches.flatMap((batch) => batch.status === "fulfilled" ? batch.value.results : []);
+    const symbolRateLimited = symbolBatches.some((batch) => batch.status === "fulfilled" && batch.value.rateLimited);
+    const auxiliaryResults = await Promise.allSettled(
+      polledMarkets.flatMap((marketId) => [
+        ...[...publisherFeedUrlsFor(marketId), ...rssOverride].slice(0, 12).map((feedUrl: string) => fetchRssFeed(feedUrl, marketId)),
+        fetchOptionalNews(symbols, marketId).then((items) => items.map((item) => ({ ...item, marketId, summary: item.summary ?? null } as RawArticle))),
+      ]),
+    );
     const pollResults = [...symbolResults, ...auxiliaryResults];
     const failedProviders = pollResults.filter((result) => result.status === "rejected");
     const rawArticles = pollResults.flatMap((result) => result.status === "fulfilled" ? result.value : []);
     const cappedRawArticles = rawArticles.slice(0, getMaxArticlesPerPoll());
     if (failedProviders.length === pollResults.length && failedProviders.length > 0) throw new Error(`All configured news providers failed: ${String(failedProviders[0].reason)}`);
     const capWarning = rawArticles.length > cappedRawArticles.length ? `; ${rawArticles.length - cappedRawArticles.length} articles deferred by poll cap` : "";
-    const rateLimitWarning = symbolBatch.rateLimited ? "; Finnhub rate limit cooldown active" : "";
-    if (failedProviders.length > 0 || coverage.universeErrors.length > 0 || capWarning || rateLimitWarning) status.lastError = `${failedProviders.length} provider polls failed; ${coverage.universeErrors.length} universe warnings${rateLimitWarning}${capWarning}; partial results retained`;
+    const rateLimitWarning = symbolRateLimited ? "; Finnhub rate limit cooldown active" : "";
+    const universeWarnings = [...coverageByMarket.values()].reduce((sum, entry) => sum + entry.universeErrors.length, 0);
+    if (failedProviders.length > 0 || universeWarnings > 0 || capWarning || rateLimitWarning) status.lastError = `${failedProviders.length} provider polls failed; ${universeWarnings} universe warnings${rateLimitWarning}${capWarning}; partial results retained`;
     status.articlesSeen += cappedRawArticles.length;
     await persistExtractedArticles(cappedRawArticles);
+    // Recommendations and event projections used to run for "IN" only, so the Live feed
+    // and the recommendation surfaces were empty for every other market no matter how
+    // much news arrived. Both now run once per configured market.
+    const lookback = Number(process.env.AUTONOMOUS_RECOMMENDATION_LOOKBACK_DAYS ?? 30);
+    const projectionLimit = Number(process.env.EVENT_PROJECTION_MAX_PER_POLL ?? 250);
     let autonomousRecommendations = 0;
-    try {
-      const { discoverAutonomousRecommendations } = await import("./autonomous-recommendations");
-      autonomousRecommendations = (await discoverAutonomousRecommendations(Number(process.env.AUTONOMOUS_RECOMMENDATION_LOOKBACK_DAYS ?? 30), 50)).recommendations.length;
-    } catch (error) {
-      console.warn("[NewsTracker] autonomous recommendation evaluation unavailable:", error);
-    }
     let eventProjections = 0;
     try {
+      const { discoverAutonomousRecommendations } = await import("./autonomous-recommendations");
       const { projectLatestEvidence } = await import("./event-projections");
-      eventProjections = (await projectLatestEvidence(Number(process.env.EVENT_PROJECTION_MAX_PER_POLL ?? 250))).stored;
+      for (const marketId of polledMarkets) {
+        try {
+          autonomousRecommendations += (await discoverAutonomousRecommendations(marketId, lookback, 50)).recommendations.length;
+        } catch (error) {
+          console.warn(`[NewsTracker] autonomous recommendation evaluation unavailable for ${marketId}:`, error);
+        }
+        try {
+          eventProjections += (await projectLatestEvidence(marketId, projectionLimit)).stored;
+        } catch (error) {
+          console.warn(`[NewsTracker] event projection evaluation unavailable for ${marketId}:`, error);
+        }
+      }
     } catch (error) {
-      console.warn("[NewsTracker] event projection evaluation unavailable:", error);
+      console.warn("[NewsTracker] autonomous evaluation modules unavailable:", error);
     }
     status.lastSuccessAt = new Date().toISOString();
-    if (failedProviders.length === 0 && coverage.universeErrors.length === 0 && !capWarning && !rateLimitWarning) status.lastError = null;
+    if (failedProviders.length === 0 && universeWarnings === 0 && !capWarning && !rateLimitWarning) status.lastError = null;
     return { skipped: false, seen: cappedRawArticles.length, stored: status.articlesStored, autonomousRecommendations, eventProjections };
   } catch (error) {
     status.lastError = String(error);
@@ -561,7 +607,7 @@ export function sortTrackedNews(items: ExtractedNews[], symbol?: string) {
 function mapPersistedNews(item: Awaited<ReturnType<typeof getLatestNewsEvents>>[number]) {
   return {
     id: item.id,
-    marketId: (item.marketId as MarketId) ?? "IN",
+    marketId: resolveMarketId(item.marketId),
     symbol: item.symbol,
     headline: item.headline,
     category: item.category,
@@ -578,7 +624,7 @@ function mapPersistedNews(item: Awaited<ReturnType<typeof getLatestNewsEvents>>[
 }
 
 function keepPublishedNews(item: ReturnType<typeof mapPersistedNews>, marketId?: MarketId) {
-  return item.source.includes("Manually approved") || classifyNewsPublication({ marketId: item.marketId ?? marketId ?? "IN", headline: item.headline, summary: item.summary, symbol: item.symbol, source: item.source }).published;
+  return item.source.includes("Manually approved") || classifyNewsPublication({ marketId: resolveMarketId(item.marketId ?? marketId), headline: item.headline, summary: item.summary, symbol: item.symbol, source: item.source }).published;
 }
 
 function dedupeCanonicalArticles(items: ReturnType<typeof mapPersistedNews>[]) {
@@ -599,9 +645,22 @@ function dedupeCanonicalArticles(items: ReturnType<typeof mapPersistedNews>[]) {
 export async function getLatestTrackedNews(limit = 50, symbol?: string, marketId?: MarketId) {
   const persisted = symbol ? await getImpactRankedNewsEvents(symbol, limit, marketId) : await getLatestNewsEvents(limit, marketId);
   if (persisted.length) return dedupeCanonicalArticles(persisted.map(mapPersistedNews)).filter((item) => keepPublishedNews(item, marketId)).slice(0, limit);
+  // In-memory fallback, used only when nothing is persisted yet.
+  //
+  // This previously returned articles from EVERY market: it iterated the whole cache
+  // and filtered only on publication quality, never on the requested market. So a user
+  // on Australia, whose market had nothing persisted, was shown the cache's Indian
+  // articles instead — the cross-market substitution this app must never do.
+  //
+  // The requested market is now applied unconditionally, and an article whose market is
+  // UNKNOWN is excluded rather than shown, because it cannot be attributed to anyone.
+  const requestedMarket = resolveMarketId(marketId);
   return sortTrackedNews([...articles.values()], symbol).filter((item) => {
+    const articleMarket = resolveMarketId(item.marketId);
+    if (requestedMarket === "UNKNOWN") return false;
+    if (articleMarket !== requestedMarket) return false;
     if (item.source.includes("Manually approved")) return true;
-    return classifyNewsPublication({ marketId: item.marketId ?? "IN", headline: item.headline, summary: item.summary, symbol: item.symbol, source: item.source }).published;
+    return classifyNewsPublication({ marketId: articleMarket, headline: item.headline, summary: item.summary, symbol: item.symbol, source: item.source }).published;
   }).slice(0, limit);
 }
 
@@ -631,7 +690,7 @@ export function resolveHistoricalArchiveRange({ days = 30, startDate, endDate, n
   return { from: new Date(now.getTime() - safeDays * 24 * 60 * 60 * 1000), to: undefined, days: safeDays, startDate: undefined, endDate: undefined } as const;
 }
 
-export async function getHistoricalTrackedNews({ limit = 100, symbol, marketId = "IN", days = 30, startDate, endDate, page = 0, archiveScope = "All archive", archiveSentiment = "All sentiment", archiveOrder = "Newest first" }: { limit?: number; symbol?: string; marketId?: MarketId; days?: number; startDate?: string; endDate?: string; page?: number; archiveScope?: ArchiveScope; archiveSentiment?: ArchiveSentiment; archiveOrder?: ArchiveOrder }) {
+export async function getHistoricalTrackedNews({ limit = 100, symbol, marketId, days = 30, startDate, endDate, page = 0, archiveScope = "All archive", archiveSentiment = "All sentiment", archiveOrder = "Newest first" }: { limit?: number; symbol?: string; marketId: MarketId; days?: number; startDate?: string; endDate?: string; page?: number; archiveScope?: ArchiveScope; archiveSentiment?: ArchiveSentiment; archiveOrder?: ArchiveOrder }) {
   const range = resolveHistoricalArchiveRange({ days, startDate, endDate });
   if ("error" in range) return { marketId, days: 0, page: Math.max(0, page), limit: Math.min(200, Math.max(1, limit)), articles: [], fetchedAt: new Date().toISOString(), coverage: "invalid" as const, sourceCoverage: [], rangeError: range.error };
   const persisted = await getNewsArchiveEvents({ marketId, symbol, from: range.from, to: range.to, limit: 5000, offset: 0 });

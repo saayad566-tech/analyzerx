@@ -1,16 +1,26 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, Easing, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Animated, Easing, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
 import { ScreenContainer } from "@/components/screen-container";
+import { Skeleton, SkeletonList } from "@/components/skeleton";
+import { AnimatedPressable } from "@/components/motion";
+import { ModelSwitcher } from "@/components/model-switcher";
 import { trpc } from "@/lib/trpc";
 import { clearMarketChatHistory, loadMarketChatHistory, loadMarketChatRuntimeMode, saveMarketChatHistory, saveMarketChatRuntimeMode, type LocalChatMessage, type MarketChatRuntimeMode } from "@/lib/local-preferences";
 import type { AnalyzerXAction, MarketChatAttachment } from "@/server/market-chat";
 import { getActiveLocalAIModelId, getLocalAIModel, getLocalAIRuntime, type LocalAIModelId } from "@/lib/local-ai";
-import { buildBoundedLocalPrompt, formatAssistantFailure, isGeneralChatQuestion, isCurrentDataQuestion, localPromptNotice, resolveMarketChatEngine, sanitizeLocalOutput, trimLocalHistory } from "@/lib/market-chat-runtime";
+import { buildAppAwarenessAnswer } from "@/lib/assistant-app-awareness";
+import { buildBoundedLocalPrompt, formatAssistantFailure, streamingStatusLabel, isConnectedEngineConfigured, isGeneralChatQuestion, isCurrentDataQuestion, localPromptNotice, resolveMarketChatEngine, trimLocalHistory } from "@/lib/market-chat-runtime";
+import { createStreamingSanitizer, sanitizeAssistantOutput } from "@/lib/assistant-output";
+import { humanize } from "@/lib/safe-text";
+import { keyboardAvoidingBehavior } from "@/lib/keyboard-avoidance";
+import { starterPromptsForMarket } from "@/lib/market-defaults";
+import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
+import { LocalAIModelError, localAISession } from "@/lib/local-ai-session";
 import { getLocalAIDeviceTelemetrySnapshot, recordLocalAIInference } from "@/lib/local-ai-telemetry";
 import { MarketScopeChip } from "@/components/market-scope-chip";
 import { useMarketContext } from "@/lib/market-context";
@@ -26,7 +36,7 @@ const border = "#26364D";
 type ChatItem = LocalChatMessage & { id: string; confidence?: "high" | "medium" | "low"; symbol?: string | null; sources?: { label: string; detail: string; url?: string }[]; dataAsOf?: string | null; limitations?: string[]; suggestedQuestions?: string[]; action?: AnalyzerXAction | null; attachmentLabel?: string; retryQuestion?: string; retryAttachments?: PendingAttachment[] };
 
 type PendingAttachment = MarketChatAttachment & { id: string; label: string; previewUri?: string; sourceUri?: string };
-const starterQuestions = ["Analyze TCS fundamentals", "What are the latest risks for RELIANCE?", "Show me where Market Flows is and explain FII vs DII"];
+// Starter prompts follow the ACTIVE market (see starterPromptsForMarket).
 
 async function uriToDataUrl(uri: string, mimeType: string) {
   if (uri.startsWith("data:")) return uri;
@@ -54,8 +64,14 @@ export default function MarketChatScreen() {
   const [activeLocalModel, setActiveLocalModel] = useState<string | null>(null);
   const [runtimeMode, setRuntimeMode] = useState<MarketChatRuntimeMode>("auto");
   const [localStreaming, setLocalStreaming] = useState(false);
+  // Real keyboard height, so the composer is lifted on Android where
+  // KeyboardAvoidingView cannot be relied on (edge-to-edge disables adjustResize).
+  const keyboardInset = useKeyboardInset();
+  // Starter prompts follow the active market rather than a hardcoded Indian list.
+  const starterPrompts = useMemo(() => starterPromptsForMarket(marketId), [marketId]);
   const chat = trpc.chat.ask.useMutation();
   const ground = trpc.chat.ground.useMutation();
+  const generalChat = trpc.chat.general.useMutation();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
 
@@ -75,7 +91,16 @@ export default function MarketChatScreen() {
 
   const nativeRuntimeAvailable = getLocalAIRuntime().isAvailable;
   const effectiveEngine = resolveMarketChatEngine({ mode: runtimeMode, activeModelId: activeLocalModelId, nativeRuntimeAvailable, hasAttachments: false });
-  const runtimeStatus = effectiveEngine === "local" ? { label: "Local AI", detail: activeLocalModel ?? "verified local model", color: teal, icon: "hardware-chip-outline" as const } : effectiveEngine === "connected" ? { label: runtimeMode === "local" || runtimeMode === "auto" ? "Connected fallback" : "Connected", detail: runtimeMode === "local" && !nativeRuntimeAvailable ? "native bridge unavailable · safe fallback" : "hosted evidence engine", color: amber, icon: "cloud-outline" as const } : { label: "Unavailable", detail: "choose Connected or load Local AI", color: coral, icon: "warning-outline" as const };
+  const runtimeStatus = effectiveEngine === "local"
+    ? { label: "Local AI", detail: activeLocalModel ?? "verified local model", color: teal, icon: "hardware-chip-outline" as const }
+    : effectiveEngine === "connected"
+      ? (isConnectedEngineConfigured()
+        ? { label: runtimeMode === "local" || runtimeMode === "auto" ? "Connected fallback" : "Connected", detail: "hosted evidence engine", color: amber, icon: "cloud-outline" as const }
+        // Saying "Connected" while no provider exists is contradictory. With no
+        // engine configured, the assistant can only return source-grounded market
+        // context — so say exactly that.
+        : { label: "No engine configured", detail: "no hosted provider and no local model", color: coral, icon: "warning-outline" as const })
+      : { label: "Unavailable", detail: "choose Connected or load Local AI", color: coral, icon: "warning-outline" as const };
   const runtimeOpacity = useRef(new Animated.Value(1)).current;
   const previousEngine = useRef(effectiveEngine);
 
@@ -144,6 +169,9 @@ export default function MarketChatScreen() {
     await chooseRuntimeMode("connected");
   }
 
+  // Whether the currently streaming answer was grounded in verified evidence. A
+  // general question is not grounded, so the status line must not claim it was.
+  const [streamingGrounded, setStreamingGrounded] = useState(false);
   async function sendMessage(value = draft, attachmentOverride?: PendingAttachment[], retryFailureId?: string) {
     const question = value.trim();
     const attachmentSnapshot = attachmentOverride ?? attachments;
@@ -168,10 +196,37 @@ export default function MarketChatScreen() {
     const next = retryFailureId ? baseMessages : [...baseMessages, userMessage];
     setMessages(next); setDraft(""); setAttachments([]);
     try {
+      // App questions — where a feature is, how to open it, what it does — are answered
+      // from the verified app inventory, with no model call and no data request. This is
+      // what stops "Show me where Market Flows is" being routed to the data path and
+      // answered with "live market data required". A data question returns null here and
+      // continues down the normal pipeline untouched.
+      const appAnswer = attachmentSnapshot.length ? null : buildAppAwarenessAnswer(question);
+      if (appAnswer) {
+        const assistantMessage: ChatItem = {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: appAnswer.answer,
+          confidence: "high",
+          limitations: ["Answered from AnalyzerX's own screen inventory, so it needs no market data."],
+        };
+        const completed = [...next, assistantMessage];
+        setMessages(completed);
+        await saveMarketChatHistory(completed);
+        // "Open Market Flows" navigates directly, because the route is verified.
+        if (appAnswer.route) router.push(appAnswer.route as never);
+        return;
+      }
       if (useLocal) {
         const generalQuestion = isGeneralChatQuestion(question);
+        setStreamingGrounded(!generalQuestion);
         const grounded = generalQuestion ? null : await ground.mutateAsync({ message: question || "Summarize the supplied market context.", marketId });
-        if (!selectedRuntime?.isAvailable) throw new Error("The native Local AI bridge is unavailable in this build.");
+        const modelId = activeLocalModelId;
+        if (!modelId) throw new LocalAIModelError("No on-device model is selected.", "Choose a model in the switcher, or use Connected mode.");
+        // Load (or confirm) the model before inference so the UI never claims a
+        // model is ready while the native engine is empty.
+        await localAISession.ensureModelLoaded(modelId);
+        localAISession.markGenerating(true);
         setLocalStreaming(true);
         const startedAt = Date.now();
         const telemetrySnapshot = await getLocalAIDeviceTelemetrySnapshot();
@@ -179,30 +234,60 @@ export default function MarketChatScreen() {
         let tokenCount = 0;
         const localInputs = attachmentSnapshot.length ? { imagePath: attachmentSnapshot.find((item) => item.kind === "image")?.sourceUri, audioPath: attachmentSnapshot.find((item) => item.kind === "audio")?.sourceUri } : undefined;
         const localPrompt = buildBoundedLocalPrompt(question, grounded?.context ?? "", activeLocalModel ?? "the selected local model", !generalQuestion, selectedManifest?.contextTokens ?? null);
+        // Stream through the output guard so reasoning and control tokens are
+        // withheld as they arrive, and render tokens live.
+        const guard = createStreamingSanitizer({ systemInstruction: localPrompt.system, maxChars: 8000 });
+        const assistantId = `assistant-${Date.now()}`;
+        setMessages((current) => [...current, { id: assistantId, role: "assistant", content: "" }]);
         try {
-          await selectedRuntime.stream(localPrompt.turn, (token) => { answer += token; tokenCount += token.trim().split(/\\s+/).filter(Boolean).length; }, { ...localInputs, systemInstruction: localPrompt.system });
+          await selectedRuntime.stream(localPrompt.turn, (token) => { const safe = guard.push(token); if (safe) { answer += safe; setMessages((current) => current.map((item) => (item.id === assistantId ? { ...item, content: answer } : item))); } tokenCount += token.trim().split(/\\s+/).filter(Boolean).length; }, { ...localInputs, systemInstruction: localPrompt.system });
           await recordLocalAIInference({ modelId: activeLocalModelId ?? "unknown", startedAt: new Date(startedAt).toISOString(), durationMs: Date.now() - startedAt, tokenCount, backend: selectedRuntime.kind, success: true, ...telemetrySnapshot });
         } catch (localError) {
           await recordLocalAIInference({ modelId: activeLocalModelId ?? "unknown", startedAt: new Date(startedAt).toISOString(), durationMs: Date.now() - startedAt, tokenCount, backend: selectedRuntime.kind, success: false, errorCode: localError instanceof Error ? localError.name : "LOCAL_AI_ERROR", ...telemetrySnapshot });
           throw localError;
         }
-        const sanitizedAnswer = sanitizeLocalOutput(answer);
+        const tail = guard.flush();
+        if (tail) answer += tail;
+        const sanitizedAnswer = sanitizeAssistantOutput(answer, { systemInstruction: localPrompt.system });
         if (!sanitizedAnswer) throw new Error("The local model returned an empty response.");
-        const assistantMessage: ChatItem = { id: `assistant-${Date.now()}`, role: "assistant", content: sanitizedAnswer, confidence: "medium", symbol: grounded?.symbol ?? null, sources: grounded?.sources ?? [], dataAsOf: grounded?.dataAsOf ?? null, limitations: [`Generated by ${activeLocalModel ?? "the selected local model"}${generalQuestion ? " for general chat." : " from bounded verified context."}`, ...(localPromptNotice(localPrompt.wasTrimmed, selectedManifest?.contextTokens ?? null) ? [localPromptNotice(localPrompt.wasTrimmed, selectedManifest?.contextTokens ?? null)!] : []), "Local inference does not execute app actions; use Connected mode for navigation actions and as a fallback when native multimodal processing is unavailable."] };
+        const assistantMessage: ChatItem = { id: assistantId, role: "assistant", content: sanitizedAnswer, confidence: "medium", symbol: grounded?.symbol ?? null, sources: grounded?.sources ?? [], dataAsOf: grounded?.dataAsOf ?? null, limitations: [`Generated by ${activeLocalModel ?? "the selected local model"}${generalQuestion ? " for general chat." : " from bounded verified context."}`, ...(localPromptNotice(localPrompt.wasTrimmed, selectedManifest?.contextTokens ?? null) ? [localPromptNotice(localPrompt.wasTrimmed, selectedManifest?.contextTokens ?? null)!] : []), "Local inference does not execute app actions; use Connected mode for navigation actions and as a fallback when native multimodal processing is unavailable."] };
         const completed = [...next, assistantMessage]; setMessages(completed); await saveMarketChatHistory(completed);
       } else {
-        const response = await chat.mutateAsync({ message: question, marketId, history: trimLocalHistory(baseMessages.slice(-8).map(({ role, content }) => ({ role: role as "user" | "assistant", content })) as { role: "user" | "assistant"; content: string }[]), attachments: attachmentSnapshot.map(({ id: _id, label: _label, previewUri: _previewUri, sourceUri: _sourceUri, ...item }) => item) });
-        const assistantMessage: ChatItem = { id: `assistant-${Date.now()}`, role: "assistant", content: response.answer, confidence: response.confidence, symbol: response.symbol, sources: response.sources, dataAsOf: response.dataAsOf, limitations: response.limitations, suggestedQuestions: response.suggestedQuestions, action: response.action };
-        const completed = [...next, assistantMessage]; setMessages(completed); await saveMarketChatHistory(completed);
-        if (response.action) executeAnalyzerXAction(response.action);
+        const generalQuestion = isGeneralChatQuestion(question);
+        const trimmedHistory = trimLocalHistory(baseMessages.slice(-8).map(({ role, content }) => ({ role: role as "user" | "assistant", content })) as { role: "user" | "assistant"; content: string }[]);
+        if (generalQuestion && attachmentSnapshot.length === 0) {
+          // A general question must never be answered with an unrelated market
+          // headline dump. Use the general assistant when a hosted provider is
+          // configured; when no engine can serve it, say so plainly.
+          if (!isConnectedEngineConfigured()) {
+            const unavailable: ChatItem = {
+              id: `assistant-${Date.now()}`,
+              role: "assistant",
+              content: "I can't answer general questions on this device yet: no hosted provider is configured and no on-device model is loaded, so no engine is available to answer them. To enable general answers, open Local AI and download a model (Qwen3 0.6B LiteRT is about 498 MB), or configure a hosted provider. I can still answer market questions from source-grounded evidence — ask about a ticker, a market, or an app feature.",
+              confidence: "low",
+              limitations: ["No answering engine is available: no hosted provider is configured and no local model is downloaded."],
+            };
+            const completed = [...next, unavailable]; setMessages(completed); await saveMarketChatHistory(completed);
+          } else {
+            const general = await generalChat.mutateAsync({ message: question, history: trimmedHistory });
+            const assistantMessage: ChatItem = { id: `assistant-${Date.now()}`, role: "assistant", content: sanitizeAssistantOutput(general.answer), confidence: "medium", symbol: null, sources: [], dataAsOf: null, limitations: general.limitations };
+            const completed = [...next, assistantMessage]; setMessages(completed); await saveMarketChatHistory(completed);
+          }
+        } else {
+          const response = await chat.mutateAsync({ message: question, marketId, history: trimmedHistory, attachments: attachmentSnapshot.map(({ id: _id, label: _label, previewUri: _previewUri, sourceUri: _sourceUri, ...item }) => item) });
+          const assistantMessage: ChatItem = { id: `assistant-${Date.now()}`, role: "assistant", content: sanitizeAssistantOutput(response.answer), confidence: response.confidence, symbol: response.symbol, sources: response.sources, dataAsOf: response.dataAsOf, limitations: response.limitations, suggestedQuestions: response.suggestedQuestions, action: response.action };
+          const completed = [...next, assistantMessage]; setMessages(completed); await saveMarketChatHistory(completed);
+          if (response.action) executeAnalyzerXAction(response.action);
+        }
       }
     } catch (error) {
       // The failure text is a classified, user-facing message. Raw runtime errors can
       // embed the entire prompt (including chat-template tokens), so the message is
       // never taken verbatim from the thrown error.
-      const failure: ChatItem = { id: `error-${Date.now()}`, role: "assistant", content: formatAssistantFailure(error), confidence: "low", limitations: [useLocal ? `The local model (${activeLocalModel ?? "the selected model"}) could not complete this request. Your conversation is preserved; retry, or switch to Connected mode.` : "Connected mode could not complete this request. Your conversation is preserved."], retryQuestion: question, retryAttachments: attachmentSnapshot };
+      const failure: ChatItem = { id: `error-${Date.now()}`, role: "assistant", content: error instanceof LocalAIModelError ? `${error.userMessage} ${error.nextAction}` : formatAssistantFailure(error), confidence: "low", limitations: [useLocal ? `The local model (${activeLocalModel ?? "the selected model"}) could not complete this request. Your conversation is preserved; retry, or switch to Connected mode.` : "Connected mode could not complete this request. Your conversation is preserved."], retryQuestion: question, retryAttachments: attachmentSnapshot };
       const completed = [...next, failure]; setMessages(completed); await saveMarketChatHistory(completed);
     } finally {
+      localAISession.markGenerating(false);
       setLocalStreaming(false);
     }
   }
@@ -210,8 +295,8 @@ export default function MarketChatScreen() {
   async function clearHistory() { await clearMarketChatHistory(); setMessages([]); }
 
   return (
-    <ScreenContainer edges={["top", "left", "right"]} containerClassName="bg-background" className="px-4">
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}>
+    <ScreenContainer edges={["top", "left", "right"]} containerClassName="bg-background" className="px-4" keyboardAware={false}>
+      <KeyboardAvoidingView style={[styles.flex, keyboardInset > 0 && { paddingBottom: keyboardInset }]} behavior={keyboardAvoidingBehavior(Platform.OS)} keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}>
                   <View style={styles.header}>
 
           <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]} accessibilityLabel="Go back"><Ionicons name="chevron-back" size={20} color={ink} /></Pressable>
@@ -224,19 +309,36 @@ export default function MarketChatScreen() {
         <MarketScopeChip compact />
         <View style={styles.disclaimer}><Ionicons name="sparkles-outline" size={17} color={amber} /><Text style={styles.disclaimerText}>Plain English market help for stocks, crypto, gold, forex, charts, screenshots, and app navigation. {activeLocalModel ? `Selected local model: ${activeLocalModel}. ` : "No local model is loaded. "}Current-news answers still require verified connected evidence; the assistant never invents live facts.</Text></View>
         <View style={styles.modeRow}><Text style={styles.modeLabel}>ENGINE</Text>{(["auto", "local", "connected"] as MarketChatRuntimeMode[]).map((mode) => <Pressable key={mode} onPress={() => void chooseRuntimeMode(mode)} style={({ pressed }) => [styles.modeButton, runtimeMode === mode && styles.modeButtonActive, pressed && styles.pressed]}><Text style={[styles.modeText, runtimeMode === mode && styles.modeTextActive]}>{mode === "auto" ? "Auto" : mode === "local" ? "Local model" : "Connected"}</Text></Pressable>)}</View>
-        {!hydrated ? <ActivityIndicator color={teal} style={styles.loader} /> : null}
+        <View style={{ paddingBottom: 8 }}>
+          <ModelSwitcher
+            mode={runtimeMode}
+            activeModelId={activeLocalModelId}
+            onChange={(nextSelection) => {
+              setRuntimeMode(nextSelection.mode);
+              setActiveLocalModelId(nextSelection.activeModelId);
+              setActiveLocalModel(nextSelection.activeModelId ? getLocalAIModel(nextSelection.activeModelId).displayName : null);
+            }}
+          />
+        </View>
+        {!hydrated ? <View style={styles.loader}><SkeletonList rows={3} /></View> : null}
         <FlatList
           data={messages}
           keyExtractor={(item) => item.id}
           style={styles.list}
           contentContainerStyle={messages.length ? styles.messageContent : styles.emptyContent}
           showsVerticalScrollIndicator={false}
-          ListEmptyComponent={<View style={styles.emptyState}><View style={styles.brainIcon}><Ionicons name="sparkles" size={28} color={amber} /></View><Text style={styles.emptyTitle}>Your research co-pilot</Text><Text style={styles.emptyBody}>Ask about a stock or market, upload a chart or error screenshot, or hold the microphone to explain what you need.</Text><View style={styles.suggestionStack}>{starterQuestions.map((question) => <Pressable key={question} onPress={() => void sendMessage(question)} style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}><Text style={styles.suggestionText}>{question}</Text><Ionicons name="arrow-forward" size={15} color={teal} /></Pressable>)}</View></View>}
-          renderItem={({ item }) => <View style={[styles.messageRow, item.role === "user" ? styles.userRow : styles.assistantRow]}><View style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.assistantBubble]}><Text style={styles.roleLabel}>{item.role === "user" ? "YOU" : `ANALYZERX${item.symbol ? ` · ${item.symbol}` : ""}`}</Text>{item.attachmentLabel ? <View style={styles.attachmentBadge}><Ionicons name="attach" size={13} color={teal} /><Text style={styles.attachmentText}>{item.attachmentLabel}</Text></View> : null}<Text style={styles.messageText}>{item.content}</Text>{item.role === "assistant" && item.confidence ? <Text style={[styles.metaText, { color: item.confidence === "high" ? teal : item.confidence === "medium" ? amber : coral }]}>{item.confidence.toUpperCase()} CONFIDENCE{item.dataAsOf ? ` · DATA ${new Date(item.dataAsOf).toLocaleString()}` : ""}</Text> : null}{item.action ? <View style={styles.actionBadge}><Ionicons name="flash-outline" size={14} color={amber} /><Text style={styles.actionText}>Action executed: {item.action.type.replaceAll("_", " ")}</Text></View> : null}{item.sources?.length ? <View style={styles.sourceList}><Text style={styles.sourceHeading}>EVIDENCE USED</Text>{item.sources.slice(0, 4).map((source) => <View key={`${item.id}-${source.label}`} style={styles.sourceRow}><View style={styles.sourceDot} /><View style={styles.sourceCopy}><Text style={styles.sourceLabel}>{source.label}</Text><Text style={styles.sourceDetail} numberOfLines={2}>{source.detail}</Text></View></View>)}</View> : null}{item.limitations?.length ? <View style={styles.limitations}><Text style={styles.limitationHeading}>LIMITATIONS</Text><Text style={styles.limitationText}>{item.limitations.slice(0, 2).join(" · ")}</Text></View> : null}{item.retryQuestion ? <Pressable onPress={() => void sendMessage(item.retryQuestion, item.retryAttachments ?? [], item.id)} disabled={chat.isPending || ground.isPending || localStreaming} style={({ pressed }) => [styles.retryButton, pressed && styles.pressed, (chat.isPending || ground.isPending || localStreaming) && styles.disabled]} accessibilityRole="button" accessibilityLabel="Retry failed assistant request"><Ionicons name="refresh-outline" size={15} color={amber} /><Text style={styles.retryText}>Retry request</Text></Pressable> : null}{item.suggestedQuestions?.length ? <View style={styles.followUps}><Text style={styles.sourceHeading}>TRY NEXT</Text>{item.suggestedQuestions.slice(0, 3).map((question) => <Pressable key={`${item.id}-${question}`} onPress={() => void sendMessage(question)} style={({ pressed }) => [styles.followUp, pressed && styles.pressed]}><Text style={styles.followUpText}>{question}</Text></Pressable>)}</View> : null}</View></View>}
+          initialNumToRender={12}
+          maxToRenderPerBatch={8}
+          windowSize={7}
+          updateCellsBatchingPeriod={50}
+          removeClippedSubviews
+          keyboardShouldPersistTaps="handled"
+          ListEmptyComponent={<View style={styles.emptyState}><View style={styles.brainIcon}><Ionicons name="sparkles" size={28} color={amber} /></View><Text style={styles.emptyTitle}>Your research co-pilot</Text><Text style={styles.emptyBody}>Ask about a stock or market, upload a chart or error screenshot, or hold the microphone to explain what you need.</Text><View style={styles.suggestionStack}>{starterPrompts.map((question) => <Pressable key={question} onPress={() => void sendMessage(question)} style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}><Text style={styles.suggestionText}>{question}</Text><Ionicons name="arrow-forward" size={15} color={teal} /></Pressable>)}</View></View>}
+          renderItem={({ item }) => <View style={[styles.messageRow, item.role === "user" ? styles.userRow : styles.assistantRow]}><View style={[styles.bubble, item.role === "user" ? styles.userBubble : styles.assistantBubble]}><Text style={styles.roleLabel}>{item.role === "user" ? "YOU" : `ANALYZERX${item.symbol ? ` · ${item.symbol}` : ""}`}</Text>{item.attachmentLabel ? <View style={styles.attachmentBadge}><Ionicons name="attach" size={13} color={teal} /><Text style={styles.attachmentText}>{item.attachmentLabel}</Text></View> : null}<Text style={styles.messageText}>{item.content}</Text>{item.role === "assistant" && item.confidence ? <Text style={[styles.metaText, { color: item.confidence === "high" ? teal : item.confidence === "medium" ? amber : coral }]}>{item.confidence.toUpperCase()} CONFIDENCE{item.dataAsOf ? ` · DATA ${new Date(item.dataAsOf).toLocaleString()}` : ""}</Text> : null}{item.action ? <View style={styles.actionBadge}><Ionicons name="flash-outline" size={14} color={amber} /><Text style={styles.actionText}>Action executed: {humanize(item.action.type)}</Text></View> : null}{item.sources?.length ? <View style={styles.sourceList}><Text style={styles.sourceHeading}>EVIDENCE USED</Text>{item.sources.slice(0, 4).map((source) => <View key={`${item.id}-${source.label}`} style={styles.sourceRow}><View style={styles.sourceDot} /><View style={styles.sourceCopy}><Text style={styles.sourceLabel}>{source.label}</Text><Text style={styles.sourceDetail} numberOfLines={2}>{source.detail}</Text></View></View>)}</View> : null}{item.limitations?.length ? <View style={styles.limitations}><Text style={styles.limitationHeading}>LIMITATIONS</Text><Text style={styles.limitationText}>{item.limitations.slice(0, 2).join(" · ")}</Text></View> : null}{item.retryQuestion ? <Pressable onPress={() => void sendMessage(item.retryQuestion, item.retryAttachments ?? [], item.id)} disabled={chat.isPending || ground.isPending || localStreaming} style={({ pressed }) => [styles.retryButton, pressed && styles.pressed, (chat.isPending || ground.isPending || localStreaming) && styles.disabled]} accessibilityRole="button" accessibilityLabel="Retry failed assistant request"><Ionicons name="refresh-outline" size={15} color={amber} /><Text style={styles.retryText}>Retry request</Text></Pressable> : null}{item.suggestedQuestions?.length ? <View style={styles.followUps}><Text style={styles.sourceHeading}>TRY NEXT</Text>{item.suggestedQuestions.slice(0, 3).map((question) => <Pressable key={`${item.id}-${question}`} onPress={() => void sendMessage(question)} style={({ pressed }) => [styles.followUp, pressed && styles.pressed]}><Text style={styles.followUpText}>{question}</Text></Pressable>)}</View> : null}</View></View>}
         />
-        {chat.isPending || ground.isPending || localStreaming ? <View style={styles.typing}><ActivityIndicator size="small" color={teal} /><Text style={styles.typingText}>{localStreaming ? `Streaming from ${activeLocalModel ?? "local model"} over grounded evidence…` : "Reading connected evidence and preparing a concise answer…"}</Text></View> : null}
+        {chat.isPending || ground.isPending || localStreaming ? <View style={styles.typing}><Skeleton width={16} height={16} radius={8} /><Text style={styles.typingText}>{localStreaming ? streamingStatusLabel({ engine: "local", model: activeLocalModel, grounded: streamingGrounded }) : streamingStatusLabel({ engine: "connected", grounded: false })}</Text></View> : null}
         {attachments.length ? <View style={styles.attachmentTray}>{attachments.map((item) => <View key={item.id} style={styles.pendingAttachment}>{item.previewUri ? <Image source={{ uri: item.previewUri }} style={styles.preview} /> : <Ionicons name="mic-outline" size={18} color={teal} />}<Text style={styles.pendingText}>{item.label}</Text><Pressable onPress={() => setAttachments((current) => current.filter((entry) => entry.id !== item.id))} accessibilityLabel={`Remove ${item.label}`}><Ionicons name="close-circle" size={17} color={muted} /></Pressable></View>)}</View> : null}
-        <View style={styles.composer}><Pressable onPress={() => void pickImage()} disabled={chat.isPending || ground.isPending || localStreaming || attachments.length >= 2} style={({ pressed }) => [styles.toolButton, pressed && styles.pressed, attachments.length >= 2 && styles.disabled]} accessibilityLabel="Attach screenshot or chart"><Ionicons name="image-outline" size={19} color={teal} /></Pressable><Pressable onPress={() => void toggleRecording()} disabled={chat.isPending || ground.isPending || localStreaming} style={({ pressed }) => [styles.toolButton, recorderState.isRecording && styles.recording, pressed && styles.pressed]} accessibilityLabel={recorderState.isRecording ? "Stop voice recording" : "Record voice question"}><Ionicons name={recorderState.isRecording ? "stop" : "mic-outline"} size={19} color={recorderState.isRecording ? "#FFFFFF" : teal} /></Pressable><TextInput value={draft} onChangeText={setDraft} placeholder={recorderState.isRecording ? "Recording voice question…" : "Ask about a company, market, chart, or app feature…"} placeholderTextColor="#6E7D92" style={styles.input} multiline maxLength={2_000} returnKeyType="send" onSubmitEditing={() => void sendMessage()} /><Pressable onPress={() => void sendMessage()} disabled={(!draft.trim() && attachments.length === 0) || chat.isPending || recorderState.isRecording} style={({ pressed }) => [styles.sendButton, pressed && styles.pressed, ((!draft.trim() && attachments.length === 0) || chat.isPending || ground.isPending || localStreaming || recorderState.isRecording) && styles.disabled]} accessibilityRole="button" accessibilityLabel="Send assistant question"><Ionicons name="arrow-up" size={19} color="#09111F" /></Pressable></View>
+        <View style={styles.composer}><Pressable onPress={() => void pickImage()} disabled={chat.isPending || ground.isPending || localStreaming || attachments.length >= 2} style={({ pressed }) => [styles.toolButton, pressed && styles.pressed, attachments.length >= 2 && styles.disabled]} accessibilityLabel="Attach screenshot or chart"><Ionicons name="image-outline" size={19} color={teal} /></Pressable><Pressable onPress={() => void toggleRecording()} disabled={chat.isPending || ground.isPending || localStreaming} style={({ pressed }) => [styles.toolButton, recorderState.isRecording && styles.recording, pressed && styles.pressed]} accessibilityLabel={recorderState.isRecording ? "Stop voice recording" : "Record voice question"}><Ionicons name={recorderState.isRecording ? "stop" : "mic-outline"} size={19} color={recorderState.isRecording ? "#FFFFFF" : teal} /></Pressable><TextInput value={draft} onChangeText={setDraft} placeholder={recorderState.isRecording ? "Recording voice question…" : "Ask about a company, market, chart, or app feature…"} placeholderTextColor="#6E7D92" style={styles.input} multiline maxLength={2_000} returnKeyType="send" onSubmitEditing={() => void sendMessage()} /><AnimatedPressable haptic="medium" onPress={() => void sendMessage()} disabled={(!draft.trim() && attachments.length === 0) || chat.isPending || recorderState.isRecording} style={[styles.sendButton, ((!draft.trim() && attachments.length === 0) || chat.isPending || ground.isPending || localStreaming || recorderState.isRecording) && styles.disabled]} accessibilityRole="button" accessibilityLabel="Send assistant question"><Ionicons name="arrow-up" size={19} color="#09111F" /></AnimatedPressable></View>
       </KeyboardAvoidingView>
     </ScreenContainer>
   );

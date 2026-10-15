@@ -1,8 +1,10 @@
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useMarketContext } from "@/lib/market-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";
+import { summaryFirstUnit, summaryLatestPeriod, summaryLatestValue } from "@/lib/safe-access";
 
 const teal = "#4FD1C5";
 const amber = "#F4B860";
@@ -14,16 +16,18 @@ const border = "#26364D";
 
 function SourceCard({ label, item }: { label: string; item: { status: "live" | "stale" | "unavailable"; sourceUrl: string; observations: { period: string; value: number | null; unit: string | null; dimensions: Record<string, string> }[]; summary: { latestPeriod: string | null; latestValue: number | null; units: string[] }; freshness: { status: "fresh" | "stale" | "unavailable"; ageDays: number | null }; latencyMs: number | null; error: string | null } }) {
   const color = item.status === "live" ? teal : item.status === "stale" ? amber : coral;
-  const latest = item.summary.latestValue === null ? "Unavailable" : `${item.summary.latestValue} ${item.summary.units[0] ?? ""}`.trim();
+  const latestValue = summaryLatestValue(item.summary);
+  const latest = latestValue === null ? "Unavailable" : `${latestValue} ${summaryFirstUnit(item.summary) ?? ""}`.trim();
   return <View style={styles.card}>
     <View style={styles.cardHeader}><View style={styles.cardCopy}><Text style={styles.cardTitle}>{label}</Text><Text style={styles.cardSource}>{item.sourceUrl}</Text></View><View style={[styles.statusPill, { borderColor: `${color}99`, backgroundColor: `${color}16` }]}><View style={[styles.dot, { backgroundColor: color }]} /><Text style={[styles.statusText, { color }]}>{item.status.toUpperCase()}</Text></View></View>
-    <View style={styles.metricRow}><View><Text style={styles.metricLabel}>LATEST VALUE</Text><Text style={styles.metricValue}>{latest}</Text></View><View><Text style={styles.metricLabel}>PERIOD</Text><Text style={styles.metricValue}>{item.summary.latestPeriod ?? "Unavailable"}</Text></View><View><Text style={styles.metricLabel}>FRESHNESS</Text><Text style={styles.metricValue}>{item.freshness.status === "unavailable" ? "Unavailable" : item.freshness.ageDays === null ? item.freshness.status : `${item.freshness.ageDays}d old`}</Text></View><View><Text style={styles.metricLabel}>LATENCY</Text><Text style={styles.metricValue}>{item.latencyMs === null ? "—" : `${item.latencyMs}ms`}</Text></View></View>
+    <View style={styles.metricRow}><View><Text style={styles.metricLabel}>LATEST VALUE</Text><Text style={styles.metricValue}>{latest}</Text></View><View><Text style={styles.metricLabel}>PERIOD</Text><Text style={styles.metricValue}>{summaryLatestPeriod(item.summary) ?? "Unavailable"}</Text></View><View><Text style={styles.metricLabel}>FRESHNESS</Text><Text style={styles.metricValue}>{item.freshness.status === "unavailable" ? "Unavailable" : item.freshness.ageDays === null ? item.freshness.status : `${item.freshness.ageDays}d old`}</Text></View><View><Text style={styles.metricLabel}>LATENCY</Text><Text style={styles.metricValue}>{item.latencyMs === null ? "—" : `${item.latencyMs}ms`}</Text></View></View>
     {item.error ? <Text style={styles.error}>{item.error}</Text> : <Text style={styles.note}>Values are parsed from the public response with original period, unit, and dimension metadata preserved.</Text>}
     <View style={styles.actions}><Pressable onPress={() => void Linking.openURL(item.sourceUrl)} style={({ pressed }) => [styles.sourceButton, pressed && styles.pressed]}><Ionicons name="open-outline" size={14} color={amber} /><Text style={styles.sourceButtonText}>Open source</Text></Pressable>{item.observations.slice(-3).reverse().map((observation) => <Text key={`${observation.period}-${observation.value}`} style={styles.observation}>{observation.period} · {observation.value ?? "Unavailable"} {observation.unit ?? ""}</Text>)}</View>
   </View>;
 }
 
 export default function MacroContextScreen() {
+  const { market } = useMarketContext();
   const context = trpc.sources.publicMacro.useQuery(undefined, { staleTime: 5 * 60_000, retry: false });
   return <ScreenContainer containerClassName="bg-background" className="px-5" edges={["top", "left", "right", "bottom"]}>
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>

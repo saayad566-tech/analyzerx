@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { MarketDataFallback } from "@/components/market-unavailable-card";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -80,11 +81,12 @@ function sentimentTone(value: ArchiveArticle["sentiment"]): { color: string; lab
 }
 
 export default function StorylinesScreen() {
+  const { market } = useMarketContext();
   const [selectedWindow, setSelectedWindow] = useState<number>(30);
   const [mode, setMode] = useState<"news" | "storylines">("news");
 
   const eventsQuery = trpc.events.latest.useQuery(
-    { limit: 200, lookbackDays: selectedWindow },
+    { marketId: market.id, limit: 200, lookbackDays: selectedWindow },
     { staleTime: 60_000, retry: false },
   );
 
@@ -97,7 +99,7 @@ export default function StorylinesScreen() {
   // market never appears here.
   const { marketId } = useMarketContext();
   const archiveQuery = trpc.news.archive.useQuery(
-    { days: archiveDays, limit: 300, archiveOrder: "Newest first", page: 0, marketId },
+    { marketId: market.id, days: archiveDays, limit: 300, archiveOrder: "Newest first", page: 0 },
     { staleTime: 60_000, retry: false },
   );
 
@@ -147,6 +149,14 @@ export default function StorylinesScreen() {
   return (
     <ScreenContainer className="px-5">
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+<MarketDataFallback
+  subject="Storylines"
+  isLoading={eventsQuery.isLoading}
+  isError={eventsQuery.isError}
+  isEmpty={!eventsQuery.isLoading && !eventsQuery.isError && (eventsQuery.data ?? []).length === 0}
+  onRetry={() => void eventsQuery.refetch()}
+  reason="No verified event chain has resolved for this market yet. Nothing from another market is shown in its place."
+/>
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.eyebrow}>NEWS & RELATIONSHIPS</Text>

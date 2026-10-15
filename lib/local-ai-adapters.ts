@@ -15,6 +15,7 @@ export type LocalAIAdapterDescriptor = {
 
 const ADAPTER_NOTES: Record<LocalAIModelId, LocalAIAdapterDescriptor> = {
   "qwen3-06b": { modelId: "qwen3-06b", runtime: "litert-lm-android", status: "verified", artifactFormat: "litertlm", supportsText: true, supportsVision: false, supportsAudio: false, note: "Public LiteRT-LM Android artifact with anonymous download access; device load validation is required." },
+  "qwen3-06b-think": { modelId: "qwen3-06b-think", runtime: "litert-lm-android", status: "verified", artifactFormat: "litertlm", supportsText: true, supportsVision: false, supportsAudio: false, note: "Thinking-on sibling of the default model; same INT4 file family, slower because it emits a reasoning block first." },
   "gemma3-1b": { modelId: "gemma3-1b", runtime: "litert-lm-android", status: "verified", artifactFormat: "litertlm", supportsText: true, supportsVision: true, supportsAudio: false, note: "LiteRT-LM Android bridge is implemented; APK/device validation is still required." },
   "gemma4-e2b": { modelId: "gemma4-e2b", runtime: "litert-lm-android", status: "verified", artifactFormat: "litertlm", supportsText: true, supportsVision: true, supportsAudio: true, note: "LiteRT-LM Android bridge is implemented; APK/device validation is still required." },
   "gemma4-e4b": { modelId: "gemma4-e4b", runtime: "litert-lm-android", status: "verified", artifactFormat: "litertlm", supportsText: true, supportsVision: true, supportsAudio: true, note: "LiteRT-LM Android bridge is implemented; APK/device validation is still required." },

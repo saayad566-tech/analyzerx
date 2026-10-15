@@ -218,7 +218,12 @@ export default function OAuthCallback() {
             router.replace("/(tabs)");
           }, 1000);
         } else {
-          console.error("[OAuth] No session token in result:", result);
+          // Do not log the exchange result object: it is the provider response and may
+          // carry fields that should never reach a log. Log only the shape.
+          console.error("[OAuth] No session token in result:", {
+            hasUser: Boolean(result?.user),
+            keys: Object.keys(result ?? {}).slice(0, 8),
+          });
           setStatus("error");
           setErrorMessage("No session token received");
         }

@@ -43,6 +43,8 @@ jobs:
       - run: pnpm release:verify
         env:
           ANALYZERX_SOURCE_REVISION: ${{ github.sha }}
+      - name: Market isolation gate
+        run: node scripts/check-market-isolation.mjs
       - run: pnpm check
       - run: pnpm test -- --run
       - name: Build release APK
@@ -55,35 +57,56 @@ jobs:
           CI: "1"
       - name: Sign APK with v2 and v3 schemes
         shell: bash
+        env:
+          # A stable signing key is mandatory for in-place upgrades. Android
+          # refuses to update an app whose signing certificate changed, failing
+          # with INSTALL_FAILED_UPDATE_INCOMPATIBLE (-7), "Conflicting app
+          # signatures". This step previously ran `keytool -genkeypair` on every
+          # build, so EVERY release was signed with a brand-new key and no build
+          # could ever upgrade another.
+          #
+          # With ANDROID_KEYSTORE_BASE64 set, that stable release key is used.
+          # Without it, the APK keeps the signature Gradle already applied from
+          # the committed android/app/debug.keystore — also stable across builds.
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          apk=$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)
-          test -n "$apk"
-          keytool -genkeypair -v \
-            -keystore /tmp/analyzerx-release.keystore \
-            -storepass analyzerx-build-password \
-            -keypass analyzerx-build-password \
-            -alias analyzerx \
-            -keyalg RSA -keysize 4096 -validity 10000 \
-            -dname "CN=AnalyzerX 3.2.0 Release, OU=Mobile, O=AnalyzerX, L=Local, ST=Local, C=IN"
-          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$apk" "$apk.aligned"
-          mv "$apk.aligned" "$apk"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
-            --ks /tmp/analyzerx-release.keystore \
-            --ks-pass pass:analyzerx-build-password \
-            --key-pass pass:analyzerx-build-password \
-            --v2-signing-enabled true \
-            --v3-signing-enabled true \
-            "$apk"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
-          rm -f /tmp/analyzerx-release.keystore
+          # Per-ABI builds produce several APKs (app-arm64-v8a-release.apk,
+          # app-x86_64-release.apk). Every one of them must be signed with the same key.
+          mapfile -t apks < <(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' | sort)
+          test "${#apks[@]}" -gt 0
+          echo "APKs to sign: ${apks[*]}"
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > /tmp/analyzerx-release.keystore
+            for apk in "${apks[@]}"; do
+              "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$apk" "$apk.aligned"
+              mv "$apk.aligned" "$apk"
+              "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+                --ks /tmp/analyzerx-release.keystore \
+                --ks-pass "pass:${ANDROID_KEYSTORE_PASSWORD:?ANDROID_KEYSTORE_PASSWORD is required when ANDROID_KEYSTORE_BASE64 is set}" \
+                --key-pass "pass:${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}" \
+                --v2-signing-enabled true \
+                --v3-signing-enabled true \
+                "$apk"
+            done
+            rm -f /tmp/analyzerx-release.keystore
+          else
+            echo "No ANDROID_KEYSTORE_BASE64 secret set: keeping Gradle's stable signature from android/app/debug.keystore."
+          fi
+          for apk in "${apks[@]}"; do
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+            # Print the signer certificate so key stability across builds is auditable.
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" | head -6
+          done
       - name: Generate artifact checksum
         shell: bash
         run: |
           set -euo pipefail
-          apk=$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)
-          test -n "$apk"
-          node scripts/checksum-artifact.mjs "$apk"
+          mapfile -t apks < <(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' | sort)
+          test "${#apks[@]}" -gt 0
+          for apk in "${apks[@]}"; do node scripts/checksum-artifact.mjs "$apk"; done
       - name: Publish signed APK as a release asset
         shell: bash
         env:
@@ -91,17 +114,21 @@ jobs:
         run: |
           set -euo pipefail
           dir=android/app/build/outputs/apk/release
-          tag="apk-3.2.0-${GITHUB_RUN_NUMBER}"
-          gh release create "$tag" \
-            "$dir/app-release.apk" \
-            "$dir/app-release.apk.sha256" \
-            --title "AnalyzerX 3.2.0 · build ${GITHUB_RUN_NUMBER}" \
-            --notes "CI-built, v2/v3-signed release APK from ${GITHUB_SHA}." \
+          VERSION="$(node -p "require('./package.json').version")"
+          tag="apk-${VERSION}-${GITHUB_RUN_NUMBER}"
+          # Attach one APK per ABI plus its checksum. Each is well inside GitHub's
+          # 100 MB per-file limit, so nothing needs splitting and a device downloads
+          # only its own architecture.
+          mapfile -t assets < <(find "$dir" -maxdepth 1 \( -name '*.apk' -o -name '*.apk.sha256' \) | sort)
+          test "${#assets[@]}" -gt 0
+          gh release create "$tag" "${assets[@]}" \
+            --title "AnalyzerX ${VERSION} · build ${GITHUB_RUN_NUMBER}" \
+            --notes "CI-built, v2/v3-signed per-ABI release APKs for AnalyzerX ${VERSION} from ${GITHUB_SHA}. Install the arm64-v8a APK on a phone; use x86_64 for an emulator." \
             --latest
       - uses: actions/upload-artifact@v4
         continue-on-error: true
         with:
-          name: analyzerx-3.2.0-apk
+          name: analyzerx-apk
           path: |
             android/app/build/outputs/apk/release/*.apk
             android/app/build/outputs/apk/release/*.apk.sha256
@@ -111,10 +138,28 @@ jobs:
         run: |
           set -euo pipefail
           dir=android/app/build/outputs/apk/release
+          VERSION="$(node -p "require('./package.json').version")"
           mkdir -p apk-out
-          cp "$dir/app-release.apk" apk-out/analyzerx-3.2.0.apk
-          cp "$dir/app-release.apk.sha256" apk-out/analyzerx-3.2.0.apk.sha256
-          split -b 4194304 -d -a 3 apk-out/analyzerx-3.2.0.apk apk-out/analyzerx-3.2.0.apk.part
+          for apk in "$dir"/*.apk; do
+            name=$(basename "$apk" .apk)
+            cp "$apk" "apk-out/analyzerx-${VERSION}-${name}.apk"
+            [ -f "$apk.sha256" ] && cp "$apk.sha256" "apk-out/analyzerx-${VERSION}-${name}.apk.sha256"
+          done
+          # A per-ABI APK is ~half the universal size and fits in git, but keep the split
+          # as a guard in case a future architecture pushes one back over 100 MB.
+          for f in apk-out/*.apk; do
+            size=$(stat -c%s "$f")
+            if [ "$size" -gt 94371840 ]; then
+              split -b 4194304 -d -a 3 "$f" "$f.part"
+              rm -f "$f"
+            fi
+          done
+          # The split parts exist precisely because the whole APK is too big for git.
+          # Committing the unsplit file as well gets the push rejected outright:
+          #   "File apk-out/analyzerx-3.24.0.apk is 105.90 MB; this exceeds GitHub's
+          #    file size limit of 100.00 MB"  -> pre-receive hook declined
+          # So only the parts and the checksum are committed. The full APK is already
+          # published as a release asset and uploaded as a workflow artifact.
           ls -la apk-out
           git config user.email "ci@analyzerx.local"
           git config user.name "AnalyzerX CI"
@@ -122,5 +167,5 @@ jobs:
           git checkout --orphan apk-artifact
           git rm -rf --cached . >/dev/null 2>&1 || true
           git add -f apk-out
-          git commit -m "AnalyzerX 3.2.0 signed release APK (build ${GITHUB_RUN_NUMBER})"
+          git commit -m "AnalyzerX ${VERSION} signed release APK (build ${GITHUB_RUN_NUMBER})"
           git push --force origin apk-artifact

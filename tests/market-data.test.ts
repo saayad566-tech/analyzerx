@@ -1,59 +1,79 @@
 import { describe, expect, it } from "vitest";
-import { events, marketFlows, storylines } from "../lib/market-data";
 import { passesResearchFilter } from "../lib/screener";
 import { totalCombinedScoreWeight } from "../lib/research-model";
+import { eventProjectionToMarketEvent, eventProjectionsToMarketEvents } from "../lib/event-projection-view";
 
-describe("market event intelligence data", () => {
-  it("keeps storyline events connected by storyline id", () => {
-    const greenHydrogen = events.filter((event) => event.storylineId === "story-1");
-    expect(greenHydrogen.length).toBe(4);
-    expect(greenHydrogen.map((event) => event.kind)).toEqual([
-      "Strategic investment",
-      "Capacity expansion",
-      "Large order",
-      "Partnership",
-    ]);
+/**
+ * Research-model and event-mapping contracts.
+ *
+ * This file used to assert the contents of the hardcoded demo arrays in
+ * `lib/market-data.ts` — a four-event "green hydrogen" storyline, hardcoded flow values
+ * of 286 and 214, and a fixed Indian entity timeline. Those arrays were fabricated demo
+ * data that rendered for every market and have been removed, so the assertions on them
+ * are gone with it.
+ *
+ * What remains is the real contract: the screener filter must refuse to pass a
+ * quantitative filter on a candidate with no verified metrics, the combined score
+ * allocation must stay at 100, and the event mapper must carry only what the projection
+ * actually contains.
+ */
+
+describe("research model", () => {
+  it("keeps the combined fundamental and derivatives score allocation at 100 points", () => {
+    expect(totalCombinedScoreWeight()).toBe(100);
   });
+});
 
-  it("contains explicit fact status and confidence for every event", () => {
-    expect(events.every((event) => event.status && event.confidence && event.sourceUrl)).toBe(true);
-  });
-
-  it("keeps storyline scores within the intelligence score range", () => {
-    expect(storylines.every((storyline) => storyline.score >= 0 && storyline.score <= 100)).toBe(true);
-  });
-
-  it("sorts market flows high to low by value and filters by category", () => {
-    const stockBuying = marketFlows.filter((flow) => flow.category === "Stock buying").sort((a, b) => b.value - a.value);
-    expect(stockBuying.map((flow) => flow.value)).toEqual([286, 214]);
-    expect(marketFlows.filter((flow) => flow.category === "FII")).toHaveLength(1);
-  });
-
-  it("identifies category leaders from flow values", () => {
-    const categoryTotals = marketFlows.reduce<Record<string, number>>((totals, flow) => {
-      totals[flow.category] = (totals[flow.category] ?? 0) + (flow.action === "Sell" ? -flow.value : flow.value);
-      return totals;
-    }, {});
-    expect(categoryTotals.FII).toBeGreaterThan(categoryTotals.DII);
-    expect(categoryTotals["Stock buying"]).toBeGreaterThan(categoryTotals.Options);
-  });
-
-  it("requires verified metrics when quantitative screener filters are active", () => {
+describe("screener research filter", () => {
+  it("requires verified metrics when quantitative filters are active", () => {
     const candidate = { symbol: "TEST", name: "Test Co", sector: "Industrial", metricsAvailable: false, redFlags: [], evidence: ["Event context"], expansionSignal: false, triggerKeys: [] };
     expect(passesResearchFilter(candidate, [])).toBe(true);
     expect(passesResearchFilter(candidate, ["quality"])).toBe(false);
     expect(passesResearchFilter({ ...candidate, metricsAvailable: true, verifiedFilters: ["quality", "cash"], triggerKeys: [] }, ["quality", "cash"])).toBe(true);
     expect(passesResearchFilter({ ...candidate, expansionSignal: true, triggerKeys: ["expansion"] }, ["expansion"])).toBe(true);
   });
+});
 
-  it("keeps the combined fundamental and derivatives score allocation at 100 points", () => {
-    expect(totalCombinedScoreWeight()).toBe(100);
+describe("event projection mapping", () => {
+  const base = {
+    id: "p1",
+    marketId: "IN",
+    symbol: "RELIANCE",
+    eventType: "order",
+    title: "Verified order",
+    summary: "A verified event.",
+    relationshipJson: JSON.stringify({ entities: ["RELIANCE"], relationship: "reported-by-source" }),
+    sentiment: "positive" as const,
+    impactScore: 70,
+    confidenceScore: 90,
+    status: "active" as const,
+    sourceUrl: "https://example.com/a",
+    sourceKey: "nse-rss-announcements",
+    eventAt: "2026-10-14T04:05:00.000Z",
+  };
+
+  it("maps one projection onto the card shape without inventing fields", () => {
+    const event = eventProjectionToMarketEvent(base);
+    expect(event.symbolA).toBe("RELIANCE");
+    expect(event.symbolB).toBeUndefined();
+    expect(event.score).toBe(70);
+    expect(event.status).toBe("Confirmed");
   });
 
-  it("returns the historical sequence for a selected entity", () => {
-    const selectedEntity = "WAAREEENER";
-    const timeline = events.filter((event) => event.symbolA === selectedEntity || event.symbolB === selectedEntity);
-    expect(timeline).toHaveLength(4);
-    expect(timeline.map((event) => event.storylineId)).toEqual(["story-1", "story-1", "story-1", "story-1"]);
+  it("does not invent a second party from a malformed relationship", () => {
+    const event = eventProjectionToMarketEvent({ ...base, relationshipJson: "{}" });
+    expect(event.symbolA).toBe("RELIANCE");
+    expect(event.symbolB).toBeUndefined();
+  });
+
+  it("maps an empty list to an empty list rather than to demo data", () => {
+    expect(eventProjectionsToMarketEvents([])).toEqual([]);
+  });
+
+  it("carries no fabricated Indian content of its own", () => {
+    const blob = JSON.stringify(eventProjectionToMarketEvent({ ...base, marketId: "FR", symbol: "MC.PA", sourceKey: "eu-esef" })).toLowerCase();
+    for (const forbidden of ["nifty", "sensex", "₹", "larsen", "waaree", "titagarh", "gujarat"]) {
+      expect(blob, `the mapper produced ${forbidden}`).not.toContain(forbidden);
+    }
   });
 });

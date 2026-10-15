@@ -9,7 +9,7 @@ async function main() {
   await mkdir(outputDir, { recursive: true });
   const reports = await Promise.all(symbols.map(async (symbol) => {
     try {
-      return await analyzeFundamentals(symbol);
+      return await analyzeFundamentals(symbol, "IN");
     } catch (error) {
       throw new Error(`${symbol}: ${String(error)}`);
     }

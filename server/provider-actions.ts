@@ -1,4 +1,5 @@
 import { isProviderCircuitOpen, getProviderHealthFor, markProviderHealthy, markProviderRejected } from "./provider-health";
+import { type MarketId } from "../lib/market-regions";
 import { fetchProviderNow, type ProviderArticle } from "./optional-providers";
 import { fetchIndianOpenStock } from "./indian-open-api";
 import { getIndiaStockMcpSnapshot } from "./india-stock-mcp";
@@ -16,7 +17,11 @@ export type ProviderRunResult = {
 };
 
 function asSymbol(symbol: string | undefined) {
-  return (symbol?.trim() || "RELIANCE").toUpperCase();
+  // No default instrument is assumed. Falling back to an Indian ticker for an
+  // unspecified run is the cross-market substitution the mandate forbids.
+  const clean = (symbol ?? "").trim();
+  if (!clean) throw new Error("A symbol is required to run a provider; no default instrument is assumed.");
+  return clean.toUpperCase();
 }
 
 function persistHealth(providerId: string) {
@@ -51,7 +56,7 @@ async function runIndianApi(symbol: string) {
   return response.json();
 }
 
-export async function runProviderNow(providerId: string, requestedSymbol?: string): Promise<ProviderRunResult> {
+export async function runProviderNow(providerId: string, requestedSymbol: string | undefined, marketId: MarketId): Promise<ProviderRunResult> {
   const symbol = asSymbol(requestedSymbol);
   if (isProviderCircuitOpen(providerId)) {
     const health = getProviderHealthFor(providerId);
@@ -67,7 +72,7 @@ export async function runProviderNow(providerId: string, requestedSymbol?: strin
       case "newsapi":
       case "newsdata":
       case "gnews":
-        articles = await fetchProviderNow(providerId, [symbol]);
+        articles = await fetchProviderNow(providerId, [symbol], marketId);
         return { providerId, symbol, status: "used", records: articles.length, summary: `${articles.length} article records returned`, articles, health: getProviderHealthFor(providerId) };
       case "finnhub":
         payload = await runFinnhub(symbol);
@@ -82,7 +87,7 @@ export async function runProviderNow(providerId: string, requestedSymbol?: strin
         payload = await getIndiaStockMcpSnapshot(symbol);
         break;
       case "dhan-mcp":
-        payload = await fetchDerivativesSnapshot(symbol);
+        payload = await fetchDerivativesSnapshot(symbol, marketId);
         const derivativesPayload = payload as Awaited<ReturnType<typeof fetchDerivativesSnapshot>>;
         if (derivativesPayload.status === "auth_required" || derivativesPayload.status === "error") throw new Error(derivativesPayload.error ?? "Dhan derivatives provider unavailable");
         break;

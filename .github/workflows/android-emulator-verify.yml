@@ -1,0 +1,105 @@
+name: Android emulator verification
+
+# Device verification. GitHub's Linux runners have KVM, so a REAL Android emulator can
+# boot here and run the REAL shipped APK. This is the closest thing to a physical
+# device check that can be automated, and it is genuine runtime evidence: the app is
+# installed, launched, exercised, and its logcat is inspected for crashes.
+#
+# It downloads the published release APK rather than rebuilding, so what is verified is
+# the exact artifact a user installs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag holding app-release.apk (e.g. apk-3.22.0-92)"
+        required: true
+        default: "apk-3.22.0-92"
+  # Deliberately NOT triggered on push: a full emulator run is ~10 minutes, and
+  # pushing documentation or a small fix should not queue another one. Dispatch it
+  # explicitly against the release tag you want verified.
+
+permissions:
+  contents: read
+
+jobs:
+  emulator:
+    name: Install and run the APK on a real emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve the release tag
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.release_tag }}"
+          if [ -z "$TAG" ]; then TAG="apk-3.22.0-92"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "verifying release: $TAG"
+
+      - name: Download the published release APK
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          # Releases now carry one APK per ABI. The emulator is x86_64, so verify the
+          # x86_64 artifact — verifying the arm64 one on an x86_64 emulator would fail
+          # for an ABI reason, not an app reason.
+          URL="https://github.com/${{ github.repository }}/releases/download/$TAG/app-x86_64-release.apk"
+          echo "downloading $URL"
+          curl -fsSL --retry 4 --retry-delay 5 -o app-release.apk "$URL"
+          ls -l app-release.apk
+          echo "sha256: $(sha256sum app-release.apk | cut -d' ' -f1)"
+
+      - name: Enable KVM (required for the emulator)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - name: Boot the emulator, install and exercise the app
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            echo "=== 1. device is up ==="; adb wait-for-device; adb shell getprop ro.build.version.release; adb shell wm size
+            echo "=== 2. install the real APK ==="; adb install -r app-release.apk
+            echo "=== 2b. the package must be listed ==="; adb shell pm list packages > packages.txt; grep "com.app.marketeventintelligence" packages.txt || { echo "PACKAGE NOT INSTALLED"; exit 1; }
+            echo "=== 3. launch the MAIN/LAUNCHER activity ==="; adb logcat -c; adb shell am start -W -n com.app.marketeventintelligence/.MainActivity
+            echo "=== 4. let it settle ==="; sleep 30
+            echo "=== 5. liveness diagnostics (full detail is captured for the artifact) ==="; adb shell ps -A > ps.txt 2>&1 || true; grep marketeventintelligence ps.txt || echo "not present in ps -A"
+            echo "=== 5b. pidof ==="; adb shell pidof com.app.marketeventintelligence || echo "pidof returned empty"
+            echo "=== 5c. resumed activity ==="; adb shell dumpsys activity activities > activities.txt 2>&1 || true; grep -E "mResumedActivity|topResumedActivity" activities.txt || echo "no resumed activity line"
+            echo "=== 6. full logcat captured ==="; adb logcat -d > logcat.txt 2>&1 || true; wc -l logcat.txt
+            echo "=== 6b. any fatal exception? ==="; grep -n "FATAL EXCEPTION" logcat.txt || echo "no FATAL EXCEPTION in logcat"
+            echo "=== 6c. app-specific log lines ==="; grep -i "marketeventintelligence" logcat.txt | tail -30 || echo "no app-tagged lines"
+            echo "=== 6d. React Native / Expo runtime lines ==="; grep -iE "ReactNative|ReactNativeJS|expo|SoLoader|hermes" logcat.txt | tail -25 || echo "no RN lines"
+            echo "=== 7. exercise the UI ==="; for xy in "540 1200" "540 900" "900 400" "200 2200" "540 1600"; do adb shell input tap $xy; sleep 3; done
+            echo "=== 7b. still alive after interaction? ==="; adb shell pidof com.app.marketeventintelligence || echo "pidof empty after interaction"
+            echo "=== 7c. logcat after interaction ==="; adb logcat -d > logcat2.txt 2>&1 || true; grep -n "FATAL EXCEPTION" logcat2.txt || echo "no FATAL EXCEPTION after interaction"
+            echo "=== 8. capture a screenshot ==="; adb exec-out screencap -p > emulator-screenshot.png; ls -l emulator-screenshot.png
+            echo "=== 9. VERDICT ==="; adb shell pidof com.app.marketeventintelligence | grep -q . || { echo "VERDICT: APP NOT RUNNING AFTER 30s + INTERACTION"; exit 1; }; echo "VERDICT: APP IS RUNNING AND SURVIVED INTERACTION"
+            echo "EMULATOR VERIFICATION PASSED"
+
+
+      - name: Upload the screenshot and logcat
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-evidence
+          path: |
+            emulator-screenshot.png
+            logcat.txt
+            logcat2.txt
+            ps.txt
+            activities.txt
+          if-no-files-found: warn

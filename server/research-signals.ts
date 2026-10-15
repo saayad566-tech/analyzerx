@@ -1,4 +1,6 @@
 import { analyzeFundamentals } from "./fundamental-analysis";
+import { type MarketId } from "../lib/market-regions";
+import { benchmarksForMarket } from "../lib/market-benchmarks";
 
 export type SignalAction = "RESEARCH_BUY_WINDOW" | "RESEARCH_SELL_RISK" | "NO_CONFIRMED_SIGNAL" | "UNAVAILABLE";
 
@@ -51,10 +53,10 @@ export function scoreMultibaggerStrategy(strategyId: MultibaggerStrategyId, metr
   return { score, matchedCriteria, failedCriteria };
 }
 
-export async function getMultibaggerSignals(strategyId: MultibaggerStrategyId = "buffett-munger") {
+export async function getMultibaggerSignals(marketId: MarketId, strategyId: MultibaggerStrategyId = "buffett-munger") {
   const strategy = strategyWeights[strategyId] ?? strategyWeights["buffett-munger"];
   const results = await Promise.allSettled(verifiedResearchUniverse.map(async (candidate) => {
-    const report = await analyzeFundamentals(candidate.symbol);
+    const report = await analyzeFundamentals(candidate.symbol, marketId);
     const institutional = report.institutionalReport;
     const technical = report.stockAnalysis.technical;
     const coverage = clamp(report.coverage.score);
@@ -92,12 +94,15 @@ async function fetchYahooChart(symbol: string) {
   return { symbol, current, changePct, points: closes.length, source: "Yahoo Finance chart fallback", fetchedAt: new Date().toISOString() };
 }
 
-export async function getMultiAssetTimingSignals() {
-  const assets = [
-    { key: "NIFTY", symbol: "^NSEI", name: "Nifty 50", type: "index" },
-    { key: "GOLD", symbol: "GC=F", name: "Gold futures proxy", type: "commodity" },
-    { key: "BTC", symbol: "BTC-USD", name: "Bitcoin", type: "crypto" },
-  ];
+export async function getMultiAssetTimingSignals(marketId: MarketId) {
+  // Previously a fixed NIFTY/GOLD/BTC list with no market input at all. It now uses the
+  // selected market's own headline indices and currency pair, plus the global assets.
+  const assets = benchmarksForMarket(marketId).map((asset) => ({
+    key: asset.key,
+    symbol: asset.symbol,
+    name: asset.name,
+    type: asset.type === "technical" ? "index" : "commodity",
+  }));
   const results = await Promise.allSettled(assets.map(async (asset) => {
     const chart = await fetchYahooChart(asset.symbol);
     const change = chart.changePct ?? 0;

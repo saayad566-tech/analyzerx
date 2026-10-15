@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { Skeleton } from "@/components/skeleton";
+import { KeyboardAwareScrollView } from "@/components/keyboard-aware-scroll-view";
 import { MarketScopeChip } from "@/components/market-scope-chip";
 import { useMarketContext } from "@/lib/market-context";
+import { defaultSymbolForMarket } from "@/lib/market-defaults";
 import { trpc } from "@/lib/trpc";
 import { getResearchEvidenceNavigation } from "@/lib/research-evidence-navigation";
 import { useAuth } from "@/hooks/use-auth";
@@ -32,7 +35,9 @@ const agentLabels: Record<string, string> = {
 export default function ResearchDeskScreen() {
   const { marketId, market } = useMarketContext();
   const { isAuthenticated } = useAuth();
-  const [symbol, setSymbol] = useState("RELIANCE");
+  // Default to the ACTIVE market's own example instrument, not a hardcoded Indian
+  // ticker. Switching to the US/UK/FR/etc. market must not pre-fill an NSE symbol.
+  const [symbol, setSymbol] = useState(() => defaultSymbolForMarket(marketId) ?? "");
   const [question, setQuestion] = useState("Run a deep research desk review");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [activeRunIsPersisted, setActiveRunIsPersisted] = useState(false);
@@ -66,7 +71,7 @@ export default function ResearchDeskScreen() {
   const exportMarkdown = async () => { if (!activeRunId) return; const response = await exportReport.refetch(); if (response.data?.content && typeof window !== "undefined") { const blob = new Blob([response.data.content], { type: "text/markdown" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = response.data.fileName; anchor.click(); URL.revokeObjectURL(url); } };
 
   return <ScreenContainer className="px-5" containerClassName="bg-background">
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+    <KeyboardAwareScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <View><Text style={styles.eyebrow}>MULTI-AGENT RESEARCH DESK</Text><Text style={styles.title}>Research Desk</Text><Text style={styles.subtitle}>Specialist lanes review the same evidence, then expose coverage and gaps before synthesis.</Text></View>
         <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.close, pressed && styles.pressed]}><Ionicons name="close" size={19} color="#F4F7FB" /></Pressable>
@@ -84,7 +89,7 @@ export default function ResearchDeskScreen() {
       {!isAuthenticated ? <Text style={styles.guestNote}>Guest research is source-backed but is not saved to your account. Sign in to keep runs, retry them later, and export from history.</Text> : null}
       {runs.data?.length ? <View style={styles.history}><Text style={styles.sectionTitle}>Persisted runs</Text>{runs.data.slice(0, 5).map((item: { id: string; symbol: string | null; status: string; marketId: string; attemptCount: number }) => <Pressable key={item.id} onPress={() => { setActiveRunId(item.id); setActiveRunIsPersisted(true); }} style={({ pressed }) => [styles.historyRow, pressed && styles.pressed]}><View style={styles.agentCopy}><Text style={styles.agentName}>{item.symbol ?? "Market-wide"} · {item.status}</Text><Text style={styles.agentMeta}>{item.marketId} · attempt {item.attemptCount}</Text></View><Ionicons name="chevron-forward" size={15} color={muted} /></Pressable>)}</View> : null}
       {activeRunId && activeRunIsPersisted ? <View style={styles.actionRow}><Pressable onPress={() => retry.mutate({ runId: activeRunId })} disabled={retry.isPending} style={styles.secondary}><Ionicons name="refresh" size={14} color={gold} /><Text style={styles.secondaryText}>Retry</Text></Pressable><Pressable onPress={() => cancel.mutate({ runId: activeRunId })} disabled={cancel.isPending} style={styles.secondary}><Ionicons name="stop-circle-outline" size={14} color="#FCA5A5" /><Text style={[styles.secondaryText, { color: "#FCA5A5" }]}>Cancel</Text></Pressable><Pressable onPress={exportMarkdown} disabled={exportReport.isFetching} style={styles.secondary}><Ionicons name="download-outline" size={14} color={teal} /><Text style={[styles.secondaryText, { color: teal }]}>Markdown</Text></Pressable></View> : null}
-      {status.data?.run?.status === "running" ? <View style={styles.error}><ActivityIndicator color={gold} /><Text style={styles.errorText}>Recovering and polling the persisted run…</Text></View> : null}
+      {status.data?.run?.status === "running" ? <View style={styles.error}><Skeleton width={16} height={16} radius={8} /><Text style={styles.errorText}>Recovering and polling the persisted run…</Text></View> : null}
       {result ? <>
         <View style={styles.summary}><View style={styles.summaryHeader}><View><Text style={styles.eyebrow}>RUN {result.runId}</Text><Text style={styles.summaryTitle}>{result.symbol ?? "Market-wide"} · {result.confidence} confidence</Text></View><View style={styles.statusPill}><Text style={styles.statusText}>{result.status.toUpperCase()}</Text></View></View><Text style={styles.answer}>{result.answer}</Text><View style={styles.coverageRow}><Metric label="Completed" value={coverage.completed} color={teal} /><Metric label="Degraded" value={coverage.degraded} color={gold} /><Metric label="Unavailable" value={coverage.unavailable} color="#FCA5A5" /></View></View>
         <Text style={styles.sectionTitle}>Specialist lanes</Text>
@@ -93,7 +98,7 @@ export default function ResearchDeskScreen() {
         <Text style={styles.sectionTitle}>Evidence index</Text><View style={styles.card}>{result.evidence.length ? result.evidence.slice(0, 12).map((item) => { const navigation = getResearchEvidenceNavigation(item); const open = () => { if (navigation.type === "route") router.push(navigation.href); else if (navigation.type === "external") void Linking.openURL(navigation.url); }; return <Pressable key={item.id} onPress={navigation.type === "unavailable" ? undefined : open} disabled={navigation.type === "unavailable"} style={({ pressed }) => [styles.evidenceRow, pressed && styles.pressed, navigation.type === "unavailable" && styles.evidenceDisabled]}><View style={styles.evidenceBadge}><Text style={styles.evidenceBadgeText}>{item.kind.slice(0, 3).toUpperCase()}</Text></View><View style={styles.agentCopy}><Text style={styles.agentName}>{item.label}</Text><Text style={styles.agentMeta}>{item.source} · {item.freshness}</Text><Text style={styles.evidenceAction}>{navigation.label}</Text></View><Ionicons name={navigation.type === "external" ? "open-outline" : navigation.type === "route" ? "chevron-forward" : "remove-circle-outline"} size={15} color={navigation.type === "unavailable" ? muted : gold} /></Pressable>; }) : <Text style={styles.empty}>No evidence records were returned for this run.</Text>}</View>
         {result.limitations.length ? <Text style={styles.disclaimer}>{result.limitations.join(" ")}</Text> : null}
       </> : <View style={styles.emptyHero}><Ionicons name="layers-outline" size={27} color={gold} /><Text style={styles.emptyTitle}>Run a research desk review</Text><Text style={styles.emptyBody}>The first framework slice uses deterministic, source-backed specialist lanes. It does not claim coverage when filings, flows, quotes, or macro data are unavailable.</Text></View>}
-    </ScrollView>
+    </KeyboardAwareScrollView>
   </ScreenContainer>;
 }
 

@@ -38,7 +38,7 @@ describe("optional provider isolation", () => {
     }));
 
     const { fetchOptionalNews } = await import("../server/optional-providers");
-    const articles = await fetchOptionalNews(["RELIANCE"]);
+    const articles = await fetchOptionalNews(["RELIANCE"], "IN");
 
     expect(articles).toHaveLength(2);
     expect(articles.map((article) => article.source)).toEqual(expect.arrayContaining(["NewsData.io", "example.com"]));

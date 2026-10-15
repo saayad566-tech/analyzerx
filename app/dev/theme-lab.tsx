@@ -25,6 +25,22 @@ function ColorSwatch({ name, value }: { name: PaletteName; value: string }) {
 }
 
 export default function ThemeLabScreen() {
+  // This is a development-only theme workbench. It has no navigation entry, but a
+  // deep link would still reach it in a release build, so it refuses to render
+  // outside development rather than shipping a dev surface to users.
+  if (!__DEV__) {
+    return (
+      <ScreenContainer className="px-5">
+        <View style={{ paddingTop: 40, gap: 10 }}>
+          <Text style={{ color: "#F4F7FB", fontSize: 18, fontWeight: "800" }}>Not available</Text>
+          <Text style={{ color: "#91A2B8", fontSize: 13, lineHeight: 19 }}>
+            The theme lab is a development-only screen and is not part of the released app.
+          </Text>
+        </View>
+      </ScreenContainer>
+    );
+  }
+
   const [pressCount, setPressCount] = useState(0);
   const [lastAction, setLastAction] = useState<string>("None yet");
   const { colorScheme, setColorScheme } = useThemeContext();

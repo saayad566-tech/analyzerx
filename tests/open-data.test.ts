@@ -184,7 +184,7 @@ describe("open-data live sources (contract + availability)", () => {
   }, NETWORK_TIMEOUT);
 
   it("returns well-formed news", async () => {
-    const news = await stockNews("RELIANCE", 10);
+    const news = await stockNews("RELIANCE", 10, "IN");
     expect(Array.isArray(news.articles)).toBe(true);
     expect(news).toHaveProperty("freshArticleCount");
     for (const article of news.articles.slice(0, 3)) {
@@ -212,7 +212,7 @@ describe("open-data live sources (contract + availability)", () => {
   it("returns sector constituents and multi-asset signals", async () => {
     const [sector, timing, history] = await Promise.all([
       sectorConstituents("NIFTYBANK", 50),
-      multiAssetTiming(),
+      multiAssetTiming("IN"),
       priceHistory("RELIANCE", "1mo", "1d", "IN").catch(() => ({ points: [] as Array<{ t: string; c: number | null }> })),
     ]);
     expect(Array.isArray(sector.constituents)).toBe(true);
@@ -235,7 +235,7 @@ describe("open-data live sources (contract + availability)", () => {
   it("proves at least one free source is reachable from this environment", async () => {
     const results = await Promise.all([
       snapshot("RELIANCE", "IN").then((r) => Boolean(r.quote)).catch(() => false),
-      marketNews(5).then((r) => r.articles.length > 0).catch(() => false),
+      marketNews("IN", 5).then((r) => r.articles.length > 0).catch(() => false),
       nseUniverse().then((r) => r.securities.length > 0).catch(() => false),
       institutionalFlows("TODAY").then((r) => r.rows.length > 0).catch(() => false),
     ]);
@@ -274,15 +274,15 @@ describe("local tRPC link resolves every screen path without a server", () => {
   });
 
   it("resolves the fundamentals procedure with a scored, sourced analysis", async () => {
-    const result = (await resolveLocal("market.fundamentals", { symbol: "RELIANCE" })) as { score: number; sources: unknown[] };
+    const result = (await resolveLocal("market.fundamentals", { symbol: "RELIANCE", marketId: "IN" })) as { score: number; sources: unknown[] };
     expect(result.score).toBeGreaterThanOrEqual(0);
     expect(Array.isArray(result.sources)).toBe(true);
   }, NETWORK_TIMEOUT);
 
   it("resolves sector constituents and multi-asset timing", async () => {
     const [sector, timing] = await Promise.all([
-      resolveLocal("market.sectorConstituents", { sector: "NIFTYBANK" }) as Promise<{ rows: unknown[]; flow: unknown; coverageLabel: string }>,
-      resolveLocal("market.multiAssetTiming", undefined) as Promise<{ signals: unknown[] }>,
+      resolveLocal("market.sectorConstituents", { sector: "NIFTYBANK", marketId: "IN" }) as Promise<{ rows: unknown[]; flow: unknown; coverageLabel: string }>,
+      resolveLocal("market.multiAssetTiming", { marketId: "IN" }) as Promise<{ signals: unknown[] }>,
     ]);
     expect(Array.isArray(sector.rows)).toBe(true);
     expect(sector.flow).toBeDefined();
@@ -298,7 +298,7 @@ describe("local tRPC link resolves every screen path without a server", () => {
   });
 
   it("returns a grounded chat answer with evidence", async () => {
-    const answer = (await resolveLocal("chat.ask", { message: "Reliance", symbol: "RELIANCE" })) as {
+    const answer = (await resolveLocal("chat.ask", { message: "Reliance", symbol: "RELIANCE", marketId: "IN" })) as {
       answer: string;
       evidence: unknown[];
       runtime: string;
@@ -323,32 +323,32 @@ describe("local tRPC link resolves every screen path without a server", () => {
   }, NETWORK_TIMEOUT);
 
   it("chat.ground matches the screen contract", async () => {
-    const r = (await resolveLocal("chat.ground", { message: "Reliance", symbol: "RELIANCE" })) as Record<string, unknown>;
+    const r = (await resolveLocal("chat.ground", { message: "Reliance", symbol: "RELIANCE", marketId: "IN" })) as Record<string, unknown>;
     expect(Array.isArray(r.sources)).toBe(true);
     expect(r).toHaveProperty("dataAsOf");
     expect(typeof r.context).toBe("string");
   }, NETWORK_TIMEOUT);
 
   it("chat.general returns a non-empty answer", async () => {
-    const r = (await resolveLocal("chat.general", { message: "How is the market today?" })) as { answer: string };
+    const r = (await resolveLocal("chat.general", { message: "How is the market today?", marketId: "IN" })) as { answer: string };
     expect(typeof r.answer).toBe("string");
     expect(r.answer.length).toBeGreaterThan(10);
   }, NETWORK_TIMEOUT);
 
   it("sector constituents honour sort and direction", async () => {
-    const desc = (await resolveLocal("market.sectorConstituents", { sector: "NIFTYBANK", sort: "score", direction: "desc" })) as { rows: Array<{ score: number | null }>; sort: string; direction: string };
+    const desc = (await resolveLocal("market.sectorConstituents", { sector: "NIFTYBANK", sort: "score", direction: "desc", marketId: "IN" })) as { rows: Array<{ score: number | null }>; sort: string; direction: string };
     expect(desc.sort).toBe("score");
     expect(desc.direction).toBe("desc");
     const scores = desc.rows.map((r) => r.score).filter((s): s is number => typeof s === "number");
     for (let i = 1; i < scores.length; i += 1) expect(scores[i - 1]).toBeGreaterThanOrEqual(scores[i]);
 
-    const asc = (await resolveLocal("market.sectorConstituents", { sector: "NIFTYBANK", sort: "score", direction: "asc" })) as { rows: Array<{ score: number | null }> };
+    const asc = (await resolveLocal("market.sectorConstituents", { sector: "NIFTYBANK", sort: "score", direction: "asc", marketId: "IN" })) as { rows: Array<{ score: number | null }> };
     const ascScores = asc.rows.map((r) => r.score).filter((s): s is number => typeof s === "number");
     for (let i = 1; i < ascScores.length; i += 1) expect(ascScores[i - 1]).toBeLessThanOrEqual(ascScores[i]);
   }, NETWORK_TIMEOUT);
 
   it("exposes security-wise flow state so the sector screen never infers it", async () => {
-    const r = (await resolveLocal("market.sectorConstituents", { sector: "NIFTY50" })) as { securityWiseFlow: { available: boolean; topFii: unknown[]; topDii: unknown[] } };
+    const r = (await resolveLocal("market.sectorConstituents", { sector: "NIFTY50", marketId: "IN" })) as { securityWiseFlow: { available: boolean; topFii: unknown[]; topDii: unknown[] } };
     expect(r.securityWiseFlow.available).toBe(false);
     expect(Array.isArray(r.securityWiseFlow.topFii)).toBe(true);
     expect(Array.isArray(r.securityWiseFlow.topDii)).toBe(true);
@@ -362,7 +362,7 @@ describe("local tRPC link resolves every screen path without a server", () => {
   }, NETWORK_TIMEOUT);
 
   it("records which news providers answered (multi-feed redundancy)", async () => {
-    const news = await stockNews("RELIANCE", 20);
+    const news = await stockNews("RELIANCE", 20, "IN");
     expect(Array.isArray(news.chain)).toBe(true);
     expect((news.chain ?? []).length).toBeGreaterThanOrEqual(3);
     // Every configured feed is attempted; at least one must supply coverage.

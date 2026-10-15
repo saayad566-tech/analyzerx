@@ -17,11 +17,13 @@ import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { WebCalendarRangePicker } from "@/components/web-calendar-range-picker";
 import { ScreenContainer } from "@/components/screen-container";
-import { events, filters, type MarketEvent } from "@/lib/market-data";
+import { filters, type MarketEvent } from "@/lib/market-data";
+import { eventProjectionsToMarketEvents } from "@/lib/event-projection-view";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
 import { scanDeepResearchDetailed } from "@/lib/deep-research";
 import { getDeviceTrackerAvailability } from "@/lib/device-tracker-policy";
+import { deriveTrackerState, trackerAutomationClaim } from "@/lib/tracker-state";
 import {
   filterAndSortArchiveArticles,
   type ArchiveSentiment,
@@ -32,6 +34,7 @@ import {
   type ResearchUsageSummary,
 } from "@/lib/research-analytics";
 import { useMarketContext } from "@/lib/market-context";
+import { defaultSymbolForMarket, providerSymbolForMarket } from "@/lib/market-defaults";
 import type { MarketId } from "@/lib/market-regions";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -316,8 +319,8 @@ export default function LiveEventsScreen() {
   const { isAuthenticated } = useAuth();
   const [query, setQuery] = useState("");
   const [remoteLiveQuery, setRemoteLiveQuery] = useState("");
-  const [newsSymbol, setNewsSymbol] = useState("RELIANCE");
-  const [newsLookupSymbol, setNewsLookupSymbol] = useState("RELIANCE");
+  const [newsSymbol, setNewsSymbol] = useState(() => defaultSymbolForMarket(market.id) ?? "");
+  const [newsLookupSymbol, setNewsLookupSymbol] = useState(() => defaultSymbolForMarket(market.id) ?? "");
   const [activeFilter, setActiveFilter] = useState("All events");
   const [archiveScope, setArchiveScope] = useState<
     "All archive" | "Special Events"
@@ -352,7 +355,10 @@ export default function LiveEventsScreen() {
   const [selectedNewsArticle, setSelectedNewsArticle] =
     useState<TrackedNewsArticle | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [featuredSymbol, setFeaturedSymbol] = useState("RELIANCE.NS");
+  // The Live Market Snapshot is scoped to the ACTIVE market. It used to be seeded
+  // with a hardcoded Indian ticker and never re-derived, so selecting the US left
+  // RELIANCE.NS, an INR quote and an NSE source badge on screen.
+  const [featuredSymbol, setFeaturedSymbol] = useState(() => defaultSymbolForMarket(market.id) ?? "");
   const [usageSummary, setUsageSummary] = useState<ResearchUsageSummary | null>(
     null,
   );
@@ -383,7 +389,7 @@ export default function LiveEventsScreen() {
     setShowCustomRange(false);
   }, [market.id]);
   const liveSearch = trpc.market.search.useQuery(
-    { query: remoteLiveQuery },
+    { marketId: market.id, query: remoteLiveQuery },
     { enabled: remoteLiveQuery.length >= 1, retry: false, staleTime: 30_000 },
   );
   const liveSuggestions = useMemo(
@@ -391,18 +397,68 @@ export default function LiveEventsScreen() {
     [liveSearch.data?.results],
   );
   const finnhubSnapshot = trpc.market.snapshot.useQuery(
-    { symbol: featuredSymbol },
-    { staleTime: 60_000, retry: 1 },
+    { marketId: market.id, symbol: featuredSymbol },
+    // Keep the snapshot current without a manual pull; bounded, not a tight loop.
+    { staleTime: 60_000, retry: 1, refetchInterval: 90_000, refetchIntervalInBackground: false },
   );
+  // Market switching must refresh every dependent view. Without this the featured
+  // instrument stayed on the previous market's ticker after a switch, which is how
+  // a US scope ended up rendering RELIANCE.NS with an INR quote and an NSE badge.
+  useEffect(() => {
+    setFeaturedSymbol(defaultSymbolForMarket(market.id) ?? "");
+  }, [market.id]);
   const newsTrackerStatus = trpc.news.status.useQuery(undefined, {
     refetchInterval: 1_000,
     retry: false,
   });
+  // The provider registry is the single source of truth for how many news
+  // providers are actually configured — the UI must not guess this number.
+  const providerList = trpc.providers.list.useQuery(undefined, {
+    staleTime: 300_000,
+    retry: false,
+  });
+  const newsProvidersConfigured = useMemo(
+    () =>
+      (providerList.data ?? []).filter(
+        (provider) =>
+          provider.domain === "news" &&
+          provider.status === "configured" &&
+          provider.enabled !== false,
+      ).length,
+    [providerList.data],
+  );
+  // ONE state drives every badge, label and count on the tracker panel, so the
+  // panel can no longer say "automatic publication is active" and "0 providers
+  // configured" at the same time.
+  const trackerState = useMemo(
+    () =>
+      deriveTrackerState({
+        providersConfigured: newsProvidersConfigured,
+        providersRequired: 1,
+        isChecking: Boolean(newsTrackerStatus.isLoading),
+        lastAttemptAt: newsTrackerStatus.data?.lastAttemptAt ?? null,
+        lastSuccessAt: newsTrackerStatus.data?.lastSuccessAt ?? null,
+        lastError: newsTrackerStatus.data?.lastError ?? null,
+        articlesStored: newsTrackerStatus.data?.articlesStored ?? 0,
+        // An in-app foreground interval is not an always-on service, so the app
+        // must describe itself as on-device/best-effort rather than automated.
+        hasDurableScheduler: false,
+      }),
+    [newsProvidersConfigured, newsTrackerStatus.data, newsTrackerStatus.isLoading],
+  );
+  const trackerToneColor = trackerState.tone === "error" ? coral : trackerState.tone === "warn" ? amber : trackerState.tone === "neutral" ? amber : teal;
   const newsRefresh = trpc.news.refresh.useMutation();
   const flagIrrelevant = trpc.news.flagIrrelevant.useMutation();
   const undoIrrelevant = trpc.news.undoIrrelevant.useMutation();
+  // The Live feed is the selected market's OWN persisted event projections. It used to
+  // render a hardcoded Indian demo array, which is why every market showed L&T, Waaree
+  // and rupee values.
+  const eventProjections = trpc.events.latest.useQuery(
+    { marketId: market.id, limit: 100, lookbackDays: 365 },
+    { staleTime: 60_000, refetchInterval: 120_000, refetchOnWindowFocus: true, retry: false },
+  );
   const trackedNews = trpc.news.stock.useQuery(
-    { symbol: newsLookupSymbol, marketId: market.id },
+    { marketId: market.id, symbol: newsLookupSymbol },
     {
       staleTime: 0,
       refetchInterval: 30_000,
@@ -413,11 +469,10 @@ export default function LiveEventsScreen() {
     },
   );
   const newsArchive = trpc.news.archive.useQuery(
-    {
+    { marketId: market.id,
       days: archiveDays,
       page: archivePage,
       limit: 100,
-      marketId: market.id,
       symbol: newsLookupSymbol.trim() || undefined,
       archiveScope,
       archiveSentiment,
@@ -466,7 +521,7 @@ export default function LiveEventsScreen() {
     retry: false,
   });
   const latestSourceRecords = trpc.sources.latest.useQuery(
-    { limit: 5 },
+    { marketId: market.id, limit: 5 },
     { staleTime: 60_000, retry: false },
   );
   const nseCollectors = trpc.sources.nseCollectors.useQuery(undefined, {
@@ -709,9 +764,14 @@ export default function LiveEventsScreen() {
     }
   };
 
+  const marketEvents = useMemo(
+    () => eventProjectionsToMarketEvents((eventProjections.data ?? []) as never),
+    [eventProjections.data],
+  );
+
   const visibleEvents = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return events.filter((event) => {
+    return marketEvents.filter((event) => {
       const matchesQuery =
         !q ||
         [
@@ -737,7 +797,7 @@ export default function LiveEventsScreen() {
         (activeFilter === "High confidence" && event.confidence === "High");
       return matchesQuery && matchesFilter;
     });
-  }, [activeFilter, query]);
+  }, [activeFilter, query, marketEvents]);
 
   return (
     <ScreenContainer containerClassName="bg-background" className="px-5">
@@ -746,6 +806,11 @@ export default function LiveEventsScreen() {
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
+        initialNumToRender={6}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        updateCellsBatchingPeriod={50}
+        removeClippedSubviews
         ListHeaderComponent={
           <>
             <View style={styles.headerRow}>
@@ -936,7 +1001,7 @@ export default function LiveEventsScreen() {
                       symbol: liveSuggestions[0].symbol,
                       route: "live-events",
                     });
-                    setFeaturedSymbol(`${liveSuggestions[0].symbol}.NS`);
+                    setFeaturedSymbol(providerSymbolForMarket(liveSuggestions[0].symbol, market.id) ?? "");
                     setQuery(liveSuggestions[0].symbol);
                   }
                 }}
@@ -953,7 +1018,7 @@ export default function LiveEventsScreen() {
               <View style={styles.liveSearchSuggestions}>
                 {liveSearch.isFetching ? (
                   <Text style={styles.liveSearchHint}>
-                    Searching NSE/BSE, Finnhub, and open Indian API…
+                    Searching the selected market and configured providers…
                   </Text>
                 ) : liveSuggestions.length ? (
                   liveSuggestions.map((item) => (
@@ -965,7 +1030,7 @@ export default function LiveEventsScreen() {
                           symbol: item.symbol,
                           route: "live-events",
                         });
-                        setFeaturedSymbol(`${item.symbol}.NS`);
+                        setFeaturedSymbol(providerSymbolForMarket(item.symbol, market.id) ?? "");
                         setQuery(item.symbol);
                       }}
                       style={styles.liveSearchSuggestion}
@@ -1307,27 +1372,16 @@ export default function LiveEventsScreen() {
               </View>
             </View>
             <View style={styles.liveSummary}>
-              <View
-                style={[
-                  styles.livePulse,
-                  {
-                    backgroundColor: newsTrackerStatus.data?.lastError
-                      ? coral
-                      : teal,
-                  },
-                ]}
-              />
+              <View style={[styles.livePulse, { backgroundColor: trackerToneColor }]} />
               <Text style={styles.liveText}>
-                {newsTrackerStatus.data?.lastError
-                  ? "TRACKER DEGRADED"
-                  : "LIVE TRACKER"}
+                {trackerState.label.toUpperCase()}
               </Text>
               <Text style={styles.liveSubtext}>
                 {newsTrackerStatus.data?.lastSuccessAt
-                  ? `Last collection ${new Date(newsTrackerStatus.data.lastSuccessAt).toLocaleTimeString()}`
+                  ? `Last successful check ${new Date(newsTrackerStatus.data.lastSuccessAt).toLocaleTimeString()}`
                   : newsTrackerStatus.isLoading
                     ? "Reading collector status"
-                    : "Collection starts automatically on this device"}
+                    : trackerState.description}
               </Text>
               <Ionicons name="chevron-forward" size={16} color="#6E7D92" />
             </View>
@@ -1336,52 +1390,18 @@ export default function LiveEventsScreen() {
                 <View>
                   <Text style={styles.finnhubEyebrow}>ON-DEVICE NEWS TRACKER</Text>
                   <Text style={styles.finnhubTitle}>
-                    {newsTrackerStatus.data
-                      ? newsTrackerStatus.data.articlesStored > 0
-                        ? `Impact-ranked news · ${newsTrackerStatus.data.articlesStored} stored`
-                        : newsTrackerStatus.data.lastError
-                          ? "Collector ran but stored nothing yet"
-                          : "Collector ready · first pass pending"
-                      : newsTrackerStatus.isLoading
-                        ? "Reading collector status"
-                        : "Collector status unavailable"}
+                    {trackerState.label} · {newsProvidersConfigured} provider{newsProvidersConfigured === 1 ? "" : "s"} configured · {newsTrackerStatus.data?.articlesStored ?? 0} stored
                   </Text>
                 </View>
                 <View
                   style={[
                     styles.sourcePill,
-                    newsTrackerStatus.data?.lastError && styles.sourcePillError,
+                    trackerState.tone === "error" && styles.sourcePillError,
                   ]}
                 >
-                  <View
-                    style={[
-                      styles.sourceDot,
-                      {
-                        backgroundColor: newsTrackerStatus.data?.lastError
-                          ? coral
-                          : newsTrackerStatus.data?.running
-                            ? teal
-                            : amber,
-                      },
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.sourceText,
-                      {
-                        color: newsTrackerStatus.data?.lastError
-                          ? coral
-                          : newsTrackerStatus.data?.running
-                            ? teal
-                            : amber,
-                      },
-                    ]}
-                  >
-                    {newsTrackerStatus.data?.lastError
-                      ? "Degraded"
-                      : newsTrackerStatus.data?.running
-                        ? "Online"
-                        : "Checking"}
+                  <View style={[styles.sourceDot, { backgroundColor: trackerToneColor }]} />
+                  <Text style={[styles.sourceText, { color: trackerToneColor }]}>
+                    {trackerState.label}
                   </Text>
                 </View>
               </View>
@@ -1437,10 +1457,7 @@ export default function LiveEventsScreen() {
                 </Pressable>
               </View>
               <Text style={styles.finnhubState}>
-                Automatic collection is active on this device: the app polls the
-                configured providers, deduplicates verified articles, stores new
-                items in the local archive, and raises high-impact alerts when
-                eligible. Nothing is sent to a server.
+                {trackerAutomationClaim(trackerState)} Nothing is sent to a server.
               </Text>
               <Pressable
                 onPress={() => router.push("/filings")}
@@ -2248,9 +2265,15 @@ export default function LiveEventsScreen() {
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="scan-outline" size={30} color={amber} />
-            <Text style={styles.emptyTitle}>No matching events</Text>
+            <Text style={styles.emptyTitle}>
+              {marketEvents.length === 0
+                ? `No tracked events for ${market.country} yet`
+                : "No matching events"}
+            </Text>
             <Text style={styles.emptyText}>
-              Try a different company, symbol, or filter.
+              {marketEvents.length === 0
+                ? `Nothing has been verified for ${market.country} from this market's own sources. AnalyzerX shows nothing here rather than another market's events.`
+                : "Try a different company, symbol, or filter."}
             </Text>
           </View>
         }

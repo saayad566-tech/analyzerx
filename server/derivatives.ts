@@ -1,4 +1,5 @@
 import { markProviderHealthy, markProviderRejected } from "./provider-health";
+import { type MarketId } from "../lib/market-regions";
 import { fetchAngelOneSnapshot, getAngelOneSourceCatalog } from "./angelone";
 
 export type DerivativesStatus = "fresh" | "stale" | "unavailable" | "auth_required" | "error";
@@ -261,7 +262,7 @@ async function chooseExpiry(underlying: { securityId: number; segment: string })
   return expiries.sort()[0] ?? null;
 }
 
-export async function fetchDerivativesSnapshot(requestedSymbol: string): Promise<DerivativesSnapshot> {
+export async function fetchDerivativesSnapshot(requestedSymbol: string, marketId: MarketId): Promise<DerivativesSnapshot> {
   const symbol = normalizeSymbol(requestedSymbol);
   const underlying = underlyingMap[symbol];
   if (!underlying) return buildUnavailable(symbol, "unavailable", "No validated Dhan or NSE underlying mapping is configured for this symbol.", "Add a validated exchange symbol mapping before enabling option-chain retrieval.");

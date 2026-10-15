@@ -1,4 +1,5 @@
-import { fetchNseInstitutionalFlows } from "./nse-flows";
+import { fetchNseInstitutionalFlows, unavailableInstitutionalFlows } from "./nse-flows";
+import { type MarketId } from "../lib/market-regions";
 
 export type PositioningCoverage = {
   symbol: string;
@@ -12,8 +13,12 @@ export type PositioningCoverage = {
   explanation: string;
 };
 
-export async function getPositioningCoverage(symbol: string): Promise<PositioningCoverage> {
-  const aggregateInstitutionalFlows = await fetchNseInstitutionalFlows();
+export async function getPositioningCoverage(symbol: string, marketId: MarketId): Promise<PositioningCoverage> {
+  // The NSE FII/DII report is India-only; requesting it elsewhere would attach Indian
+  // participant flows to a non-Indian security.
+  const aggregateInstitutionalFlows = marketId === "IN"
+    ? await fetchNseInstitutionalFlows()
+    : unavailableInstitutionalFlows("TODAY", "The NSE FII/DII report is an Indian source and is not requested for this market.");
   return {
     symbol: symbol.trim().toUpperCase(),
     asOf: new Date().toISOString(),

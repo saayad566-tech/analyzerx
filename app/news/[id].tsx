@@ -51,6 +51,7 @@ function toneFor(sentiment: StoredArticle["sentiment"]): string {
 }
 
 export default function NewsDetailScreen() {
+  const { market } = useMarketContext();
   const { id } = useLocalSearchParams<{ id: string }>();
   // The detail screen reads the same on-device archive the list uses and looks
   // the story up by id, so it needs no procedure the typed router does not
@@ -59,7 +60,7 @@ export default function NewsDetailScreen() {
   // market it belongs to.
   const { marketId } = useMarketContext();
   const archiveQuery = trpc.news.archive.useQuery(
-    { days: 365, limit: 500, archiveOrder: "Newest first", page: 0, marketId },
+    { marketId: market.id, days: 365, limit: 500, archiveOrder: "Newest first", page: 0 },
     { staleTime: 60_000, retry: false },
   );
   const articleQuery = archiveQuery;

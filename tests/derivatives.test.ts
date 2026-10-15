@@ -18,14 +18,14 @@ describe("derivatives adapter", () => {
   });
 
   it("does not fabricate a chain for an unmapped symbol", async () => {
-    const result = await fetchDerivativesSnapshot("AAPL");
+    const result = await fetchDerivativesSnapshot("AAPL", "IN");
     expect(result.status).toBe("unavailable");
     expect(result.contracts).toEqual([]);
     expect(result.error).toMatch(/mapping/i);
   });
 
   it("returns an explicit auth-required state when Dhan credentials are absent", async () => {
-    const result = await fetchDerivativesSnapshot("ADANIENT");
+    const result = await fetchDerivativesSnapshot("ADANIENT", "IN");
     expect(result.status).toBe("auth_required");
     expect(result.contracts).toEqual([]);
     expect(result.nextStep).toMatch(/Dhan/i);
@@ -40,7 +40,7 @@ describe("derivatives adapter", () => {
         "2500": { ce: { last_price: 50, oi: 100, previous_oi: 80, volume: 10, implied_volatility: 20, security_id: 1, greeks: { delta: 0.5, gamma: 0.01, theta: -1, vega: 2 } }, pe: { last_price: 45, oi: 150, previous_oi: 100, volume: 12, implied_volatility: 21, security_id: 2, greeks: { delta: -0.5, gamma: 0.01, theta: -1, vega: 2 } } },
       } } }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
-    const result = await fetchDerivativesSnapshot("ADANIENT");
+    const result = await fetchDerivativesSnapshot("ADANIENT", "IN");
     expect(result.status).toBe("fresh");
     expect(result.expiry).toBe("2026-08-27");
     expect(result.contracts).toHaveLength(2);
@@ -58,7 +58,7 @@ describe("derivatives adapter", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: ["2026-08-27"] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: { last_price: 2500, oc: { "2500": { ce: { oi: 1, last_price: 2 }, pe: { oi: 1, last_price: 2 } } } } }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
-    const result = await fetchDerivativesSnapshot("ADANIENT");
+    const result = await fetchDerivativesSnapshot("ADANIENT", "IN");
     expect(result.status).toBe("fresh");
     expect(result.source).toMatch(/Sandbox/);
     expect(fetchMock.mock.calls[0][0]).toBe("https://sandbox.dhan.co/v2/optionchain/expirylist");
@@ -75,7 +75,7 @@ describe("derivatives adapter", () => {
         { strikePrice: 2500, expiryDate: "27-Aug-2026", underlyingValue: 2500, CE: { lastPrice: 50, openInterest: 100, changeinOpenInterest: 20, impliedVolatility: 18, totalTradedVolume: 10 }, PE: { lastPrice: 45, openInterest: 150, changeinOpenInterest: 30, impliedVolatility: 20, totalTradedVolume: 12 } },
       ] } }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
-    const result = await fetchDerivativesSnapshot("ADANIENT");
+    const result = await fetchDerivativesSnapshot("ADANIENT", "IN");
     expect(result.status).toBe("fresh");
     expect(result.source).toMatch(/NSE public/);
     expect(result.contracts).toHaveLength(2);
@@ -100,7 +100,7 @@ describe("derivatives adapter", () => {
         { strike: 2500, optionType: "PE", expiry: "2026-08-27", symboltoken: "2", ltp: 45, oi: 150, volume: 12, iv: 20, greeks: { delta: -0.5, gamma: 0.01, theta: -1, vega: 2 } },
       ] }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
-    const result = await fetchDerivativesSnapshot("ADANIENT");
+    const result = await fetchDerivativesSnapshot("ADANIENT", "IN");
     expect(result.status).toBe("fresh");
     expect(result.source).toMatch(/Angel One/);
     expect(result.contracts).toHaveLength(2);
