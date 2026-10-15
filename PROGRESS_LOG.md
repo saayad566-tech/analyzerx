@@ -866,3 +866,32 @@ AndroidX (`Theme.SplashScreen`), not Expo, so it stays.
 
 ### Verified
 `tsc --noEmit` 0 errors in both scopes; **293 tests passing**.
+
+## 2026-10-15 — Session 23 (unblocking the APK workflow)
+The APK cannot be built in this sandbox (2 GB RAM; proven by the JVM crash log). What *could* be done —
+and mattered more — was checking whether the machine that builds it would actually succeed. The
+migration had broken it in four places, each of which would have failed the workflow before the APK
+was ever produced.
+
+### The four blockers, all fixed
+1. **`release-manifest.json` required deleted files.** `requiredFeatures.releaseProfiles` listed
+   `app.config.ts` and `eas.json`, both removed during the migration. `pnpm release:verify` therefore
+   failed with `missing file: app.config.ts, eas.json` — at a step *before* the build. Repointed to
+   `lib/platform/constants.ts`, `android/app/build.gradle` and the workflow.
+2. **Two source markers no longer existed.** `ANALYZERX_RELEASE_VERSION` and
+   `ANALYZERX_ENABLE_NATIVE_LOCAL_AI` lived in the deleted EAS files. Replaced with
+   `ANALYZERX_SOURCE_REVISION` (constants module) and `AnalyzerXLocalAI` (the local AI module), which
+   prove the same two things against files that exist.
+3. **The lockfile was never synced after Stage 4.** `pnpm install --frozen-lockfile` failed on eight
+   removed expo packages — the workflow's very first step. Lockfile regenerated.
+4. **`tests/local-ai-native-wiring.test.ts` referenced a variable that no longer existed**, so
+   `pnpm check` failed. Also removed a stale `.expo/types` entry from the root `tsconfig.json`.
+
+All four were caught by *running the gates*, not by reading the diff.
+
+### CI gates verified
+- `pnpm install --frozen-lockfile` — **passes**.
+- `pnpm check` (`tsc --noEmit`) — **0 errors** across all three scopes (packages+lib+server,
+  app+lib, tests+scripts+root).
+- `pnpm release:verify` — **passes**, and the manifest assertions hold against the committed native
+  sources.
