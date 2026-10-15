@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";
 import { useMarketContext } from "@/lib/market-context";
