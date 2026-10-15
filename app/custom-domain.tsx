@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useState } from "react";
 import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import { useRouter } from "expo-router";
+import { useRouter } from "@/lib/navigation/router";
 import { ScreenContainer } from "@/components/screen-container";
 
 const KEY = "analyzerx.custom-domain";
