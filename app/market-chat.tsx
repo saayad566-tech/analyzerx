@@ -14,6 +14,7 @@ import { buildBoundedLocalPrompt, formatAssistantFailure, isGeneralChatQuestion,
 import { getLocalAIDeviceTelemetrySnapshot, recordLocalAIInference } from "@/lib/local-ai-telemetry";
 import { MarketScopeChip } from "@/components/market-scope-chip";
 import { useMarketContext } from "@/lib/market-context";
+import { fireAndForget } from "@/lib/fire-and-forget";
 
 const amber = "#F4B860";
 const teal = "#4FD1C5";
@@ -60,12 +61,12 @@ export default function MarketChatScreen() {
   const recorderState = useAudioRecorderState(recorder);
 
   useEffect(() => {
-    void loadMarketChatHistory().then((saved) => { setMessages(saved.map((item, index) => ({ ...item, id: `saved-${index}` }))); setHydrated(true); });
-    void loadMarketChatRuntimeMode().then(setRuntimeMode);
+    fireAndForget(loadMarketChatHistory().then((saved) => { setMessages(saved.map((item, index) => ({ ...item, id: `saved-${index}` }))); setHydrated(true); }), "loadMarketChatHistory");
+    fireAndForget(loadMarketChatRuntimeMode().then(setRuntimeMode), "loadMarketChatRuntimeMode");
   }, []);
 
   const refreshRuntimeSelection = useCallback(() => {
-    void getActiveLocalAIModelId().then((modelId) => { setActiveLocalModelId(modelId); setActiveLocalModel(modelId ? getLocalAIModel(modelId).displayName : null); });
+    fireAndForget(getActiveLocalAIModelId().then((modelId) => { setActiveLocalModelId(modelId); setActiveLocalModel(modelId ? getLocalAIModel(modelId).displayName : null); }), "getActiveLocalAIModelId");
   }, []);
 
   useFocusEffect(useCallback(() => {
