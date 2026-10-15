@@ -103,3 +103,15 @@ per mandate §2. None is ticked until its check has run.
 | 13.3 | The switcher showed only "active" | `app/market-country.tsx` had no download/installed/progress states | DONE — lifecycle badges, activation gated on installed |
 | 13.4 | Architecture was undocumented | No single description of the tree, lifecycle or isolation model | DONE — `docs/ARCHITECTURE.md` |
 | 13.5 | Country data packs do not exist | The state machine reaches `queued` and stops; there is no signed manifest or hosted pack | OPEN — largest remaining piece |
+
+## Slice 14 — Signed manifest and pack download
+
+| # | Item | Evidence | Status |
+|---|---|---|---|
+| 14.1 | Ed25519 verification | Implemented in pure TypeScript and validated against the RFC 8032 §7.1 test vectors (all three), with six negative controls | DONE |
+| 14.2 | SHA-512 | Needed by Ed25519; `expo-crypto` offers SHA-256 only | DONE — validated against the NIST vectors |
+| 14.3 | Manifest schema + signature verification | `lib/market-manifest.ts`; refuses unsigned, unknown key id, bad signature, expired, non-HTTPS, malformed hash | DONE |
+| 14.4 | Client fetch with timeout, cache, offline fallback | `lib/market-manifest-client.ts`; verified-only cache, one attempt per call, cache served stale when offline | DONE |
+| 14.5 | Download pipeline wired to the manifest | `lib/market-pack-download.ts`; queued → downloading → verifying → installed, hash checked against the verified manifest | DONE |
+| 14.6 | Specification document | `docs/MANIFEST_SPEC.md` | DONE |
+| 14.7 | Production signing key, CI signing step, hosted packs | The pinned key is currently the RFC 8032 test key so the verification path is exercised end to end | OPEN — needs the real private key in CI and packs published as Release assets |
