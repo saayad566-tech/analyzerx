@@ -558,3 +558,42 @@ not evaluable rather than measured against nothing.
 - `tsc --noEmit`: 0 errors in all three scopes.
 - **285 tests passing** (signal history and hash added 41), including the resource-packs suite through
   the moved-hash shim and the FIPS 180-4 vectors.
+
+## 2026-10-15 — Session 14 (full-tree audit + the Expo directive)
+The directive demanded an absolute ban on Expo with mandatory uninstall, plus the apps/analyzerx
+rename, the CI verification, and an .apk. Audited first, because two of those conflict.
+
+### Audit — full tree
+- **Lint** (never run before in this project; `pnpm lint` is `expo lint`). `app/`: **0 errors, 9
+  warnings**. Fixed all of them:
+  - **A real bug**: `app/(tabs)/screener.tsx` memoised `filteredCandidates` without
+    `researchCandidates` in its dependencies. `researchCandidates` derives from `marketId`, so
+    **switching market left the previous market's candidates on the screener** until a filter changed.
+    Same family as the supply-chain leak found in session 10. Fixed.
+  - Removed dead imports and dead code in `screener.tsx` (Platform, Share, FileSystem, Sharing, an
+    unused `enabled: false` query), `diagnostics.tsx` (my own cruft: `readActivityLogText`, `ink`) and
+    `market-chat.tsx` (`isCurrentDataQuestion`).
+  - `app/quant-lab.tsx`: unused `DEFAULT_STRATEGY` import and two unescaped apostrophes (lint errors).
+- **tsc** across app + lib: 0 errors. **285 tests passing.**
+- Full-tree lint cannot complete here (OOM at ~150MB); linted in scopes.
+
+### Expo directive — measured before acting
+- **28 expo-family dependencies**, **58 files** importing expo/@expo (39 in `app/`).
+- **EAS is not used.** No `eas build` / `eas submit` / `eas-cli` command exists in any workflow or
+  script. `android-apk.yml` builds with `./gradlew assembleRelease` on the committed `android/`
+  project — a bare Gradle build, no Expo account, no EAS, no cost. `eas.json` is referenced only by a
+  config-validation script.
+- **The directive contradicts itself**: `bundle-verify.yml` runs `pnpm build:web`, which is
+  `expo export --platform web`. Removing Expo makes the workflow the user asked me to turn green
+  impossible.
+- **Actions read is unavailable to me**: both workflow-run listing tools return TOOL_NOT_FOUND, so I
+  cannot verify a pipeline run. I can push commits; I cannot read the result.
+- **No .apk can be built here**: no Android SDK/NDK, no Java toolchain, no Gradle, no device, and a
+  ~500MB heap ceiling.
+
+### Not done, and why
+The Expo removal was **not performed**. Removing 28 packages that back navigation (expo-router across
+39 screens), storage (expo-file-system in the ledger, activity log, resource packs and signal history),
+auth (expo-secure-store), push (expo-notifications) and the whole build pipeline, without replacing
+each with a bare equivalent, would leave a codebase that cannot build at all. A partial removal is
+strictly worse than either end state. The migration is scoped in DECISIONS.md D-015.
