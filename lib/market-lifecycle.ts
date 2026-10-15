@@ -21,7 +21,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { MARKET_IDS, type MarketId } from "./market-regions";
-import { scopedCacheKey } from "./market-isolation";
+import { marketScopeKey } from "./market-isolation";
 
 /** Where a country is in its lifecycle. */
 export type MarketLifecycleState =
@@ -55,7 +55,9 @@ const STORE_PREFIX = "analyzerx.market-lifecycle.v1";
 
 /** The storage key for one country's record. Namespaced, so records cannot collide. */
 export function lifecycleKey(marketId: MarketId): string {
-  return scopedCacheKey(marketId, STORE_PREFIX);
+  // Namespaced through the shared helper so a lifecycle record can never collide with
+  // another country's, using the same convention as every other stored value.
+  return marketScopeKey(marketId, "watchlist", STORE_PREFIX);
 }
 
 function freshRecord(marketId: MarketId): MarketLifecycleRecord {
