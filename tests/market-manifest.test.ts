@@ -369,7 +369,7 @@ describe("pack sizing and file listing", () => {
 describe("client fetch, cache and offline safety", () => {
   it("fetches, verifies and caches a good manifest", async () => {
     const manifest = signed(payload());
-    const result = await fetchManifest({ now: NOW, fetcher: async () => manifest });
+    const result = await fetchManifest({ now: NOW, pinnedKeys: TEST_KEYS, fetcher: async () => manifest });
     expect(result.source).toBe("network");
     expect(result.stale).toBe(false);
     expect(result.payload?.markets.IN.version).toBe("1.0.4");
@@ -377,8 +377,8 @@ describe("client fetch, cache and offline safety", () => {
   });
 
   it("falls back to cache on a network failure and reports why", async () => {
-    await fetchManifest({ now: NOW, fetcher: async () => signed(payload()) });
-    const result = await fetchManifest({ now: NOW, fetcher: async () => { throw new Error("Network request failed"); } });
+    await fetchManifest({ now: NOW, pinnedKeys: TEST_KEYS, fetcher: async () => signed(payload()) });
+    const result = await fetchManifest({ now: NOW, pinnedKeys: TEST_KEYS, fetcher: async () => { throw new Error("Network request failed"); } });
     expect(result.source).toBe("cache");
     expect(result.stale).toBe(true);
     expect(result.error).toMatch(/network request failed/i);
@@ -386,7 +386,7 @@ describe("client fetch, cache and offline safety", () => {
   });
 
   it("reports a timeout clearly", async () => {
-    const result = await fetchManifest({ now: NOW, timeoutMs: 5, fetcher: async () => { const e = new Error("aborted"); e.name = "AbortError"; throw e; } });
+    const result = await fetchManifest({ now: NOW, pinnedKeys: TEST_KEYS, timeoutMs: 5, fetcher: async () => { const e = new Error("aborted"); e.name = "AbortError"; throw e; } });
     expect(result.source).toBe("none");
     expect(result.payload).toBeNull();
     expect(result.error).toMatch(/timed out after 5 ms/i);
@@ -395,7 +395,7 @@ describe("client fetch, cache and offline safety", () => {
   it("does NOT cache or serve a manifest with a bad signature", async () => {
     const bad = signed(payload());
     (bad.payload.markets.IN as { version: string }).version = "9.9.9";
-    const result = await fetchManifest({ now: NOW, fetcher: async () => bad });
+    const result = await fetchManifest({ now: NOW, pinnedKeys: TEST_KEYS, fetcher: async () => bad });
     expect(result.source).toBe("none");
     expect(result.payload).toBeNull();
     expect(result.error).toMatch(/signature/i);
@@ -404,16 +404,16 @@ describe("client fetch, cache and offline safety", () => {
   });
 
   it("keeps serving the last good manifest when a later one is tampered", async () => {
-    await fetchManifest({ now: NOW, fetcher: async () => signed(payload()) });
+    await fetchManifest({ now: NOW, pinnedKeys: TEST_KEYS, fetcher: async () => signed(payload()) });
     const bad = signed(payload());
     (bad.payload.markets.IN as { sizeBytes: number }).sizeBytes = 1;
-    const result = await fetchManifest({ now: NOW, fetcher: async () => bad });
+    const result = await fetchManifest({ now: NOW, pinnedKeys: TEST_KEYS, fetcher: async () => bad });
     expect(result.source).toBe("cache");
     expect(result.payload?.markets.IN.sizeBytes).toBe(12_345_678);
   });
 
   it("returns nothing rather than crashing when offline with an empty cache", async () => {
-    const result = await fetchManifest({ now: NOW, fetcher: async () => { throw new Error("offline"); } });
+    const result = await fetchManifest({ now: NOW, pinnedKeys: TEST_KEYS, fetcher: async () => { throw new Error("offline"); } });
     expect(result.payload).toBeNull();
     expect(result.source).toBe("none");
     expect(result.error).toBeTruthy();
@@ -422,26 +422,26 @@ describe("client fetch, cache and offline safety", () => {
   it("recovers from a corrupt cache", async () => {
     store.set("analyzerx.manifest.cache.v1", "{not json");
     expect(await readCachedManifest()).toBeNull();
-    const result = await fetchManifest({ now: NOW, fetcher: async () => { throw new Error("offline"); } });
+    const result = await fetchManifest({ now: NOW, pinnedKeys: TEST_KEYS, fetcher: async () => { throw new Error("offline"); } });
     expect(result.payload).toBeNull();
   });
 
   it("refuses a non-HTTPS manifest url without making a request", async () => {
     let called = false;
-    const result = await fetchManifest({ url: "http://insecure.test/m.json", now: NOW, fetcher: async () => { called = true; return signed(payload()); } });
+    const result = await fetchManifest({ url: "http://insecure.test/m.json", now: NOW, pinnedKeys: TEST_KEYS, fetcher: async () => { called = true; return signed(payload()); } });
     expect(called).toBe(false);
     expect(result.error).toMatch(/not https/i);
   });
 
   it("does not retry in a loop: one attempt per call", async () => {
     let attempts = 0;
-    await fetchManifest({ now: NOW, fetcher: async () => { attempts += 1; throw new Error("down"); } });
+    await fetchManifest({ now: NOW, pinnedKeys: TEST_KEYS, fetcher: async () => { attempts += 1; throw new Error("down"); } });
     expect(attempts).toBe(1);
   });
 
   it("serves a cached manifest offline so the app can still describe installs", async () => {
-    await fetchManifest({ now: NOW, fetcher: async () => signed(payload()) });
-    const offline = await fetchManifest({ now: NOW, fetcher: async () => { throw new Error("offline"); } });
+    await fetchManifest({ now: NOW, pinnedKeys: TEST_KEYS, fetcher: async () => signed(payload()) });
+    const offline = await fetchManifest({ now: NOW, pinnedKeys: TEST_KEYS, fetcher: async () => { throw new Error("offline"); } });
     expect(offline.payload).not.toBeNull();
     expect(offline.stale).toBe(true);
   });
