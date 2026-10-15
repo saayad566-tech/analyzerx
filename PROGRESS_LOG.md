@@ -281,3 +281,51 @@ Triggered by the 100-book Strategy Lab brief and the master directive.
   `RangeError: WebAssembly.instantiate(): Out of memory` (undici's llhttp parser, the same cap that
   blocks vitest). A workspace conversion therefore cannot be verified here, and shipping it blind
   risks breaking the app bundle. Recorded as K17 with the exact error.
+
+## 2026-10-15 — Session 8 (monorepo workspace + dynamic trailing-stop performance tracker)
+Triggered by the monorepo/tracker directive.
+
+### Monorepo workspace
+- `pnpm-workspace.yaml` + two real packages: **`@analyzerx/core-types`** (the shared domain model —
+  `MarketId`, `Candle`, `Trade`, `EquityPoint`, `BacktestMetrics`) and **`@analyzerx/quant-engine`**
+  (indicators, metrics, backtest, strategy, OHLCV, bounded streams, fundamentals, the book library,
+  supply chain, and the new tracker), each with its own `package.json` and strict `tsconfig.json`.
+- Dependency direction is one-way: the engine imports core-types; the app imports both. The engine
+  no longer imports anything from the application's `lib/` (verified by grep).
+- `lib/quant/*.ts` are now **one-line compatibility shims** re-exporting the package, so not a single
+  existing application import changed. The shims use **relative paths only**, which is deliberate:
+  it introduces no new module-resolution behaviour, so Metro's resolution requirements are identical
+  to the working repo. That is what makes the restructure safe to ship without a bundler here.
+- `pnpm install --frozen-lockfile` passes with the workspace; `pnpm list -r` shows all three
+  packages; per-package `tsc -p` is clean for both.
+
+### New: dynamic trailing stop-loss performance tracker (`packages/quant-engine/src/tracker.ts`)
+Implements the specified ladder exactly:
+- −10% initial risk floor (the absolute maximum stop).
+- At +10% gain the stop moves to break-even; at +15% to +5%; at +20% to +10%.
+- Above the +20% step the stop trails the peak at a **10% gap up to +50%**, then tightens to a
+  **5% gap above +50%**.
+- The stop **ratchets upward only** — it can never fall back, which is the whole point of a trail.
+- Peak is taken from the bar's high and the stop is tested against the bar's low, so an intrabar
+  stop-out is caught.
+- Dashboard: per-position entry/peak/final-stop/exit-reason/return plus MAE and MFE, and aggregate
+  average, median, win rate, profit factor, best/worst, average bars held, max drawdown and an exit
+  mix by reason.
+- Wired into the Strategy Lab: a run now also tracks its own output and renders the ladder, the
+  per-position log and the dashboard.
+
+### Bug my own tests caught
+The ladder used exact float comparisons, so `115/100 − 1 = 0.14999999999999991` fell through the
++15% step and landed on break-even. Fixed with an epsilon-tolerant `reached()`; two test series were
+also corrected where the peak bar's own low legitimately breached the new stop on the same bar.
+
+### Verified
+- **142 quant tests passing** (tracker added 25).
+- Per-package strict tsc: 0 errors. App + shims + packages in one scope: 0 errors.
+- `pnpm install --frozen-lockfile`: exit 0.
+
+### Metro verification — what I actually established
+`expo export` fails at the CLI's HTTP layer (undici's WASM llhttp). Driving **Metro directly**
+(`metro`'s `runBuild`) works and **resolved my modules**, but the transform stage then hits the same
+WASM allocation ceiling on React Native's own polyfills. So: resolution is proven; a full bundle is
+not possible in this pod. The restructure therefore adds no new resolution behaviour.
