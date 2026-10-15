@@ -8,13 +8,14 @@ import type { Fundamentals } from "./fundamentals";
 
 export type FundamentalsIssue = { index: number; reason: string };
 export type FundamentalsParseResult =
-  | { status: "ok"; companies: Fundamentals[]; dropped: number; issues: FundamentalsIssue[]; notes: string[] }
+  | { status: "ok"; companies: Fundamentals[]; priors: Record<string, Fundamentals>; dropped: number; issues: FundamentalsIssue[]; notes: string[] }
   | { status: "error"; reason: string };
 
 const NUMERIC_FIELDS: (keyof Fundamentals)[] = [
   "price", "sharesOutstanding", "marketCap", "revenue", "netIncome", "eps", "bookValuePerShare", "equity",
   "totalAssets", "currentAssets", "currentLiabilities", "totalLiabilities", "totalDebt", "cash", "inventory",
-  "receivables", "ebit", "ebitda", "operatingCashFlow", "freeCashFlow", "revenueGrowth", "epsGrowth",
+  "receivables", "costOfRevenue", "grossProfit", "sellingGeneralAdmin", "depreciation", "longTermDebt",
+  "retainedEarnings", "propertyPlantEquipment", "ebit", "ebitda", "operatingCashFlow", "freeCashFlow", "revenueGrowth", "epsGrowth",
   "dividendYield", "peRatio", "pbRatio", "psRatio", "pegRatio", "roe", "roic", "relativeStrength",
 ];
 
@@ -56,7 +57,25 @@ export function parseFundamentals(text: string): FundamentalsParseResult {
   }
   if (!Array.isArray(rows)) return { status: "error", reason: "Expected a JSON array of companies (or an object with a companies/fundamentals/data array)." };
 
+  /** Coerce one record into a Fundamentals object. Shared by the current and prior periods. */
+  const toCompany = (record: Record<string, unknown>, symbol: string): Fundamentals => {
+    const company: Fundamentals = { symbol };
+    if (typeof record.name === "string") company.name = record.name;
+    if (typeof record.sector === "string") company.sector = record.sector;
+    if (typeof record.industry === "string" && !company.sector) company.sector = record.industry;
+    if (typeof record.description === "string") company.description = record.description;
+    for (const field of NUMERIC_FIELDS) {
+      const raw = record[field];
+      if (raw === undefined) continue;
+      const value = RATE_FIELDS.includes(field) ? coerceRate(raw) : coerce(raw);
+      // An explicitly present but unparsable value is recorded as null, never as 0.
+      (company as Record<string, unknown>)[field] = value;
+    }
+    return company;
+  };
+
   const companies: Fundamentals[] = [];
+  const priors: Record<string, Fundamentals> = {};
   const issues: FundamentalsIssue[] = [];
   rows.forEach((row, index) => {
     if (!row || typeof row !== "object") {
@@ -70,24 +89,19 @@ export function parseFundamentals(text: string): FundamentalsParseResult {
       issues.push({ index, reason: "missing symbol" });
       return;
     }
-    const company: Fundamentals = { symbol };
-    if (typeof record.name === "string") company.name = record.name;
-    if (typeof record.sector === "string") company.sector = record.sector;
-    if (typeof record.industry === "string" && !company.sector) company.sector = record.industry;
-    if (typeof record.description === "string") company.description = record.description;
-    for (const field of NUMERIC_FIELDS) {
-      const raw = record[field];
-      if (raw === undefined) continue;
-      const value = RATE_FIELDS.includes(field) ? coerceRate(raw) : coerce(raw);
-      // An explicitly present but unparsable value is recorded as null, never as 0.
-      (company as Record<string, unknown>)[field] = value;
+    companies.push(toCompany(record, symbol));
+    // A nested `prior` object supplies the previous period for the period-over-period models.
+    const priorRecord = record.prior;
+    if (priorRecord && typeof priorRecord === "object" && !Array.isArray(priorRecord)) {
+      priors[symbol] = toCompany(priorRecord as Record<string, unknown>, symbol);
     }
-    companies.push(company);
   });
 
   if (companies.length === 0) return { status: "error", reason: "No company records with a symbol were found." };
   const notes: string[] = [];
   const sparse = companies.filter((company) => company.revenue === undefined && company.ebit === undefined && company.netIncome === undefined).length;
   if (sparse > 0) notes.push(`${sparse} record(s) carry no revenue, EBIT or net income, so fundamental screens will report those criteria as not evaluable.`);
-  return { status: "ok", companies, dropped: issues.length, issues, notes };
+  const priorCount = Object.keys(priors).length;
+  if (priorCount > 0) notes.push(`${priorCount} record(s) include a prior period, so the period-over-period models (Piotroski, Beneish) can be evaluated.`);
+  return { status: "ok", companies, priors, dropped: issues.length, issues, notes };
 }
