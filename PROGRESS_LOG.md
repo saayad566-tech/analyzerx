@@ -122,3 +122,45 @@ Triggered by the "Zero to Hero" audit brief (health score + flaw matrix format).
 - push-batching 10/10, activity-log 15/15, resource-packs 22/22, market-dataset-isolation 12/12,
   market-isolation 32/32 (plus market-data 8, market-regions 4, sector-intelligence 4,
   news-market-isolation-dedup 3, indian-news-relevance 10, regional-collectors 3).
+
+## 2026-10-15 — Session 4 (zero-cost push engine, indexes, resilience)
+Triggered by the FCM/VAPID brief.
+
+### Built — free, provider-agnostic push engine
+- `server/push-batching.ts` — provider selection (free Expo **or** free FCM HTTP v1), per-provider
+  caps (Expo 100, FCM 500), token-shape checks, page arithmetic, jittered backoff, `Retry-After`
+  parsing, and error classification for both providers (Expo `DeviceNotRegistered`; FCM
+  `UNREGISTERED`/`NOT_REGISTERED`, `UNAVAILABLE`/`INTERNAL`/`QUOTA_EXCEEDED`).
+- `server/push-delivery.ts` — the delivery loop with an **injectable transport**: cursor paging,
+  per-page retry with backoff + jitter, dead-token deactivation, page bound, and honest summaries.
+- `server/fcm-auth.ts` — FCM HTTP v1 service-account auth: real RS256 JWT signing via `node:crypto`,
+  OAuth2 token exchange, cached access token. Returns failures as values, never throws.
+
+### Changed
+- `server/db.ts` — **cursor (keyset) pagination** replaces OFFSET for token reads, so deactivating
+  dead tokens mid-run cannot skip a live device; added bounded `deactivatePushTokens`.
+- `server/news-tracker.ts` — uses the delivery engine; picks FCM when configured, otherwise Expo;
+  deactivates tokens the service reports as unregistered.
+- `drizzle/schema.ts` — added the missing indexes on the hot paths: `news_events`
+  (marketId+publishedAt, marketId+symbol+publishedAt, publishedAt, impactScore+publishedAt),
+  `event_projections` (status+eventAt, marketId+status+eventAt, symbol+eventAt, storylineKey+eventAt),
+  `source_records` (symbol+retrievedAt, retrievedAt, sourceKey+retrievedAt), `user_push_tokens`
+  (userId+enabled+revokedAt).
+
+### Verified (evidence)
+- `tsc --noEmit`: **0 errors**.
+- **174 tests passing across 14 files**, including the new push-batching 27, push-delivery 15,
+  fcm-auth 11. The delivery loop is tested end-to-end with a stub transport — paging 250 tokens as
+  100+100+50, cursor advancement, dead-token deactivation, 429-then-success retry, page bound, and
+  the FCM path. The FCM JWT is verified by checking its signature against the matching public key.
+
+### Deliberately not done
+- `push_tokens.token` is already the primary key; the delivery query's `ORDER BY token` is served by
+  it, so no extra index was added (it would be redundant and 2 KB wide).
+- `markProviderHealthy`/`markProviderRejected` are synchronous, so the unawaited-call scan hits are
+  false positives — no change made.
+
+### Environment-gated
+- Live FCM delivery cannot be exercised here (needs the operator's Firebase service account and a
+  device). The transport is real and its logic is unit-tested; the live call is not claimed as
+  verified. Expo remains the default free path when FCM is unconfigured.
