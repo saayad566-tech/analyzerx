@@ -47,3 +47,16 @@
 - [x] docs/RESOURCE_PACKS.md + assets-repo README
 - [x] Committed to the analyzerx repository
 - [x] Final self-audit
+
+## Phase 8 — A-to-Z audit pass (session 2)
+- [x] Lazy/placeholder scan across the whole app: 0 findings
+- [x] Safe-area/layout scan across every screen: no defects
+- [x] Error containment verified (ErrorBoundary wired in the root layout)
+- [x] Hardcoded-secret scan: 0 findings
+- [x] Fixed: session-token prefix logged in `lib/_core/auth.ts`
+- [x] Fixed: user object (email/PII) logged in `lib/_core/auth.ts`
+- [x] Fixed: broken "review in Diagnostics" promise — built `app/diagnostics.tsx` + Account entry
+- [x] Added: plain-English activity log (`lib/activity-log-core.ts`, `lib/activity-log.ts`,
+      `AI_RND_Activity_Log.txt`) wired into the ErrorBoundary
+- [x] Tests: `tests/activity-log.test.ts` (15) + full regression (100 total)
+- [x] `tsc --noEmit`: 0 errors
