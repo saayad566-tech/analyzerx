@@ -7,6 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { clearGeneralChatHistory, loadGeneralChatHistory, loadMarketChatRuntimeMode, saveGeneralChatHistory, type LocalChatMessage, type MarketChatRuntimeMode } from "@/lib/local-preferences";
 import { buildLocalGeneralPrompt, resolveMarketChatEngine, sanitizeLocalOutput, trimLocalHistory } from "@/lib/market-chat-runtime";
 import { getActiveLocalAIModelId, getLocalAIModel, getLocalAIRuntime, type LocalAIModelId } from "@/lib/local-ai";
+import { fireAndForget } from "@/lib/fire-and-forget";
 
 const colors = { background: "#07101F", panel: "#111C2D", border: "#26364D", text: "#F4F7FB", muted: "#91A2B8", amber: "#F4B860", teal: "#4FD1C5", coral: "#FB7185" };
 type GeneralItem = LocalChatMessage & { id: string; error?: boolean };
@@ -24,12 +25,12 @@ export default function GeneralChatScreen() {
   const engine = resolveMarketChatEngine({ mode: runtimeMode, activeModelId, nativeRuntimeAvailable: runtime.isAvailable, hasAttachments: false });
 
   const refreshModel = useCallback(() => {
-    void getActiveLocalAIModelId().then((id) => { setActiveModelId(id); setActiveModel(id ? getLocalAIModel(id).displayName : null); });
+    fireAndForget(getActiveLocalAIModelId().then((id) => { setActiveModelId(id); setActiveModel(id ? getLocalAIModel(id).displayName : null); }), "getActiveLocalAIModelId");
   }, []);
 
   useEffect(() => {
-    void loadGeneralChatHistory().then((saved) => { setMessages(saved.map((item, index) => ({ ...item, id: `saved-${index}` }))); setHydrated(true); });
-    void loadMarketChatRuntimeMode().then(setRuntimeMode);
+    fireAndForget(loadGeneralChatHistory().then((saved) => { setMessages(saved.map((item, index) => ({ ...item, id: `saved-${index}` }))); setHydrated(true); }), "loadGeneralChatHistory");
+    fireAndForget(loadMarketChatRuntimeMode().then(setRuntimeMode), "loadMarketChatRuntimeMode");
   }, []);
   useFocusEffect(useCallback(() => { refreshModel(); return undefined; }, [refreshModel]));
 
