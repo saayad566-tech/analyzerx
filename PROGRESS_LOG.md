@@ -237,3 +237,47 @@ never wrong — the config was.
 ### Verified
 - Scoped strict tsc A, B, C: 0 errors each (B re-run after the picker change).
 - 81 quant tests still passing.
+
+## 2026-10-15 — Session 7 (book-strategy library, fundamental screens, picks & shovels)
+Triggered by the 100-book Strategy Lab brief and the master directive.
+
+### Built (all pure, all tested)
+- `lib/quant/fundamentals.ts` — real fundamental screening: earnings yield, EV, ROIC, NCAV / net-net,
+  current ratio, D/E, P/E, P/B, P/S, PEG, ROE, EV/EBIT, EV/EBITDA, net margin, accruals ratio (Sloan),
+  days sales outstanding. Ten named screens (Graham defensive, Graham net-net, Buffett quality, deep
+  value EV/EBIT, Slater PEG, Fisher growth, O'Shaughnessy value, forensic red flags, Weinstein stage
+  two, 100-bagger compounders) plus Greenblatt's Magic Formula **ranking**. Every metric is `null`
+  when its inputs are missing, and a criterion is `passed: false` when it cannot be computed.
+- `lib/quant/fundamentals-io.ts` — strict fundamentals ingestion (percentage strings → fractions,
+  drops and reports bad records).
+- `lib/quant/strategy-library.ts` — the reference catalogue of all **100** books with author, family
+  and a one-line statement of each method, plus **22 entries with real runnable logic** (a price rule
+  set the backtest engine executes, or a wired fundamental screen). The remaining 78 are marked
+  `implemented: null` and labelled REFERENCE in the UI. The library does not pretend 100 books are
+  100 algorithms.
+- `lib/quant/supply-chain.ts` — layered picks & shovels classification (primary / secondary /
+  tertiary) across three themes, with confidence scoring and an explicit `unmatched` list so a
+  candidate is never force-fitted into a layer.
+- `lib/quant/library-run.ts` — market-scoped execution with a **cross-market refusal**: a universe
+  tagged for one market cannot be screened under another.
+- `lib/quant/compliance.ts` — the compliance notice and backtest caveat in one place.
+- `app/strategy-library.tsx` — the education panel: catalogue browser with family filters and
+  search, RUNNABLE/REFERENCE badges, per-criterion screening rationale, Magic Formula rank table,
+  supply-chain layer view, and the mandatory compliance badge.
+- `app/quant-lab.tsx` — now carries the compliance badge, a link to the library, and accepts a
+  `prompt` param so a library strategy opens straight into the backtest.
+
+### Verified
+- Scoped strict tsc (`app/**`, `components/**`, `hooks/**`, `lib/quant/**`) with `noUnusedLocals` /
+  `noUnusedParameters`: 0 errors.
+- **117 quant tests passing** (library/fundamentals/supply-chain added 36).
+- Three real bugs my own work surfaced and fixed: a stub `implementationCoverage()` returning zeros
+  (deleted, not shipped); `Fundamentals` missing the `description` field the parser set; and
+  `MARKET_PROFILES` being an **array** indexed by string in the new screen (now `getMarketProfile`).
+
+### Refused, with evidence
+- **Multi-repo / monorepo sharding was NOT executed.** `expo export --platform web` — the only way
+  to verify Metro resolves a workspace package — fails in this pod with
+  `RangeError: WebAssembly.instantiate(): Out of memory` (undici's llhttp parser, the same cap that
+  blocks vitest). A workspace conversion therefore cannot be verified here, and shipping it blind
+  risks breaking the app bundle. Recorded as K17 with the exact error.
