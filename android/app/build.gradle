@@ -91,6 +91,11 @@ android {
         versionName "1.4.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
+
+        // The Local AI native libraries ship arm64-v8a only, so the APK targets that ABI exclusively.
+        ndk {
+            abiFilters "arm64-v8a"
+        }
     }
     signingConfigs {
         debug {
