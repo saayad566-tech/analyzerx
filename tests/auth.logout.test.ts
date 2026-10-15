@@ -29,6 +29,8 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] }
     user,
     req: {
       protocol: "https",
+      // Express always derives a hostname; the mock mirrors that so the real cookie-domain path runs.
+      hostname: "app.analyzerx.example",
       headers: {},
     } as TrpcContext["req"],
     res: {
@@ -41,8 +43,8 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] }
   return { ctx, clearedCookies };
 }
 
-// TODO: Remove `.skip` below once you implement user authentication
-describe.skip("auth.logout", () => {
+// `auth.logout` is implemented in server/routers.ts, so this suite runs rather than being skipped.
+describe("auth.logout", () => {
   it("clears the session cookie and reports success", async () => {
     const { ctx, clearedCookies } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
