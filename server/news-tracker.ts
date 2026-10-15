@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { invokeLLM } from "./_core/llm";
 import { getEnabledPushTokens, getImpactRankedNewsEvents, getLatestNewsEvents, getNewsArchiveEvents, saveHeldNewsArticle, saveNewsEvent } from "./db";
+import { EXPO_PUSH_BATCH_SIZE, MAX_PUSH_PAGES, pageOffset } from "./push-batching";
 import { fetchOptionalNews } from "./optional-providers";
 import { classifyIndianNewsRelevance, classifyNewsPublication } from "./indian-news-relevance";
 import { fetchNseUniverse } from "./nse-universe";
@@ -420,19 +421,33 @@ async function fetchRssFeed(feedUrl: string, marketId: MarketId = "IN"): Promise
 async function notifyHighImpact(article: ExtractedNews) {
   if (!article.high_impact || notified.has(article.id)) return;
   notified.add(article.id);
-  const tokens = (await getEnabledPushTokens()).map((item) => item.token).filter((token) => token.startsWith("ExponentPushToken["));
-  if (!tokens.length) {
-    console.log(`[NewsTracker] high-impact alert queued without registered devices ${article.symbol}: ${article.headline}`);
-    return;
-  }
+  let sent = 0;
+  let rowsSeen = 0;
   try {
-    const response = await fetchWithRetry("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify(tokens.map((to) => ({ to, sound: "default", title: `${article.symbol} high-impact news`, body: article.headline, data: { url: "/", newsId: article.id, symbol: article.symbol } }))),
-    });
-    if (!response.ok) throw new Error(`Expo push returned HTTP ${response.status}`);
-    status.notificationsSent += tokens.length;
+    // Read and send in bounded pages: the token table can hold many devices, and Expo rejects
+    // a request carrying more than 100 messages, so a single unbounded send silently breaks
+    // push delivery once the device count passes 100.
+    for (let page = 0; page < MAX_PUSH_PAGES; page += 1) {
+      const rows = await getEnabledPushTokens({ limit: EXPO_PUSH_BATCH_SIZE, offset: pageOffset(page) });
+      if (rows.length === 0) break;
+      rowsSeen += rows.length;
+      const tokens = rows.map((item) => item.token).filter((token) => token.startsWith("ExponentPushToken["));
+      if (tokens.length) {
+        const response = await fetchWithRetry("https://exp.host/--/api/v2/push/send", {
+          method: "POST",
+          headers: { Accept: "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify(tokens.map((to) => ({ to, sound: "default", title: `${article.symbol} high-impact news`, body: article.headline, data: { url: "/", newsId: article.id, symbol: article.symbol } }))),
+        });
+        if (!response.ok) throw new Error(`Expo push returned HTTP ${response.status}`);
+        sent += tokens.length;
+      }
+      if (rows.length < EXPO_PUSH_BATCH_SIZE) break;
+    }
+    if (sent === 0) {
+      console.log(`[NewsTracker] high-impact alert queued without registered devices ${article.symbol}: ${article.headline}${rowsSeen ? " (no Expo tokens on file)" : ""}`);
+      return;
+    }
+    status.notificationsSent += sent;
   } catch (error) {
     console.warn("[NewsTracker] push delivery failed:", error);
   }
