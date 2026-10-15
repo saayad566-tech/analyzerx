@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { artifactDirectory, artifactPath, download, makeDirectory, readBase64, remove } from "./forge-shelf-filesystem";
+import { sha256Text } from "@/lib/quant/hash";
 export type ForgeShelfInstallState = "not-installed" | "queued" | "installing" | "verifying" | "installed" | "active" | "update-available" | "updating" | "paused" | "failed" | "unsupported" | "removed";
 export type ForgeShelfInstallerStage = "preflight" | "dependencies" | "download" | "verifying" | "activate" | "complete" | "rollback" | "failed";
 
@@ -87,8 +88,10 @@ export function validateForgeShelfPreflight(tool: ForgeShelfTool, profile: Forge
 
 async function sha256File(uri: string): Promise<string> {
   const base64 = await readBase64(uri);
-  const Crypto = await import("expo-crypto");
-  return Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, base64);
+  // SHA-256 of the base64 text, computed by the in-repo implementation. This is digest-identical to
+  // the previous native call (both hash the UTF-8 of the string) and removes a native crypto
+  // dependency from the integrity path.
+  return sha256Text(base64);
 }
 
 async function ensureDependencies(dependencyIds: string[], onProgress: ((progress: ForgeShelfInstallerProgress) => void) | undefined, toolId: string) {
