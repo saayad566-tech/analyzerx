@@ -1,6 +1,6 @@
 import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import * as FileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
+import * as FileSystem from "@/lib/platform/file-system";
+import * as Sharing from "@/lib/platform/share";
 import { useMemo, useState } from "react";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { useLocalSearchParams } from "expo-router";
