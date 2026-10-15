@@ -423,3 +423,50 @@ and polish existing components only. Worked the checklist item by item.
 - Every `toFixed` on a possibly-null value is null-guarded (`profitFactor`, `spanDays`, criterion and
   component values).
 - `params.prompt` is type- and trim-guarded before it seeds the prompt.
+
+## 2026-10-15 — Session 11 (finish the architecture: catalogue completed + performance ledger)
+The scope freeze was lifted ("if we need anything just add it but finished the architecture full"), so
+this session closed the two genuine gaps rather than adding surface.
+
+### 1. The performance ledger — the tracker requirement that was never built
+The directive asked to *"trace every book-strategy output over time... individual asset performance
+logs alongside overall average return metrics and win-rates across strategies"*. Per-run metrics
+existed; a durable, cross-strategy record did not.
+- `packages/quant-engine/src/ledger.ts` — `LedgerEntry`, a stable de-duplicating key
+  (strategy + market + symbol + entry time), a bounded merge (`LEDGER_CAP` = 2,000, newest first),
+  market filtering, `aggregate` (win rate, average, median, profit factor, best/worst, average bars,
+  average MFE/MAE, exit mix), `aggregateByStrategy` and `ledgerSummary`.
+- `lib/quant-ledger.ts` — AsyncStorage persistence following the app's existing local-preferences
+  pattern, with every record validated on read (a corrupted payload is dropped, not trusted).
+- Wired into `app/quant-lab.tsx`: each run records its tracked positions under the active market, and
+  a cross-strategy dashboard shows the overall and per-strategy aggregates. `quant-lab` now reads the
+  market context, so recorded entries are market-scoped like everything else.
+
+### 2. The catalogue is now complete
+Nine models that were catalogued as NOT IMPL are implemented, with the mathematics written out:
+- `packages/quant-engine/src/portfolio.ts` — `invertMatrix`, `eigen2x2`, `covarianceMatrix`,
+  **Markowitz MVO** (w ∝ Σ⁻¹(μ − r_f·1)), **Fama-French five-factor construction** + regression,
+  **Johansen trace test** (bivariate, closed-form eigenvalues, 15.41 critical value), and
+  **purged/embargoed cross-validation**.
+- `packages/quant-engine/src/patterns.ts` — **Volatility Contraction** (fractal swings, successive
+  shallower contractions, volume dry-up, uptrend) and the **high-tight flag** (searched advance
+  window, shallow low-volume consolidation).
+- `packages/quant-engine/src/valuation.ts` — **DCF** (explicit inputs only, reports the terminal-value
+  share), **deleveraging regime**, **capital cycle**, **commodity cost curve**.
+- Catalogue: 51 entries, **50 runnable**, 4 still NOT IMPL with reasons — random forest (its
+  prerequisite, purged CV, now exists), clenow's regression-slope ranking, reflexivity and the
+  pre-mortem checklist, none of which is a computable formula.
+- Two new catalogue entries: `purged-cv` and `performance-ledger`.
+
+### Verified
+- Per-package strict tsc: 0 errors. App + lib scope: 0 errors.
+- **243 quant tests passing** (portfolio, patterns, valuation and ledger added 44).
+
+### Bugs my own tests caught
+- `patterns.ts` exported `swingHighs`/`swingLows`, colliding with `indicators.ts` — renamed to
+  `fractalSwingHighs`/`fractalSwingLows` (a real TS2308 that would have broken the barrel).
+- Two unused parameters caught by `noUnusedLocals`/`noUnusedParameters`.
+- **My own test fixtures were wrong twice**: the Fama-French factor series I hand-wrote were exactly
+  collinear (so the solver correctly refused to fit), and my candle helper derived high/low from the
+  open, creating a tie that masked a genuine swing high. Both fixed in the fixtures, not the code.
+- `lib/quant-ledger.ts` imported `TrackerExitReason` from `ledger` when it lives in `tracker`.
