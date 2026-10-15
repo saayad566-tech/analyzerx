@@ -29,7 +29,7 @@
 
 | K20 | info | App lives at the repo root, not `apps/analyzerx` | The directive's substantive requirement (quant-engine decoupled from the client app) is met by the workspace package. Moving the app directory would touch tsconfig paths, babel, metro config, app.json, eas.json and the APK workflow for no behaviour change. See DECISIONS.md |
 | K21 | info | 10 catalogue models are not implemented | Labelled NOT IMPL in the UI with the reason (Johansen VECM, Fama-French portfolio construction, MVO, random forests, VCP pattern detection, DCF, capital cycle, commodity cost curve, reflexivity, deleveraging classifier). Fabricating them would produce confident nonsense |
-| K22 | info | The Metro bundle is verified in CI, not locally | `.github/workflows/bundle-verify.yml` runs `expo export` on push. The local sandbox cannot complete a Metro transform (WASM allocation) |
+| K22 | info | The bundle is verified in CI, not locally | `bundle-verify.yml` verifies the bundle with a pure Gradle `assembleDebug` build on push. The local sandbox cannot complete a Metro transform (WASM allocation) |
 
 | K23 | resolved | Cross-market leakage in the supply-chain screen | Fixed: `screenSupplyChainScoped` enforces the market tag in the engine, with 5 regression tests. The library and model runners already refused mismatched universes; this section did not |
 | K24 | resolved | Dead loading state and a literal "undefined" render in Strategy Lab | Fixed: removed the unreachable `busy` indicator; the candidate name now falls back to its symbol |
@@ -53,3 +53,8 @@
 | K37 | resolved | `eas.json` present | Deleted, and the script that read it rewritten. No EAS command was ever in the build path — the APK is built by Gradle |
 | K38 | resolved | `expo-crypto` used for artifact hashing | Replaced with the in-repo SHA-256 (digest-identical), removing the native crypto dependency |
 | K39 | open | 25 expo-family packages remain | These are the app's own framework: expo-router drives navigation across 39 screens; expo-file-system backs the ledger, activity log, resource packs and signal history; expo-secure-store backs auth; expo-notifications backs push. Removing them requires bare replacements — see DECISIONS.md D-015 |
+
+| K40 | resolved | A whole test suite was skipped with a stale TODO | `tests/auth.logout.test.ts` was `describe.skip` claiming auth was unimplemented; `auth.logout` exists in server/routers.ts. Un-skipped — and running it exposed a real crash (K41) |
+| K41 | resolved | `getParentDomain` crashed on a missing host header | `isIpAddress(host)` called `host.includes(":")` unguarded, so a request with no host header 500'd the logout endpoint instead of degrading. Guarded at the boundary |
+
+| K42 | open | 34 fire-and-forget calls use `void async()` without a `.catch` | `void` marks intent but does not handle rejection, so a failing storage or network call surfaces as an unhandled rejection. Deliberately not mass-edited in one pass: each site needs its own decision (log, ignore, or surface to the user) rather than a blanket swallow |
