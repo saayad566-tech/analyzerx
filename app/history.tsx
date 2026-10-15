@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import { router } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { clearResearchHistory, loadResearchHistory, type ResearchHistoryEntry, type ResearchHistoryType } from "@/lib/research-analytics";
 import { clearArchiveExportHistory, loadArchiveExportHistory, type ArchiveExportHistoryEntry } from "@/lib/local-preferences";
+import type { IoniconName } from "@/lib/icon-names";
 
 const amber = "#F4B860";
 const teal = "#4FD1C5";
 const muted = "#91A2B8";
 
 type Filter = "all" | ResearchHistoryType;
-const filters: { value: Filter; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+const filters: { value: Filter; label: string; icon: IoniconName }[] = [
   { value: "all", label: "All", icon: "time-outline" },
   { value: "search", label: "Searches", icon: "search-outline" },
   { value: "news_open", label: "News", icon: "newspaper-outline" },
