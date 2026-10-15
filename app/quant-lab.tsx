@@ -10,6 +10,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { BACKTEST_CAVEAT, COMPLIANCE_NOTICE } from "@/lib/quant/compliance";
 import { DEFAULT_BACKTEST_CONFIG, runBacktestAsync, type BacktestProgress, type BacktestResult } from "@/lib/quant/backtest";
 import { describeSeries, parseOhlcv } from "@/lib/quant/ohlcv";
+import { DEFAULT_TRACKER_CONFIG, trackStrategy, type TrackerRun } from "@/lib/quant/tracker";
 import { DEFAULT_STRATEGY, describeStrategy, generateStrategyFromPrompt } from "@/lib/quant/strategy";
 import type { Candle } from "@/lib/quant/types";
 
@@ -65,6 +66,7 @@ export default function QuantLabScreen() {
   const [progress, setProgress] = useState<BacktestProgress | null>(null);
   const [liveLog, setLiveLog] = useState<string[]>([]);
   const [result, setResult] = useState<BacktestResult | null>(null);
+  const [tracker, setTracker] = useState<TrackerRun | null>(null);
   const [error, setError] = useState<string | null>(null);
   const lastPaint = useRef(0);
 
@@ -135,6 +137,7 @@ export default function QuantLabScreen() {
     setRunning(true);
     setError(null);
     setResult(null);
+    setTracker(null);
     setLiveLog([]);
     setProgress(null);
     lastPaint.current = 0;
@@ -159,6 +162,8 @@ export default function QuantLabScreen() {
         },
       });
       setResult(outcome);
+      // The tracker follows the same strategy output under the dynamic trailing stop-loss ladder.
+      setTracker(trackStrategy(candles, spec, DEFAULT_TRACKER_CONFIG, config));
       setLiveLog(outcome.log.slice(-8).map((entry) => `#${entry.index} ${entry.event}: ${entry.detail}`));
     } catch (caught) {
       setError(`The backtest could not complete: ${caught instanceof Error ? caught.message : String(caught)}`);
@@ -321,6 +326,45 @@ export default function QuantLabScreen() {
                 ))
               )}
             </View>
+
+            {tracker ? (
+              <View style={styles.card}>
+                <Text style={styles.cardLabel}>5 · PERFORMANCE TRACKER — DYNAMIC TRAILING STOP</Text>
+                <Text style={styles.meta}>
+                  −10% initial risk floor · break-even at +10% · +5% at +15% · +10% at +20% · 10% trail to +50% · 5% trail above +50%
+                </Text>
+                <View style={styles.metricGrid}>
+                  <Metric label="Avg return" value={`${(tracker.positions.length > 0 ? tracker.positions.reduce((sum, position) => sum + position.returnPct, 0) / tracker.positions.length : 0).toFixed(2)}%`} tone={tracker.metrics.wins > 0 ? teal : coral} />
+                  <Metric label="Median return" value={`${tracker.metrics.medianReturnPct.toFixed(2)}%`} />
+                  <Metric label="Win rate" value={`${tracker.metrics.winRatePct.toFixed(1)}%`} />
+                  <Metric label="Best" value={`${tracker.metrics.bestReturnPct.toFixed(2)}%`} tone={teal} />
+                  <Metric label="Worst" value={`${tracker.metrics.worstReturnPct.toFixed(2)}%`} tone={coral} />
+                  <Metric label="Avg bars held" value={tracker.metrics.averageBarsHeld.toFixed(1)} />
+                  <Metric label="Profit factor" value={tracker.metrics.profitFactor === null ? "n/a" : tracker.metrics.profitFactor.toFixed(2)} />
+                  <Metric label="Max drawdown" value={`${tracker.metrics.maxDrawdownPct.toFixed(2)}%`} tone={coral} />
+                  <Metric label="Tracked" value={String(tracker.metrics.tradeCount)} />
+                </View>
+                <Text style={styles.meta}>
+                  Exits — floor {tracker.metrics.byExitReason["initial-risk-floor"]} · break-even {tracker.metrics.byExitReason["break-even"]} · trailing {tracker.metrics.byExitReason["trailing-stop"]} · signal {tracker.metrics.byExitReason.signal} · open at end {tracker.metrics.byExitReason["end-of-data"]}
+                </Text>
+                {tracker.positions.length === 0 ? (
+                  <Text style={styles.note}>No position was tracked on this series.</Text>
+                ) : (
+                  tracker.positions.slice(0, 20).map((position, index) => (
+                    <View key={`${position.entryIndex}-${index}`} style={styles.tradeRow}>
+                      <Text style={[styles.tradeSide, { color: position.returnPct >= 0 ? teal : coral }]}>#{index + 1}</Text>
+                      <Text style={styles.tradeText}>
+                        entry {position.entryPrice.toFixed(2)} · peak {position.peakPrice.toFixed(2)} (+{position.peakGainPct.toFixed(1)}%) · stop {position.finalStopPrice.toFixed(2)} · {position.trackerExitReason} ({position.stopRule})
+                      </Text>
+                      <Text style={[styles.tradePnl, { color: position.returnPct >= 0 ? teal : coral }]}>
+                        {position.returnPct >= 0 ? "+" : ""}
+                        {position.returnPct.toFixed(2)}%
+                      </Text>
+                    </View>
+                  ))
+                )}
+              </View>
+            ) : null}
 
             <View style={styles.card}>
               <Text style={styles.cardLabel}>EXECUTION LOG ({result.log.length})</Text>
