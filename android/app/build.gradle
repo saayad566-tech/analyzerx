@@ -186,3 +186,6 @@ dependencies {
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
   compilerOptions.freeCompilerArgs.add("-Xskip-metadata-version-check")
 }
+
+// Bundles the react-native-vector-icons font assets into the APK.
+apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
