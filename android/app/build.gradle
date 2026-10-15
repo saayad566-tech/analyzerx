@@ -92,10 +92,24 @@ android {
         applicationId 'com.app.marketeventintelligence'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 32900
-        versionName "3.29.0"
+        versionCode 33000
+        versionName "3.30.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
+
+        // Per-ABI splits. The universal APK carried both arm64-v8a and x86_64 native
+        // libraries and crossed GitHub's 100 MB per-file limit at 111 MB, which forced
+        // the release step to chop it into parts. Splitting by ABI produces two APKs of
+        // roughly half the size, each well inside the limit, and a device downloads only
+        // the architecture it actually runs.
+        splits {
+            abi {
+                enable true
+                reset()
+                include "arm64-v8a", "x86_64"
+                universalApk false
+            }
+        }
     }
     signingConfigs {
         debug {
