@@ -16,3 +16,6 @@
 | K11 | low | `console.log` in `lib/_core/api.ts` and `manus-runtime.ts` are not dev-gated | The auth path is now dev-gated; the rest is framework scaffolding, lower priority |
 
 | K12 | low | Web only: stored user info (name/email) sits in `localStorage`, unencrypted | Documented; web auth is cookie-based and this is display metadata. Not changed |
+
+| K13 | info | Live FCM delivery is unverified in this environment (needs the operator's Firebase service account + a device) | Implemented + unit-tested; Expo remains the default free path when FCM is unconfigured |
+| K14 | info | `push_tokens` has no index beyond its primary key | Deliberate: `ORDER BY token` is served by the PK; an extra 2 KB-wide index would be redundant |
