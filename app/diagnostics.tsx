@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
-import { router } from "expo-router";
+import { router } from "@/lib/navigation/router";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import * as Clipboard from "@/lib/platform/clipboard";
 
