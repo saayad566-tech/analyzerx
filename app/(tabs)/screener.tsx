@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "@/lib/navigation/router";
 import { ScreenContainer } from "@/components/screen-container";
 import { FundamentalTrendChart } from "@/components/fundamental-trend-chart";
 import { ValuationRangeChart } from "@/components/valuation-range-chart";
