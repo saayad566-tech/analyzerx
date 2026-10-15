@@ -25,3 +25,5 @@ export * from "./portfolio";
 export * from "./patterns";
 export * from "./valuation";
 export * from "./ledger";
+export * from "./hash";
+export * from "./signal-history";
