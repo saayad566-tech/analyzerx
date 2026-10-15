@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import * as Clipboard from "expo-clipboard";
+import * as Clipboard from "@/lib/platform/clipboard";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { clearLastCrash, loadLastCrash } from "@/components/error-boundary";
