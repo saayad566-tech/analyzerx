@@ -82,7 +82,7 @@ export const COUNTRY_REGISTRY: CountryRecord[] = [
   { iso2: "CF", name: "Central African Republic", region: "Africa", exchanges: ["BVMAC (regional)"], mics: [] },
   { iso2: "TD", name: "Chad", region: "Africa", exchanges: ["BVMAC (regional)"], mics: [] },
   { iso2: "CL", name: "Chile", region: "Americas", exchanges: ["Bolsa de Santiago"], mics: ["XSGO"] },
-  { iso2: "CN", name: "China", region: "Asia", exchanges: ["Shanghai SE", "Shenzhen SE", "Beijing SE"], mics: ["XSHG", "XSHE", "XBSE"] },
+  { iso2: "CN", name: "China", region: "Asia", exchanges: ["Shanghai SE", "Shenzhen SE", "Beijing SE"], mics: ["XSHG", "XSHE", "XBEI"] },
   { iso2: "CO", name: "Colombia", region: "Americas", exchanges: ["Bolsa de Valores de Colombia"], mics: ["XBOG"] },
   { iso2: "KM", name: "Comoros", region: "Africa", exchanges: [], mics: [] },
   { iso2: "CD", name: "Congo (Democratic Republic)", region: "Africa", exchanges: [], mics: [] },
@@ -249,11 +249,24 @@ export const COUNTRY_REGISTRY: CountryRecord[] = [
 ];
 
 const BY_ISO2 = new Map(COUNTRY_REGISTRY.map((country) => [country.iso2, country]));
-const BY_MIC = new Map<string, string>();
+/**
+ * MIC -> every country that claims it.
+ *
+ * This used to be a MIC -> single country map that kept whichever country appeared first,
+ * so a genuinely shared code silently resolved to the wrong one: XBRV is the BRVM regional
+ * exchange serving eight West African countries, and it resolved to Benin for all of them.
+ * Keeping every claimant lets `countryForMic` refuse an ambiguous code instead of guessing.
+ */
+const BY_MIC = new Map<string, string[]>();
 for (const country of COUNTRY_REGISTRY) {
   for (const mic of country.mics) {
     const key = mic.toUpperCase();
-    if (!BY_MIC.has(key)) BY_MIC.set(key, country.iso2);
+    const existing = BY_MIC.get(key);
+    if (existing) {
+      if (!existing.includes(country.iso2)) existing.push(country.iso2);
+    } else {
+      BY_MIC.set(key, [country.iso2]);
+    }
   }
 }
 
@@ -268,10 +281,33 @@ export function isSupportedMarket(iso2: string | null | undefined): boolean {
   return (SUPPORTED_MARKET_IDS as readonly string[]).includes((iso2 ?? "").trim().toUpperCase());
 }
 
-/** Resolve an ISO 10383 MIC code to its country's ISO2, or null when unknown. */
-export function countryForMic(mic: string | null | undefined): string | null {
+/**
+ * Every country that claims a MIC code, in registry order.
+ *
+ * A regional exchange legitimately serves several countries — BRVM (XBRV) covers eight
+ * West African states — so "which country owns this code" has no single answer for them.
+ */
+export function countriesForMic(mic: string | null | undefined): string[] {
   const key = (mic ?? "").trim().toUpperCase();
-  return key ? BY_MIC.get(key) ?? null : null;
+  return key ? [...(BY_MIC.get(key) ?? [])] : [];
+}
+
+/** True when a MIC code is claimed by more than one country. */
+export function isRegionalMic(mic: string | null | undefined): boolean {
+  return countriesForMic(mic).length > 1;
+}
+
+/**
+ * Resolve an ISO 10383 MIC code to its country's ISO2.
+ *
+ * Returns null when the code is unknown OR when more than one country claims it. An
+ * ambiguous code previously returned whichever country came first in the registry, which
+ * meant a Burkina Faso listing resolved to Benin. Refusing is the honest answer: the
+ * caller can then use `countriesForMic` and handle the regional case explicitly.
+ */
+export function countryForMic(mic: string | null | undefined): string | null {
+  const claimants = countriesForMic(mic);
+  return claimants.length === 1 ? claimants[0] : null;
 }
 
 /** MIC codes recorded for a country. */
