@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MARKETPLACE_TOOLS } from "../lib/marketplace";
 
 const store = new Map<string, string>();
-vi.mock("expo-crypto", () => ({ CryptoDigestAlgorithm: { SHA256: "SHA-256" }, digestStringAsync: async () => "test-checksum" }));
 vi.mock("@react-native-async-storage/async-storage", () => ({
   default: {
     getItem: async (key: string) => store.get(key) ?? null,
