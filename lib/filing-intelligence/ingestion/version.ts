@@ -4,7 +4,7 @@
  * SHA-256 is computed over the retrieved bytes, not over a re-encoded string,
  * because the point of the hash is to identify the exact bytes that were
  * fetched. It is implemented here in pure TypeScript so it is correct and
- * testable in every runtime the app uses; `expo-crypto` hashes the UTF-8
+ * testable in every runtime the app uses; the in-repo SHA-256 hashes the UTF-8
  * encoding of a string, which would not equal the hash of the raw file.
  *
  * The other rule this module enforces: a changed URL is not evidence of a new
