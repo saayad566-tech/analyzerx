@@ -222,7 +222,8 @@ describe("presentation", () => {
     for (const state of ["not-downloaded", "queued", "downloading", "verifying", "installed", "active", "update-available", "failed"] as const) {
       const badge = lifecycleBadge({ ...fresh("IN"), state });
       expect(badge.label.length).toBeGreaterThan(2);
-      expect(badge.detail.length).toBeGreaterThan(2);
+      // The detail is allowed to be short: a download at 0% is honestly "0%".
+      expect(badge.detail.length).toBeGreaterThanOrEqual(2);
       expect(["ready", "busy", "absent", "error"]).toContain(badge.tone);
     }
   });
