@@ -1,4 +1,7 @@
-export type MarketId = "IN" | "US" | "GB" | "CA" | "AU" | "JP" | "SG" | "HK" | "DE" | "FR";
+import type { MarketId } from "../packages/core-types/src/market";
+
+// Re-exported so existing `@/lib/market-regions` consumers are unaffected.
+export type { MarketId };
 
 export type MarketProfile = {
   id: MarketId;
