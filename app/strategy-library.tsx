@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
@@ -12,7 +12,7 @@ import { parseFundamentals } from "@/lib/quant/fundamentals-io";
 import { describeRequirements, runLibraryEntry, runModel, RUNNABLE_MODELS, type LibraryRun, type MarketUniverse, type ModelRun } from "@/lib/quant/library-run";
 import { MODEL_CATEGORIES, catalogueStats, modelsByCategory } from "@/lib/quant/model-catalogue";
 import type { Fundamentals } from "@/lib/quant/fundamentals";
-import { SUPPLY_CHAIN_THEMES, screenSupplyChain, themeRolesByLayer } from "@/lib/quant/supply-chain";
+import { SUPPLY_CHAIN_THEMES, screenSupplyChainScoped, themeRolesByLayer } from "@/lib/quant/supply-chain";
 import { FAMILY_LABELS, STRATEGY_LIBRARY, findLibraryEntry, libraryByFamily, libraryStats, type LibraryEntry, type StrategyFamily } from "@/lib/quant/strategy-library";
 
 const ink = "#09111F";
@@ -54,8 +54,6 @@ export default function StrategyLibraryScreen() {
   const [dataNote, setDataNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [themeId, setThemeId] = useState(SUPPLY_CHAIN_THEMES[0].id);
-  const [busy, setBusy] = useState(false);
-
   const [modelId, setModelId] = useState<string>(RUNNABLE_MODELS[0]);
 
   const stats = useMemo(() => libraryStats(), []);
@@ -75,7 +73,9 @@ export default function StrategyLibraryScreen() {
 
   const run = useMemo<LibraryRun | null>(() => (selected ? runLibraryEntry(selected, { marketId, universe }) : null), [selected, marketId, universe]);
 
-  const supplyChain = useMemo(() => screenSupplyChain(themeId, universe?.companies ?? []), [themeId, universe]);
+  // Market-scoped: a universe tagged for another market is refused rather than screened.
+  const scopedSupplyChain = useMemo(() => screenSupplyChainScoped(themeId, universe, marketId), [themeId, universe, marketId]);
+  const supplyChain = scopedSupplyChain.ok ? scopedSupplyChain.screen : null;
   const theme = SUPPLY_CHAIN_THEMES.find((entry) => entry.id === themeId) ?? SUPPLY_CHAIN_THEMES[0];
 
   const loadFundamentals = (value: string, label: string) => {
@@ -114,9 +114,7 @@ export default function StrategyLibraryScreen() {
 
   const openInBacktest = (spec: NonNullable<LibraryEntry["implemented"]>["spec"]) => {
     if (!spec) return;
-    setBusy(true);
     router.push({ pathname: "/quant-lab", params: { prompt: spec.name } });
-    setBusy(false);
   };
 
   return (
@@ -213,7 +211,6 @@ export default function StrategyLibraryScreen() {
                 <Text style={styles.resultHeading}>Rule set (price-driven)</Text>
                 <Text style={styles.mono}>{run.spec.name}</Text>
                 <SmallButton icon="play-outline" label="Open in Backtest" onPress={() => openInBacktest(selected.implemented?.spec)} tone={amber} />
-                {busy ? <ActivityIndicator color={amber} /> : null}
               </View>
             ) : null}
 
@@ -310,7 +307,7 @@ export default function StrategyLibraryScreen() {
             ))}
           </View>
           <Text style={styles.detailIdea}>{theme.description}</Text>
-          {!universe ? <Text style={styles.note}>Load a fundamentals universe above — its sector and description text drives the classification.</Text> : null}
+          {!scopedSupplyChain.ok ? <Text style={styles.warn}>{scopedSupplyChain.reason}</Text> : null}
           {supplyChain ? (
             (["primary", "secondary", "tertiary"] as const).map((layer) => (
               <View key={layer} style={styles.resultBlock}>
@@ -320,7 +317,7 @@ export default function StrategyLibraryScreen() {
                 ) : (
                   supplyChain.layers[layer].map((item) => (
                     <Text key={item.candidate.symbol} style={styles.criterion}>
-                      <Text style={{ color: teal }}>{item.candidate.symbol}</Text> — {item.candidate.name} · matched {item.matchedRoles.join(", ")} · confidence {item.confidence.toFixed(2)}
+                      <Text style={{ color: teal }}>{item.candidate.symbol}</Text> — {item.candidate.name ?? item.candidate.symbol} · matched {item.matchedRoles.join(", ")} · confidence {item.confidence.toFixed(2)}
                     </Text>
                   ))
                 )}
