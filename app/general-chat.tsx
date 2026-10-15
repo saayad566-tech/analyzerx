@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";
 import { clearGeneralChatHistory, loadGeneralChatHistory, loadMarketChatRuntimeMode, saveGeneralChatHistory, type LocalChatMessage, type MarketChatRuntimeMode } from "@/lib/local-preferences";
