@@ -63,3 +63,6 @@
 
 | K44 | resolved | `@expo/vector-icons` was the app's icon set | Replaced with `react-native-vector-icons` across 39 files; the Expo-only `glyphMap` type replaced by `IoniconName`; the native font-linking gradle fragment added |
 | K45 | open | 24 expo-family packages remain | Stages 2-4 of MIGRATION_PLAN.md. Stage 3 (`expo-router`, 43 files) and Stage 4 (native project regeneration) are architectural and need device/CI verification — tsc cannot validate navigation or a native build |
+
+| K46 | info | Model download resume restarts rather than continuing by byte range | `react-native-fs` cannot append to a partial file, so `createDownloadResumable` re-fetches on resume. Progress, pause and cancel are faithful; the byte-range behaviour is not. Documented in `lib/platform/file-system.ts` |
+| K47 | open | 11 expo-family packages remain | `expo-router` (43 files) is Stage 3; `expo-notifications`, `expo-image-picker`, `expo-document-picker`, `expo-audio` and the Expo core/config/native layer are Stages 3-4 of MIGRATION_PLAN.md |
