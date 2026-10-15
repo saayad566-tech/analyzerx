@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { invokeLLM } from "./_core/llm";
-import { getEnabledPushTokens, getImpactRankedNewsEvents, getLatestNewsEvents, getNewsArchiveEvents, saveHeldNewsArticle, saveNewsEvent } from "./db";
-import { EXPO_PUSH_BATCH_SIZE, MAX_PUSH_PAGES, pageOffset } from "./push-batching";
+import { deactivatePushTokens, getEnabledPushTokenPage, getImpactRankedNewsEvents, getLatestNewsEvents, getNewsArchiveEvents, saveHeldNewsArticle, saveNewsEvent } from "./db";
+import { selectPushProvider } from "./push-batching";
+import { deliverPush, type PushTransport } from "./push-delivery";
+import { getFcmAccessToken, parseServiceAccount, type TokenTransport } from "./fcm-auth";
 import { fetchOptionalNews } from "./optional-providers";
 import { classifyIndianNewsRelevance, classifyNewsPublication } from "./indian-news-relevance";
 import { fetchNseUniverse } from "./nse-universe";
@@ -79,6 +81,22 @@ async function fetchWithRetry(input: RequestInfo | URL, init: RequestInit, attem
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
+/**
+ * A single-attempt HTTP transport for the push senders.
+ * Retrying is handled once, inside the delivery loop, with backoff + jitter — so this must not
+ * retry as well, or a transient failure would be multiplied.
+ */
+const pushTransport: PushTransport = async (url, init) => {
+  const response = await fetch(url, { method: init.method, headers: init.headers, body: init.body, signal: AbortSignal.timeout(15_000) });
+  return { ok: response.ok, status: response.status, headers: { get: (name: string) => response.headers.get(name) }, json: () => response.json() };
+};
+
+/** Transport for the FCM OAuth2 token exchange. */
+const fcmTokenTransport: TokenTransport = async (url, init) => {
+  const response = await fetch(url, { method: init.method, headers: init.headers, body: init.body, signal: AbortSignal.timeout(15_000) });
+  return { ok: response.ok, status: response.status, json: () => response.json() };
+};
+
 const status: TrackerStatus = {
   running: false,
   lastStartedAt: null,
@@ -418,36 +436,53 @@ async function fetchRssFeed(feedUrl: string, marketId: MarketId = "IN"): Promise
   }
 }
 
+/**
+ * Deliver a high-impact alert to every registered device.
+ *
+ * Transport is chosen for free: FCM HTTP v1 when the operator has configured a Firebase service
+ * account, otherwise Expo's push service. Both cost nothing. Delivery is paged and cursor-based,
+ * retried with backoff, and tokens the service reports as unregistered are deactivated.
+ */
 async function notifyHighImpact(article: ExtractedNews) {
   if (!article.high_impact || notified.has(article.id)) return;
   notified.add(article.id);
-  let sent = 0;
-  let rowsSeen = 0;
-  try {
-    // Read and send in bounded pages: the token table can hold many devices, and Expo rejects
-    // a request carrying more than 100 messages, so a single unbounded send silently breaks
-    // push delivery once the device count passes 100.
-    for (let page = 0; page < MAX_PUSH_PAGES; page += 1) {
-      const rows = await getEnabledPushTokens({ limit: EXPO_PUSH_BATCH_SIZE, offset: pageOffset(page) });
-      if (rows.length === 0) break;
-      rowsSeen += rows.length;
-      const tokens = rows.map((item) => item.token).filter((token) => token.startsWith("ExponentPushToken["));
-      if (tokens.length) {
-        const response = await fetchWithRetry("https://exp.host/--/api/v2/push/send", {
-          method: "POST",
-          headers: { Accept: "application/json", "Content-Type": "application/json" },
-          body: JSON.stringify(tokens.map((to) => ({ to, sound: "default", title: `${article.symbol} high-impact news`, body: article.headline, data: { url: "/", newsId: article.id, symbol: article.symbol } }))),
-        });
-        if (!response.ok) throw new Error(`Expo push returned HTTP ${response.status}`);
-        sent += tokens.length;
-      }
-      if (rows.length < EXPO_PUSH_BATCH_SIZE) break;
+
+  const serviceAccount = parseServiceAccount(process.env.FCM_SERVICE_ACCOUNT_JSON);
+  let accessToken: string | undefined;
+  let projectId: string | undefined;
+  if (selectPushProvider({ fcmConfigured: serviceAccount !== null }) === "fcm" && serviceAccount) {
+    const minted = await getFcmAccessToken({ transport: fcmTokenTransport, serviceAccount });
+    if (minted.status === "ok") {
+      accessToken = minted.accessToken;
+      projectId = serviceAccount.projectId;
+    } else {
+      console.warn(`[NewsTracker] FCM is configured but could not authenticate (${minted.status}); using the free Expo transport instead.`);
     }
-    if (sent === 0) {
-      console.log(`[NewsTracker] high-impact alert queued without registered devices ${article.symbol}: ${article.headline}${rowsSeen ? " (no Expo tokens on file)" : ""}`);
+  }
+  const provider = accessToken && projectId ? "fcm" : "expo";
+
+  try {
+    const summary = await deliverPush({
+      provider,
+      transport: pushTransport,
+      readPage: (cursor, limit) => getEnabledPushTokenPage({ after: cursor, limit }),
+      deactivate: deactivatePushTokens,
+      accessToken,
+      projectId,
+      notification: { title: `${article.symbol} high-impact news`, body: article.headline, data: { url: "/", newsId: article.id, symbol: article.symbol } },
+      onLog: (level, message) => {
+        if (level === "error") console.warn(`[NewsTracker] ${message}`);
+        else console.log(`[NewsTracker] ${message}`);
+      },
+    });
+    if (summary.noRecipients) {
+      console.log(`[NewsTracker] high-impact alert queued without registered devices ${article.symbol}: ${article.headline}`);
       return;
     }
-    status.notificationsSent += sent;
+    status.notificationsSent += summary.delivered;
+    if (summary.retryableTokens.length) {
+      console.log(`[NewsTracker] ${summary.retryableTokens.length} push token(s) failed transiently and will be retried on the next alert.`);
+    }
   } catch (error) {
     console.warn("[NewsTracker] push delivery failed:", error);
   }
