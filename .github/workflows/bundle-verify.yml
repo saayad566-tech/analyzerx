@@ -1,0 +1,51 @@
+name: Bundle verification
+
+# The monorepo's package resolution and the Metro bundle are verified here, on a runner with real
+# memory, because a constrained local sandbox cannot complete a Metro transform (WASM allocation).
+# This is the gate that proves `packages/*` resolve and the app still bundles before a change lands.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - name: Install (lockfile must match package.json)
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check each workspace package
+        run: pnpm -r --filter "./packages/**" run typecheck
+
+      - name: Type-check the application
+        run: pnpm check
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Verify the Metro bundle resolves and builds
+        # This is the check a memory-constrained sandbox cannot run. It proves the workspace packages
+        # are resolvable from the app and that the bundle still assembles.
+        run: pnpm build:web
+
+      - name: Assert the bundle actually produced output
+        run: |
+          test -d web-dist || { echo "expo export produced no web-dist"; exit 1; }
+          find web-dist -name "*.js" | head -5
+          echo "bundle files: $(find web-dist -name '*.js' | wc -l)"
