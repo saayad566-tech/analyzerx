@@ -5,6 +5,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { cancelRunnerJob, confirmPairing, connectRunnerEvents, discoverRunners, getRunnerConnection, getRunnerState, revokeRunner, startPairing, startRunnerJob, type RunnerState } from "@/lib/workstation-runner";
 import { useRouter } from "expo-router";
 import QRCode from "react-native-qrcode-svg";
+import { fireAndForget } from "@/lib/fire-and-forget";
 
 const amber = "#F4B860";
 const teal = "#4FD1C5";
@@ -34,7 +35,7 @@ export default function WorkstationRunnerScreen() {
   };
 
   useEffect(() => {
-    void getRunnerConnection().then((connection) => { setRunnerUrl(connection.url); if (connection.token) void refresh(); });
+    fireAndForget(getRunnerConnection().then((connection) => { setRunnerUrl(connection.url); if (connection.token) void refresh(); }), "getRunnerConnection");
   }, []);
   useEffect(() => {
     let cleanup: (() => void) | undefined;
