@@ -40,3 +40,6 @@
 | K27 | resolved | Artificial test fixtures (collinear / constant / zero-noise) | Replaced with a seeded realistic market generator: GARCH-style volatility clustering, jumps, asymmetric wicks, noisy universes. This exposed a real bug — MKT was a constant series |
 | K28 | open | `apps/analyzerx` rename not performed | Pure risk, no behaviour change; the decoupling it stands for is already true. Reported per protocol item 4 |
 | K29 | open | CI bundle verification has not run | `bundle-verify.yml` triggers on push to main; commits are made through the API, so the workflow has not executed. Local verification is resolution-only (Metro's transform needs WASM the pod cannot allocate) |
+
+| K30 | info | Signal history is capped at 2,000 records and refuses appends beyond it | Deliberate: trimming the oldest records would break the chain's genesis link and silently destroy history. At the cap the Lab says so and asks for a publish/archive |
+| K31 | info | `evaluateRecord` needs later prices supplied by the caller | The engine fetches nothing. A past suggestion cannot be scored without a price for the evaluation date, and inventing one would defeat the point of the record |
