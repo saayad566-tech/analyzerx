@@ -3,8 +3,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 const root = process.cwd();
-const version = "1.4.0";
-const versionCode = 1400;
+const version = "3.2.0";
+const versionCode = 3200;
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "release-manifest.json"), "utf8"));
 const missing = [];
 const files = Object.values(manifest.requiredFeatures).flat();
