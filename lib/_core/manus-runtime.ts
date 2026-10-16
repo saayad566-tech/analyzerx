@@ -16,7 +16,7 @@ const DEBUG = true;
 const log = (msg: string) => {
   if (!DEBUG) return;
   const ts = new Date().toISOString();
-  console.log(`[ManusRuntime ${ts}] ${msg}`);
+  if (__DEV__) console.log(`[ManusRuntime ${ts}] ${msg}`);
 };
 
 type MessageType = "appDevServerReady";
