@@ -105,6 +105,12 @@ jobs:
           path: |
             android/app/build/outputs/apk/release/*.apk
             android/app/build/outputs/apk/release/*.apk.sha256
+          # Actions artifact storage is shared across the whole account. Without a
+          # retention cap these ~34 MB APKs accumulate indefinitely and exhaust the
+          # account quota, which breaks artifact uploads in every other repository.
+          # The signed APK is already preserved as a release asset and on the
+          # apk-artifact branch, so a 1-day retention loses nothing.
+          retention-days: 1
           if-no-files-found: ignore
       - name: Stage APK on an artifact branch
         shell: bash
