@@ -923,3 +923,34 @@ went. Switched to React Native's own `Linking`.
 ### Method note
 All three were found by reading the files and resolving references by hand, not by reading a diff.
 A diff showed these changes as correct; only checking that every reference *resolves* exposed them.
+
+## 2026-10-16 — Session 25 (the actual CI failures, read from the run logs)
+I could finally read CI: three check runs on the fix commit, all failing. Downloaded the run logs and
+read the real errors rather than guessing.
+
+### The workflow fails at the TEST step, before Gradle ever runs
+```
+Failed to load url @/lib/quant/hash in lib/forge-shelf.ts. Does the file exist?
+Failed to load url @/lib/fire-and-forget in lib/open-data/collector.ts. Does the file exist?
+6 test files failed | 111 passed | 4 skipped
+```
+**Root cause: there is no vitest config anywhere in the repo.** Vite does not read tsconfig `paths`,
+so the `@/` alias is undefined for the test runner. The files DO exist — the alias does not.
+This was self-inflicted: the migration switched `lib/forge-shelf.ts` and `lib/open-data/collector.ts`
+from relative imports to `@/` imports, and five suites import through those modules.
+My sandbox harness resolved `@/` via esbuild's tsconfig handling, which is why it passed locally and
+failed in CI — a harness-fidelity gap, and exactly the kind of thing a substitute runner hides.
+
+Fixed by adding `vitest.config.ts` declaring only the alias, so environment and test discovery keep
+Vite's defaults and *which* tests run does not change.
+
+### A test that encoded an implementation detail
+`tests/local-ai-native-wiring.test.ts` asserted that `android/app/build.gradle` *ends* with `}`.
+It did when the file was written; Stage 1 then appended the react-native-vector-icons `apply from:`
+line, so it legitimately does not. The assertion was a proxy for "the coordinate is inside the
+dependencies block". Replaced with a brace-balance check that tests that intent directly, and
+verified against the real file (coordinate at 6882, block opens at 6847, balanced close at 7881).
+
+### Note
+The Gradle `rootProject.ext` fix from the previous session was necessary but not sufficient — CI never
+reached Gradle, because the test step failed first. Both layers had to be fixed.
