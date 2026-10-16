@@ -1,14 +1,43 @@
-// Bare React Native Metro configuration. `expo/metro-config` previously supplied the defaults; the
-// React Native defaults are equivalent for a bare project, and NativeWind still wraps the result.
+// Bare React Native Metro configuration. `expo/metro-config` previously supplied the defaults *and*
+// resolved the tsconfig `paths` aliases; the React Native defaults are equivalent for a bare project
+// but do not read tsconfig, so the `@/` and `@shared/` aliases are resolved explicitly below.
+// NativeWind still wraps the result.
+const path = require("path");
 const { getDefaultConfig, mergeConfig } = require("@react-native/metro-config");
 const { withNativeWind } = require("nativewind/metro");
 
-const config = mergeConfig(getDefaultConfig(__dirname), {
+const root = __dirname;
+
+// Mirrors `compilerOptions.paths` in tsconfig.json:
+//   "@/*"       -> "./*"
+//   "@shared/*" -> "./shared/*"
+const PATH_ALIASES = [
+  ["@shared/", path.join(root, "shared") + path.sep],
+  ["@/", root + path.sep],
+];
+
+function resolveAlias(moduleName) {
+  for (const [prefix, target] of PATH_ALIASES) {
+    if (moduleName.startsWith(prefix)) {
+      return path.join(target, moduleName.slice(prefix.length));
+    }
+  }
+  return null;
+}
+
+const base = mergeConfig(getDefaultConfig(root), {
   // The workspace packages are source-linked, so Metro must watch and resolve them.
-  watchFolders: [__dirname + "/packages"],
+  watchFolders: [path.join(root, "packages")],
+  resolver: {
+    resolveRequest: (context, moduleName, platform) => {
+      const aliased = resolveAlias(moduleName);
+      if (aliased) return context.resolveRequest(context, aliased, platform);
+      return context.resolveRequest(context, moduleName, platform);
+    },
+  },
 });
 
-module.exports = withNativeWind(config, {
+module.exports = withNativeWind(base, {
   input: "./global.css",
   // Keep CSS virtual during production export to avoid Metro hashing a file
   // that NativeWind may regenerate or remove while the bundle is being built.
