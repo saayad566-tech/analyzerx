@@ -80,3 +80,7 @@
 | K55 | resolved | `release:verify` failed on deleted files and markers | `release-manifest.json` still required `app.config.ts`, `eas.json` and two EAS-era markers. Repointed to the post-migration sources. The workflow would have failed before building |
 | K56 | resolved | `--frozen-lockfile` failed in CI | The lockfile was not regenerated after Stage 4 removed eight expo packages |
 | K57 | resolved | `pnpm check` failed on a stale test reference | `tests/local-ai-native-wiring.test.ts` referenced a removed variable; a stale `.expo/types` entry was also dropped from the root tsconfig |
+
+| K58 | resolved | Gradle failed: `rootProject.ext` values were undefined | Removing the Expo version catalog left `android/build.gradle` with no `ext` block while `app/build.gradle` read five values from it. Restored |
+| K59 | resolved | The React Native root plugin was applied twice | Removed the duplicate line |
+| K60 | resolved | `app/oauth/callback.tsx` imported a non-dependency | `expo-linking` is not in `package.json`; switched to React Native's `Linking` |
