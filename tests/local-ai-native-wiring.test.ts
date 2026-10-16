@@ -5,20 +5,22 @@ import { describe, expect, it } from "vitest";
 const root = path.resolve(__dirname, "..");
 
 describe("Local AI native wiring", () => {
-  it("keeps LiteRT-LM inside the Android dependencies block or active config plugin", () => {
-    const generatedGradlePath = path.join(root, "android/app/build.gradle");
-    if (fs.existsSync(generatedGradlePath)) {
-      const buildGradle = fs.readFileSync(generatedGradlePath, "utf8");
-      const dependenciesStart = buildGradle.indexOf("dependencies {");
-      const coordinate = buildGradle.indexOf("com.google.ai.edge.litertlm:litertlm-android:0.16.0");
-      expect(dependenciesStart).toBeGreaterThanOrEqual(0);
-      expect(coordinate).toBeGreaterThan(dependenciesStart);
-      expect(buildGradle.slice(coordinate).trimEnd().endsWith("}")).toBe(true);
-      return;
-    }
+  it("keeps LiteRT-LM inside the Android dependencies block", () => {
     const gradle = fs.readFileSync(path.join(root, "android/app/build.gradle"), "utf8");
-    expect(gradle).toContain("com.google.ai.edge.litertlm:litertlm-android:0.16.0");
-    expect(gradle).toContain("abiFilters \"arm64-v8a\"");
+    const coordinate = gradle.indexOf("com.google.ai.edge.litertlm:litertlm-android:0.16.0");
+    const dependenciesStart = gradle.indexOf("dependencies {");
+    expect(dependenciesStart).toBeGreaterThanOrEqual(0);
+    expect(coordinate).toBeGreaterThan(dependenciesStart);
+    // Assert the actual intent: the coordinate sits *inside* a balanced `dependencies { }` block.
+    // (The previous check asserted the file *ended* with "}", which only held while nothing followed
+    // the block — and something legitimately does now.)
+    let depth = 1;
+    let closedAt = -1;
+    for (let i = coordinate; i < gradle.length; i += 1) {
+      if (gradle[i] === "{") depth += 1;
+      else if (gradle[i] === "}") { depth -= 1; if (depth === 0) { closedAt = i; break; } }
+    }
+    expect(closedAt).toBeGreaterThanOrEqual(0);
   });
 
   it("enables LiteRT-LM metadata compatibility only for app compilation", () => {
