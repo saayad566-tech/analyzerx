@@ -10,6 +10,32 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
   },
 }));
 
+// The Forge Shelf filesystem now routes through the shared platform adapter, which is backed by
+// react-native-fs. That module is Flow-typed native source and cannot be parsed in the Node test
+// graph, so it is mocked here exactly as async-storage already is. The adapter's real behaviour is
+// exercised on device, not in this suite.
+vi.mock("@/lib/platform/file-system", () => ({
+  documentDirectory: "/tmp/",
+  cacheDirectory: "/tmp/",
+  EncodingType: { Base64: "base64" },
+  writeAsStringAsync: async () => undefined,
+  readAsStringAsync: async () => "",
+  deleteAsync: async () => undefined,
+  getInfoAsync: async () => ({ exists: false, uri: "", isDirectory: false }),
+  makeDirectoryAsync: async () => undefined,
+  getFreeDiskStorageAsync: async () => 1_000_000_000,
+  readDirectoryAsync: async () => [],
+  moveAsync: async () => undefined,
+  createDownloadResumable: () => ({
+    downloadAsync: async () => undefined,
+    pauseAsync: async function () { return this; },
+    resumeAsync: async () => undefined,
+    cancelAsync: async () => undefined,
+    savable: () => ({ url: "", fileUri: "", options: {} }),
+  }),
+}));
+
+
 const profile: any = {
   platform: "cpu", os: "test", architecture: "x64", cpuModel: "test", cpuCores: 4,
   totalMemoryBytes: 8_000_000_000, freeStorageBytes: 20_000_000_000, backend: "cpu", gpuName: null,
