@@ -1,4 +1,4 @@
-import * as Linking from "expo-linking";
+import { Linking } from "react-native";
 import * as ReactNative from "react-native";
 
 // Extract scheme from bundle ID (last segment timestamp, prefixed with "manus")
@@ -67,6 +67,16 @@ const encodeState = (value: string) => {
 };
 
 /**
+ * Build a deep link for this app's URL scheme.
+ *
+ * Replaces `expo-linking`'s `createURL`, which produced `<scheme>://<path>`. React Native's `Linking`
+ * has `canOpenURL`/`openURL` but no URL builder, so the same shape is constructed here.
+ */
+function createDeepLink(path: string, scheme: string): string {
+  return `${scheme}://${path.replace(/^\/+/, "")}`;
+}
+
+/**
  * Get the redirect URI for OAuth callback.
  * - Web: uses API server callback endpoint
  * - Native: uses deep link scheme
@@ -75,9 +85,7 @@ export const getRedirectUri = () => {
   if (ReactNative.Platform.OS === "web") {
     return `${getApiBaseUrl()}/api/oauth/callback`;
   } else {
-    return Linking.createURL("/oauth/callback", {
-      scheme: env.deepLinkScheme,
-    });
+    return createDeepLink("/oauth/callback", env.deepLinkScheme);
   }
 };
 
