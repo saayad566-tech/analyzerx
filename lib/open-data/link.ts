@@ -171,8 +171,8 @@ function toArchiveArticle(article: NewsArticle & { collectedAt?: string | null }
   };
 }
 
-async function eventProjections(limit = 100, symbol?: string) {
-  const payload = symbol ? await stockNews(symbol, 40) : await marketNews(60);
+async function eventProjections(limit = 100, symbol?: string, marketId: MarketId = "IN") {
+  const payload = symbol ? await stockNews(symbol, 40) : await marketNews(60, marketId);
   return payload.articles.slice(0, limit).map(projectionFromArticle);
 }
 
@@ -230,13 +230,13 @@ async function groundedAnswer(question: string, symbol: string, marketId: Market
       dataAsOf = dataAsOf ?? news.value.fetchedAt;
     }
   } else {
-    const market = await marketNews(6);
+    const marketPayload = await marketNews(6, marketId);
     parts.push("Ask about a specific ticker for a sourced answer. Latest market headlines:");
-    for (const article of market.articles.slice(0, 3)) {
+    for (const article of marketPayload.articles.slice(0, 3)) {
       parts.push(`• ${article.headline} (${article.source})`);
       sources.push({ label: article.headline, detail: article.source, url: article.url });
     }
-    dataAsOf = market.fetchedAt;
+    dataAsOf = marketPayload.fetchedAt;
   }
 
   parts.push("This is source-grounded research context, not investment advice.");
@@ -589,7 +589,7 @@ const HANDLERS: Record<string, Handler> = {
     const archived = await queryArchive({ limit: 2000 });
     const found = archived.articles.find((article) => article.id === id);
     if (found) return toArchiveArticle(found);
-    const live = await marketNews(200).catch(() => ({ articles: [] as NewsArticle[] }));
+    const live = await marketNews(200, market(input)).catch(() => ({ articles: [] as NewsArticle[] }));
     const liveMatch = live.articles.find((article) => article.id === id);
     return liveMatch ? toArchiveArticle(liveMatch) : null;
   },
@@ -628,7 +628,7 @@ const HANDLERS: Record<string, Handler> = {
     // First run on a fresh install: top the archive up with a live pass so the
     // screen is never empty while history builds.
     if (articles.length === 0) {
-      const payload = await marketNews(200);
+      const payload = await marketNews(200, market(input));
       const live = symbol
         ? payload.articles.filter((a) => a.symbol === symbol || a.headline.toUpperCase().includes(symbol.toUpperCase()))
         : payload.articles;
@@ -696,7 +696,7 @@ const HANDLERS: Record<string, Handler> = {
   "news.reviewHeld": async () => ({ items: await localGet("news.held", []), held: await localGet("news.held", []) }),
   "news.held": async () => ({ items: await localGet("news.held", []), held: await localGet("news.held", []) }),
   "news.archiveExport": async (input) => {
-    const payload = await marketNews(500);
+    const payload = await marketNews(500, market(input));
     const rows = payload.articles;
     const header = "date,headline,source,sentiment,url";
     const csv = [header, ...rows.map((a) => [a.publishedAt ?? "", `"${a.headline.replace(/"/g, '""')}"`, a.source, a.sentiment, a.url].join(","))].join("\n");
@@ -704,10 +704,10 @@ const HANDLERS: Record<string, Handler> = {
   },
 
   /* ---- events ---- */
-  "events.latest": (input) => eventProjections(Number(input?.limit ?? 100) || 100),
-  "events.timeline": (input) => eventProjections(Number(input?.limit ?? 100) || 100, str(input, "symbol")),
+  "events.latest": (input) => eventProjections(Number(input?.limit ?? 100) || 100, undefined, market(input)),
+  "events.timeline": (input) => eventProjections(Number(input?.limit ?? 100) || 100, str(input, "symbol"), market(input)),
   "events.storyline": async () => [],
-  "events.search": (input) => eventProjections(500).then((rows) => rows.filter((row) => JSON.stringify(row).toLowerCase().includes(str(input, "query").toLowerCase())).slice(0, Number(input?.limit ?? 100) || 100)),
+  "events.search": (input) => eventProjections(500, undefined, market(input)).then((rows) => rows.filter((row) => JSON.stringify(row).toLowerCase().includes(str(input, "query").toLowerCase())).slice(0, Number(input?.limit ?? 100) || 100)),
 
   /* ---- graph ---- */
   "graph.projection": async (input) => {
@@ -819,7 +819,7 @@ const HANDLERS: Record<string, Handler> = {
   /* ---- alerts / recommendations ---- */
   "smartAlerts.discover": async (input) => ({ rules: [], results: [], evaluatedAt: nowIso(), symbol: str(input, "symbol"), note: "Alert evaluation runs over live news on-device." }),
   "autonomousRecommendations.discover": async () => {
-    const payload = await marketNews(40);
+    const payload = await marketNews(40, market(input));
     const candidates = payload.articles
       .filter((a) => a.impactScore >= 65 && a.symbol)
       .slice(0, 10)
@@ -938,7 +938,7 @@ async function researchRun(input: Input) {
   const marketId = market(input);
   const [fund, news, signals, flows] = await Promise.allSettled([
     symbol ? fundamentals(symbol, marketId) : Promise.resolve(null),
-    symbol ? stockNews(symbol, 12) : marketNews(12),
+    symbol ? stockNews(symbol, 12) : marketNews(12, marketId),
     multiAssetTiming(),
     marketId === "IN" ? institutionalFlows("TODAY") : Promise.resolve(null),
   ]);
