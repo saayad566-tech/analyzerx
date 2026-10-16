@@ -47,7 +47,14 @@ import {
   type UniverseRow,
   type YahooHost,
 } from "./sources";
-import { allLinkHealth, runChain, runMerge, type ChainAttempt } from "./chain";
+import {
+  ChainLink,
+  allLinkHealth,
+  runChain,
+  runMerge,
+  type ChainAttempt,
+  type ChainLink,
+} from "./chain";
 import { FALLBACK_UNIVERSE, UNIVERSE_SNAPSHOT_DATE, UNIVERSE_SNAPSHOT_SOURCE } from "./universe-fallback";
 
 const TTL = {
@@ -421,6 +428,8 @@ export type { FundamentalAnalysis } from "@/server/fundamental-analysis";
 
 export type NewsPayload = {
   symbol: string;
+  /** The market these headlines belong to; the feed is scoped per market. */
+  marketId?: MarketId;
   fetchedAt: string;
   stale: boolean;
   freshArticleCount: number;
@@ -477,28 +486,33 @@ export async function stockNews(symbol: string, limit = 40): Promise<NewsPayload
   };
 }
 
-export async function marketNews(limit = 60): Promise<NewsPayload> {
-  const merge = await runMerge<NewsArticle>(
-    [
-      {
-        key: "google-news-rss",
-        name: "Google News RSS (market)",
-        run: async () => (await cached("news:market:g", TTL.news, () => googleNewsHeadlines(limit))).value.articles,
-      },
-      {
-        key: "nse-announcements-rss",
-        name: "NSE announcements RSS",
-        run: async () => (await cached("news:nse-announcements", TTL.news, () => nseAnnouncementsRss(60))).value.articles,
-      },
-    ],
-    { key: (article) => article.id, limit: 300 },
-  );
+export async function marketNews(limit = 60, marketId: MarketId = "IN"): Promise<NewsPayload> {
+  // Sources are scoped to the active market. The Google News feed carries a per-market query and
+  // locale, and the NSE announcements feed is Indian-only, so it is included for India alone.
+  // Without this, every market was served Indian headlines and NSE filings.
+  const providerSpecs: ChainLink<NewsArticle[]>[] = [
+    {
+      key: "google-news-rss",
+      name: `Google News RSS (${getMarketProfile(marketId).country})`,
+      run: async () =>
+        (await cached(`news:market:g:${marketId}`, TTL.news, () => googleNewsHeadlines(limit, marketId))).value.articles,
+    },
+  ];
+  if (marketId === "IN") {
+    providerSpecs.push({
+      key: "nse-announcements-rss",
+      name: "NSE announcements RSS",
+      run: async () => (await cached("news:nse-announcements", TTL.news, () => nseAnnouncementsRss(60))).value.articles,
+    });
+  }
+  const merge = await runMerge<NewsArticle>(providerSpecs, { key: (article) => article.id, limit: 300 });
 
   const articles = [...merge.items].sort(
     (a, b) => (Date.parse(b.publishedAt ?? "") || 0) - (Date.parse(a.publishedAt ?? "") || 0),
   );
   return {
     symbol: "",
+    marketId,
     fetchedAt: nowIso(),
     stale: false,
     freshArticleCount: articles.length,
@@ -543,7 +557,7 @@ export type InstitutionalFlowComparison = {
 export type InstitutionalFlows = {
   status: SourceStatus;
   source: string;
-  upstream: "NSE" | "NSE via intermediary";
+  upstream: "NSE" | "NSE via intermediary" | null;
   reportDate: string | null;
   fetchedAt: string;
   freshnessLabel: string;
@@ -554,6 +568,8 @@ export type InstitutionalFlows = {
   rangeLabel: string;
   comparison: InstitutionalFlowComparison[];
   error: string | null;
+  /** The market these flows belong to. India is the only market with a wired flow source. */
+  marketId: MarketId;
   /** Fortnightly FPI sector allocation (NSDL-derived). Device-side source. */
   sectorAllocation?: { rows: SectorFlowRow[]; asOf: string | null; source: string; error: string | null };
 };
@@ -597,7 +613,29 @@ function percentChange(current: number | null, previous: number | null): number 
 
 const RANGE_LABELS: Record<string, string> = { TODAY: "Today", THREE_DAYS: "Last 3 sessions", ONE_WEEK: "Last week", ONE_MONTH: "Last month", QTD: "Quarter to date" };
 
-export async function institutionalFlows(range = "TODAY"): Promise<InstitutionalFlows> {
+export async function institutionalFlows(range = "TODAY", marketId: MarketId = "IN"): Promise<InstitutionalFlows> {
+  // NSE FII/DII and the NSDL sector allocation are Indian regulatory sources. For every other
+  // market this returns an explicit "unavailable" rather than Indian numbers under a foreign
+  // market, which is what previously happened.
+  if (marketId !== "IN") {
+    return {
+      status: "unavailable",
+      source: "No institutional-flow source is wired for this market",
+      upstream: null,
+      reportDate: null,
+      fetchedAt: nowIso(),
+      freshnessLabel: `Not available for ${getMarketProfile(marketId).country}`,
+      freshnessBusinessDays: null,
+      rows: [],
+      history: [],
+      range,
+      rangeLabel: RANGE_LABELS[range] ?? range,
+      comparison: [],
+      error: `Institutional flows are not wired for ${getMarketProfile(marketId).country}; NSE FII/DII covers India only.`,
+      sectorAllocation: { rows: [], asOf: null, source: "Not available for this market", error: null },
+      marketId,
+    };
+  }
   let status: SourceStatus = "unavailable";
   let sourceName = "NSE FII/DII provisional report";
   let upstream: "NSE" | "NSE via intermediary" = "NSE";
@@ -690,7 +728,7 @@ export async function institutionalFlows(range = "TODAY"): Promise<Institutional
   const sessions = windows.current.length || (liveRows.length ? 1 : 0);
   const rangeLabel = `${RANGE_LABELS[range] ?? range} · ${sessions} session${sessions === 1 ? "" : "s"} available`;
 
-  const sectorAllocation = await sectorInstitutionalFlows();
+  const sectorAllocation = await sectorInstitutionalFlows(marketId);
 
   return {
     status,
@@ -707,11 +745,15 @@ export async function institutionalFlows(range = "TODAY"): Promise<Institutional
     comparison,
     error,
     sectorAllocation,
+    marketId,
   };
 }
 
 /** NSDL-derived fortnightly FPI sector allocation. Device-side source. */
-export async function sectorInstitutionalFlows(): Promise<{ rows: SectorFlowRow[]; asOf: string | null; source: string; error: string | null }> {
+export async function sectorInstitutionalFlows(marketId: MarketId = "IN"): Promise<{ rows: SectorFlowRow[]; asOf: string | null; source: string; error: string | null }> {
+  if (marketId !== "IN") {
+    return { rows: [], asOf: null, source: "Not available for this market", error: null };
+  }
   const outcome = await runChain([
     { key: "nsdl-sector-flows", name: "NSDL FPI sector allocation", run: () => cached("flows:sector", 6 * 60 * 60_000, () => nsdlSectorFlows()) },
   ]);
