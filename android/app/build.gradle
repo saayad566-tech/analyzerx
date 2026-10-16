@@ -87,8 +87,8 @@ android {
         applicationId 'com.app.marketeventintelligence'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1400
-        versionName "1.4.0"
+        versionCode 3200
+        versionName "3.2.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
 
