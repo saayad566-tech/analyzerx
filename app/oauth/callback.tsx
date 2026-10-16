@@ -1,7 +1,7 @@
 import { ThemedView } from "@/components/themed-view";
 import * as Api from "@/lib/_core/api";
 import * as Auth from "@/lib/_core/auth";
-import * as Linking from "expo-linking";
+import { Linking } from "react-native";
 import { useLocalSearchParams, useRouter } from "@/lib/navigation/router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Text } from "react-native";
