@@ -47,13 +47,11 @@ import {
   type UniverseRow,
   type YahooHost,
 } from "./sources";
-import {
   ChainLink,
   allLinkHealth,
   runChain,
   runMerge,
   type ChainAttempt,
-  type ChainLink,
 } from "./chain";
 import { FALLBACK_UNIVERSE, UNIVERSE_SNAPSHOT_DATE, UNIVERSE_SNAPSHOT_SOURCE } from "./universe-fallback";
 
