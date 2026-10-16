@@ -29,11 +29,14 @@ let cache: ActivityEntry[] | null = null;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let lastCrash: { message: string; at: string } | null = null;
 
-type FileSystemModule = typeof import("expo-file-system/legacy");
+// The on-device log file goes through the shared platform adapter
+// (`@/lib/platform/file-system`, backed by react-native-fs). It previously imported
+// `expo-file-system/legacy`, which was removed during the Expo-to-bare migration.
+type FileSystemModule = typeof import("@/lib/platform/file-system");
 async function getFileSystem(): Promise<FileSystemModule | null> {
   if (Platform.OS === "web") return null;
   try {
-    return await import("expo-file-system/legacy");
+    return await import("@/lib/platform/file-system");
   } catch {
     return null;
   }
