@@ -895,3 +895,31 @@ All four were caught by *running the gates*, not by reading the diff.
   app+lib, tests+scripts+root).
 - `pnpm release:verify` — **passes**, and the manifest assertions hold against the committed native
   sources.
+
+## 2026-10-16 — Session 24 (the Gradle defect that was blocking the APK)
+The `apk-artifact` branch held a build from **build 348, 2026-10-15T17:54Z** — before the migration.
+No build has succeeded since. Reading the Gradle files rather than the diff found why.
+
+### Root cause: `rootProject.ext` had no definitions
+`android/app/build.gradle` reads five values from `rootProject.ext`:
+`ndkVersion`, `buildToolsVersion`, `compileSdkVersion`, `minSdkVersion`, `targetSdkVersion`.
+The Expo version catalog — `expoAutolinking.useExpoVersionCatalog()` in `settings.gradle`, which the
+migration removed — was supplying them. With it gone, `android/build.gradle` had **no `ext` block at
+all**, so every one of those references was unresolved and Gradle would fail at configuration time,
+before compiling anything.
+
+Restored an `ext` block mirroring the React Native template, pinned to what the workflow actually
+installs (`platforms;android-36`, `build-tools;36.0.0`) and to the app's declared `minSdk` of 24.
+
+### Second defect: the plugin was applied twice
+`apply plugin: "com.facebook.react.rootproject"` appeared on two consecutive lines — my earlier rename
+of `expo-root-project` landed beside an existing line. Removed the duplicate.
+
+### Third defect: an import of a package that is no longer a dependency
+`app/oauth/callback.tsx` still imported `expo-linking`, which is not in `package.json`. It resolved
+only because other Expo packages pull it in transitively — so it would have broken the moment they
+went. Switched to React Native's own `Linking`.
+
+### Method note
+All three were found by reading the files and resolving references by hand, not by reading a diff.
+A diff showed these changes as correct; only checking that every reference *resolves* exposed them.
