@@ -84,3 +84,7 @@
 | K58 | resolved | Gradle failed: `rootProject.ext` values were undefined | Removing the Expo version catalog left `android/build.gradle` with no `ext` block while `app/build.gradle` read five values from it. Restored |
 | K59 | resolved | The React Native root plugin was applied twice | Removed the duplicate line |
 | K60 | resolved | `app/oauth/callback.tsx` imported a non-dependency | `expo-linking` is not in `package.json`; switched to React Native's `Linking` |
+
+| K61 | resolved | CI failed: `@/` alias undefined for vitest | No vitest config existed, so Vite never read the tsconfig `paths`. Five suites importing through `@/` failed to load. Added `vitest.config.ts` with the alias only |
+| K62 | resolved | A test asserted a file ended with `}` | `local-ai-native-wiring.test.ts` encoded an implementation detail; a legitimate `apply from:` line now follows the block. Replaced with a brace-balance check of the real intent |
+| K63 | info | The sandbox test harness resolves `@/` differently from vitest | esbuild honours tsconfig paths; Vite does not without a config. This is why the same suite passed locally and failed in CI |
