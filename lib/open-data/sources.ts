@@ -390,8 +390,28 @@ export async function googleNews(
   return { articles: items.map((item) => toArticle(item, symbol, "Google News")), latencyMs, url };
 }
 
-export async function googleNewsHeadlines(limit = 40): Promise<{ articles: NewsArticle[]; latencyMs: number; url: string }> {
-  const url = "https://news.google.com/rss/search?q=Indian%20stock%20market%20OR%20Nifty%20OR%20Sensex&hl=en-IN&gl=IN&ceid=IN:en";
+/** Per-market Google News query. The feed was previously pinned to Indian terms and locale, so
+ *  every market saw Indian news; each market now gets its own terms, language and edition. */
+const MARKET_NEWS_QUERY: Record<string, { q: string; hl: string; gl: string; ceid: string }> = {
+  IN: { q: "Indian stock market OR Nifty OR Sensex", hl: "en-IN", gl: "IN", ceid: "IN:en" },
+  US: { q: "US stock market OR S&P 500 OR Nasdaq", hl: "en-US", gl: "US", ceid: "US:en" },
+  GB: { q: "UK stock market OR FTSE 100 OR London Stock Exchange", hl: "en-GB", gl: "GB", ceid: "GB:en" },
+  CA: { q: "Canada stock market OR TSX OR Toronto Stock Exchange", hl: "en-CA", gl: "CA", ceid: "CA:en" },
+  AU: { q: "Australia stock market OR ASX OR Australian shares", hl: "en-AU", gl: "AU", ceid: "AU:en" },
+  JP: { q: "Japan stock market OR Nikkei OR Tokyo Stock Exchange", hl: "en-JP", gl: "JP", ceid: "JP:en" },
+  SG: { q: "Singapore stock market OR Straits Times Index OR SGX", hl: "en-SG", gl: "SG", ceid: "SG:en" },
+  HK: { q: "Hong Kong stock market OR Hang Seng OR HKEX", hl: "en-HK", gl: "HK", ceid: "HK:en" },
+  DE: { q: "German stock market OR DAX OR Frankfurt Stock Exchange", hl: "en-DE", gl: "DE", ceid: "DE:en" },
+  FR: { q: "French stock market OR CAC 40 OR Euronext Paris", hl: "en-FR", gl: "FR", ceid: "FR:en" },
+};
+
+export function marketNewsQuery(marketId: string): { q: string; hl: string; gl: string; ceid: string } {
+  return MARKET_NEWS_QUERY[marketId] ?? MARKET_NEWS_QUERY.IN;
+}
+
+export async function googleNewsHeadlines(limit = 40, marketId = "IN"): Promise<{ articles: NewsArticle[]; latencyMs: number; url: string }> {
+  const { q, hl, gl, ceid } = marketNewsQuery(marketId);
+  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=${hl}&gl=${gl}&ceid=${ceid}`;
   const { text, latencyMs } = await fetchText(url);
   return {
     articles: parseRss(text).slice(0, limit).map((item) => toArticle(item, "", "Google News")),
