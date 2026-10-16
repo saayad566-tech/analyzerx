@@ -4,8 +4,21 @@
  * `void somePromise` marks the intent to not await, but it does **not** handle rejection: if the
  * promise rejects, it becomes an unhandled rejection that is swallowed or surfaced as a red box.
  * Wrapping the call here keeps the non-blocking behaviour and guarantees the failure is recorded.
+ *
+ * The activity log is imported **lazily**. It reaches the React Native runtime, and a static import
+ * would drag that runtime into any module graph that merely wants to fire something off — including
+ * Node test graphs, where React Native's Flow-typed source cannot be parsed.
  */
-import { logActivity } from "@/lib/activity-log";
+
+/** Record a background failure without ever throwing. */
+async function recordFailure(label: string, detail: string): Promise<void> {
+  try {
+    const { logActivity } = await import("@/lib/activity-log");
+    await logActivity("warning", `${label} failed`, detail);
+  } catch {
+    // Logging is best-effort; a failure to log must not become a new rejection.
+  }
+}
 
 /**
  * Run an operation without awaiting it, recording any rejection to the activity log.
@@ -17,8 +30,7 @@ export function fireAndForget(operation: Promise<unknown>, label = "background o
   operation
     .catch((error: unknown) => {
       const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-      // The logging call is itself fire-and-forget; a failure to log must not become a new rejection.
-      return logActivity("warning", `${label} failed`, detail).catch(() => undefined);
+      return recordFailure(label, detail);
     })
     .catch(() => undefined);
 }
@@ -31,7 +43,7 @@ export function installUnhandledRejectionGuard(): () => void {
   const handler = (event: unknown) => {
     const reason = (event as { reason?: unknown })?.reason;
     const detail = reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason);
-    fireAndForget(logActivity("error", "Unhandled promise rejection", detail).catch(() => undefined), "logActivity");
+    void recordFailure("Unhandled promise rejection", detail);
   };
   const scope = globalThis as unknown as {
     addEventListener?: (type: string, listener: (event: unknown) => void) => void;
