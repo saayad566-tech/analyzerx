@@ -1,7 +1,13 @@
-// Bare React Native Metro configuration. `expo/metro-config` previously supplied the defaults *and*
-// resolved the tsconfig `paths` aliases; the React Native defaults are equivalent for a bare project
-// but do not read tsconfig, so the `@/` and `@shared/` aliases are resolved explicitly below.
-// NativeWind still wraps the result.
+// Bare React Native Metro configuration.
+//
+// `expo/metro-config` previously supplied the defaults *and* resolved the tsconfig `paths` aliases.
+// The React Native defaults are equivalent for a bare project, but they do not read tsconfig, so the
+// `@/` and `@shared/` aliases are resolved here.
+//
+// IMPORTANT: the React Native default config installs its own `resolveRequest` (it handles
+// `react-native/*` subpath resolution — e.g. `react-native/asset-registry`, which every bundled PNG
+// asset requires). A custom `resolveRequest` *replaces* it, so the original is captured and chained
+// to for every module that is not an alias. Replacing it outright breaks asset bundling.
 const path = require("path");
 const { getDefaultConfig, mergeConfig } = require("@react-native/metro-config");
 const { withNativeWind } = require("nativewind/metro");
@@ -25,13 +31,24 @@ function resolveAlias(moduleName) {
   return null;
 }
 
-const base = mergeConfig(getDefaultConfig(root), {
+const defaultConfig = getDefaultConfig(root);
+const upstreamResolveRequest = defaultConfig.resolver && defaultConfig.resolver.resolveRequest;
+
+const base = mergeConfig(defaultConfig, {
   // The workspace packages are source-linked, so Metro must watch and resolve them.
   watchFolders: [path.join(root, "packages")],
   resolver: {
     resolveRequest: (context, moduleName, platform) => {
       const aliased = resolveAlias(moduleName);
-      if (aliased) return context.resolveRequest(context, aliased, platform);
+      if (aliased) {
+        // The alias target is a project path; resolve it relative to the project root.
+        return context.resolveRequest(
+          { ...context, originModulePath: path.join(root, "index.js") },
+          aliased,
+          platform,
+        );
+      }
+      if (upstreamResolveRequest) return upstreamResolveRequest(context, moduleName, platform);
       return context.resolveRequest(context, moduleName, platform);
     },
   },
