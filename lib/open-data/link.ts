@@ -818,7 +818,7 @@ const HANDLERS: Record<string, Handler> = {
 
   /* ---- alerts / recommendations ---- */
   "smartAlerts.discover": async (input) => ({ rules: [], results: [], evaluatedAt: nowIso(), symbol: str(input, "symbol"), note: "Alert evaluation runs over live news on-device." }),
-  "autonomousRecommendations.discover": async () => {
+  "autonomousRecommendations.discover": async (input) => {
     const payload = await marketNews(40, market(input));
     const candidates = payload.articles
       .filter((a) => a.impactScore >= 65 && a.symbol)
