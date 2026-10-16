@@ -154,6 +154,10 @@ android {
 
 dependencies {
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.16.0")
+    // Provides `Theme.SplashScreen` and the windowSplashScreen* attributes used by
+    // res/values/styles.xml. It was previously pulled in transitively by expo-splash-screen; with
+    // that removed it must be declared explicitly or resource linking fails.
+    implementation("androidx.core:core-splashscreen:1.0.1")
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
