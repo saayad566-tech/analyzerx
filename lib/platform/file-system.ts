@@ -172,3 +172,17 @@ export function createDownloadResumable(
   };
   return resumable;
 }
+
+/** Directory entry names. Empty when the directory does not exist. */
+export async function readDirectoryAsync(uri: string): Promise<string[]> {
+  const path = toPath(uri);
+  return RNFS.readDir(path);
+}
+
+/** Move/rename, replacing any existing destination. */
+export async function moveAsync(options: { from: string; to: string }): Promise<void> {
+  const from = toPath(options.from);
+  const to = toPath(options.to);
+  await RNFS.unlink(to).catch(() => undefined);
+  await RNFS.moveFile(from, to);
+}
