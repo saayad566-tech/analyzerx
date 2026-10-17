@@ -18,7 +18,8 @@
     "lint": "eslint .",
     "qr": "node scripts/generate_qr.mjs",
     "release:verify": "node scripts/verify-release.mjs",
-    "web:bundle": "react-native bundle --platform web --dev false --config metro.config.web.js --entry-file index.js --bundle-output dist/web/index.bundle.js --assets-dest dist/web",
+    "web:css": "tailwindcss -i ./global.css -o dist/web/styles.css",
+    "web:bundle": "pnpm web:css && react-native bundle --platform web --dev false --config metro.config.web.js --entry-file index.js --bundle-output dist/web/index.bundle.js --assets-dest dist/web",
     "start": "NODE_ENV=production node dist/index.js",
     "test": "vitest run"
   },
