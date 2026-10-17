@@ -75,3 +75,11 @@
 - [x] Ran `repo_guard.py` secrets / skipped-tests / clean-tree before publishing
 - [x] `tsc --noEmit`: 0 errors · `eslint .`: 0 errors · full suite: 1,189 passed, 6 skipped, 0 failed
 - [x] Recorded K68 (`ANALYZERX_SOURCE_REVISION` not inlined) and K69 (plain-HTTP provider endpoint)
+
+## Phase 11 — Premium design + desktop target (session 28)
+- [x] `lib/design/tokens.ts` — semantic colour, space, radius, type, elevation, motion (K71)
+- [x] `components/ui/premium.tsx` — Surface, SectionHeader, Stat, Pill, Meter, Sparkline, PrimaryAction, EmptyState, Divider
+- [x] Tab shell + Sectors rebuilt on the tokens/kit as the reference; `DESIGN_SYSTEM.md` written
+- [x] Desktop target wired: `metro.config.web.js`, `index.web.js`, `public/index.html`, `desktop/` Electron shell + electron-builder, `.github/workflows/desktop-exe.yml`
+- [x] `tsc --noEmit`: 0 errors · `eslint .`: 0 errors · `release:verify`: passes · suite: 1,189 passed, 6 skipped, 0 failed
+- [ ] Desktop EXE CI-verified (K72 — pending the first run on `main`)
