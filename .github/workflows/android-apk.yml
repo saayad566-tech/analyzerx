@@ -7,6 +7,9 @@ on:
       - main
     tags:
       - "v3.2.0"
+    # A docs-only change does not need a signed APK built for it.
+    paths-ignore:
+      - "**.md"
 
 jobs:
   build-apk:

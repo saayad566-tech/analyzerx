@@ -82,4 +82,5 @@
 - [x] Tab shell + Sectors rebuilt on the tokens/kit as the reference; `DESIGN_SYSTEM.md` written
 - [x] Desktop target wired: `metro.config.web.js`, `index.web.js`, `public/index.html`, `desktop/` Electron shell + electron-builder, `.github/workflows/desktop-exe.yml`
 - [x] `tsc --noEmit`: 0 errors · `eslint .`: 0 errors · `release:verify`: passes · suite: 1,189 passed, 6 skipped, 0 failed
-- [ ] Desktop EXE CI-verified (K72 — pending the first run on `main`)
+- [x] Desktop EXE CI-verified (K72) — `AnalyzerX Windows EXE` green on `main` `c2fbb6d6`; artifact `analyzerx-windows-exe` (NSIS + portable, ~157 MB)
+- [x] Android APK re-verified with the design changes — `AnalyzerX Android APK` green, `analyzerx-3.2.0-apk` (~34.6 MB)

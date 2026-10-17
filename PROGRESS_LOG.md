@@ -1075,3 +1075,17 @@ platform adapters are the next step (K73).
 - `eslint .`: **0 errors** (202 warnings).
 - `pnpm release:verify`: **passes**.
 - Full suite (sharded 1/3 + 2/3 + 3/3): **1,189 passed, 6 skipped, 0 failed**.
+
+### CI — both targets green on `main`
+After the merge, all three workflows passed on `main` (`c2fbb6d6`):
+- **AnalyzerX Android APK** — success; artifact `analyzerx-3.2.0-apk` (~34.6 MB).
+- **AnalyzerX Windows EXE** — success; artifact `analyzerx-windows-exe` (~157 MB: NSIS installer + portable).
+- **Bundle verification** — success.
+
+The desktop build took two CI iterations. The first failure was NativeWind's Metro integration: it
+serves `global.css` as a virtual file that cannot be SHA-1'd during a one-shot web bundle
+(`Failed to get the SHA-1 for …web.css`), and `forceWriteFileSystem: true` did not change that. The
+fix was to stop routing the web build through NativeWind's Metro transform entirely: `pnpm web:css`
+generates `dist/web/styles.css` with the Tailwind CLI (verified locally — 14 KB of valid CSS),
+`index.html` links it, and every `.css` import resolves to an empty module (`desktop/web-css-stub.js`).
+`metro.base.js` now holds the shared resolver so the native and web configs cannot drift.

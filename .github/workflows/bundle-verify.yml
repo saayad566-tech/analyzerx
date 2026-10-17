@@ -9,6 +9,9 @@ on:
   push:
     branches:
       - main
+    # A docs-only change cannot alter the bundle.
+    paths-ignore:
+      - "**.md"
   pull_request:
     branches:
       - main
