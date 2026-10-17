@@ -5,6 +5,9 @@
   "main": "index.js",
   "scripts": {
     "android": "react-native run-android",
+    "build:apk": "node scripts/build-apk.mjs",
+    "build:win": "pnpm web:bundle && node scripts/build-desktop.mjs",
+    "verify:artifacts": "node scripts/verify-artifacts.mjs",
     "apk:checksum": "node scripts/checksum-artifact.mjs",
     "build": "pnpm build:server",
     "build:server": "esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
