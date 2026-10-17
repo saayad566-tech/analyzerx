@@ -68,3 +68,10 @@
 - [x] `package.json` `main` corrected from `expo-router/entry` to `index.js`
 - [x] Sectors "Updated 2m ago" replaced with the truthful market-scoped seed label
 - [x] `tsc --noEmit`: 0 errors · `release:verify`: passes · full suite: 1,189 passed, 6 skipped, 0 failed
+
+## Phase 10 — Audit pass (session 27)
+- [x] Removed ungated credential/PII logging from `app/oauth/callback.tsx` + `hooks/use-auth.ts` (K66)
+- [x] Replaced the dead `process.env.EXPO_OS` checks with `Platform.OS` (K67)
+- [x] Ran `repo_guard.py` secrets / skipped-tests / clean-tree before publishing
+- [x] `tsc --noEmit`: 0 errors · `eslint .`: 0 errors · full suite: 1,189 passed, 6 skipped, 0 failed
+- [x] Recorded K68 (`ANALYZERX_SOURCE_REVISION` not inlined) and K69 (plain-HTTP provider endpoint)
