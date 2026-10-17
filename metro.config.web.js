@@ -1,18 +1,23 @@
 /**
  * Metro configuration for the web / desktop (Electron) bundle.
  *
- * The app targets Android natively and web through `react-native-web`. This config extends the bare
- * React Native config with the three things a web bundle needs:
+ * The app targets Android natively and web through `react-native-web`. This config wraps the shared
+ * resolver (`metro.base.js`) with the three things a web bundle needs:
  *   1. the `web` platform, resolved first;
  *   2. `react-native` aliased to `react-native-web`;
  *   3. a stub for the native-only modules that ship no browser build, so the bundle resolves instead
  *      of failing — each stub throws a labelled "not available on desktop" error rather than
  *      returning a fake value.
  *
+ * It also sets `forceWriteFileSystem: true`. NativeWind otherwise serves its generated CSS as a
+ * virtual module, which Metro cannot SHA-1 while bundling for web ("Failed to get the SHA-1 for
+ * …web.css"); writing the file to disk fixes it. The native config keeps it virtual.
+ *
  * Android keeps using `metro.config.js`; nothing here is loaded for a native build.
  */
 const path = require("path");
-const base = require("./metro.config.js");
+const { withNativeWind } = require("nativewind/metro");
+const base = require("./metro.base.js");
 
 /** Native modules with no browser implementation. Resolved to the stub below on web. */
 const NATIVE_ONLY = new Set([
@@ -33,7 +38,7 @@ const NATIVE_ONLY = new Set([
 const STUB = path.join(__dirname, "desktop", "web-module-stub.js");
 const baseResolve = base.resolver.resolveRequest;
 
-module.exports = {
+const web = {
   ...base,
   resolver: {
     ...base.resolver,
@@ -51,3 +56,8 @@ module.exports = {
     },
   },
 };
+
+module.exports = withNativeWind(web, {
+  input: "./global.css",
+  forceWriteFileSystem: true,
+});
