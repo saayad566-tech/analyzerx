@@ -1,0 +1,54 @@
+# .woodpecker.yml — Codeberg / Woodpecker CI pipeline (GitHub-free, free for FOSS).
+# Woodpecker reads this file from the repository root.
+# Docs: https://woodpecker-ci.org/docs/usage/intro
+# NOTE: like .gitlab-ci.yml, this is inert on the GitHub remote.
+
+steps:
+  # Cheap validation first.
+  validate:
+    image: node:22
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=4096"
+    commands:
+      - npm install -g pnpm@9.12.0
+      - pnpm install --frozen-lockfile
+      - pnpm check
+      - pnpm release:verify
+    when:
+      - event: push
+      - event: pull_request
+
+  # Android release APK. Raise the heap — never shrink it.
+  android-apk:
+    image: reactnativecommunity/react-native-android:latest
+    environment:
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError"
+      NODE_OPTIONS: "--max-old-space-size=4096"
+    commands:
+      - npm install -g pnpm@9.12.0
+      - pnpm install --frozen-lockfile
+      - cd android
+      - chmod +x gradlew
+      - ./gradlew assembleRelease --no-daemon
+    when:
+      - event: push
+      - event: pull_request
+
+  # Windows .exe — needs an agent with the `windows` label.
+  windows-exe:
+    image: node:22
+    labels:
+      - windows
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=4096"
+    commands:
+      - npm install -g pnpm@9.12.0
+      - pnpm install --frozen-lockfile
+      - pnpm web:bundle
+      - mkdir -p desktop/app && cp -r dist/web/. desktop/app/ && cp public/index.html desktop/app/index.html
+      - cd desktop && npm install --no-audit --no-fund && npx electron-builder --win --publish never
+    when:
+      - event: push
+      - event: pull_request
+    # Remove this if you have no Windows agent yet.
+    failure: ignore

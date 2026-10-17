@@ -1,0 +1,46 @@
+# Dockerfile.build — reproducible, offline-capable build environment for AnalyzerX.
+#
+# JDK 21 + Node 22 + the Android SDK, so a heavy Gradle / Electron build runs the same way on a
+# laptop, a VPS, a CI runner, or a container host — no sandbox timeouts.
+#
+#   docker build -f Dockerfile.build -t analyzerx-builder .
+#   docker run --rm -v "$PWD":/work -w /work analyzerx-builder bash build.sh android
+#
+# Versions are pinned to what this project actually builds against (compileSdk 36, build-tools
+# 36.0.0, JDK 21). Bump them deliberately, not automatically.
+
+FROM eclipse-temurin:21-jdk
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    ANDROID_HOME=/opt/android-sdk \
+    ANDROID_SDK_ROOT=/opt/android-sdk \
+    NODE_OPTIONS=--max-old-space-size=4096
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      curl unzip git python3 ca-certificates xz-utils \
+ && rm -rf /var/lib/apt/lists/*
+
+# --- Node 22 (pinned) ------------------------------------------------------- #
+ARG NODE_VERSION=22.14.0
+RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+      -o /tmp/node.tar.xz \
+ && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
+ && rm /tmp/node.tar.xz \
+ && npm install -g pnpm@9.12.0
+
+# --- Android command-line tools + SDK (pinned) ------------------------------ #
+ARG CMDLINE_TOOLS=11076708
+RUN mkdir -p "$ANDROID_HOME/cmdline-tools" \
+ && curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS}_latest.zip" \
+      -o /tmp/tools.zip \
+ && unzip -q /tmp/tools.zip -d "$ANDROID_HOME/cmdline-tools" \
+ && mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest" \
+ && rm /tmp/tools.zip
+
+ENV PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools"
+
+RUN yes | sdkmanager --licenses >/dev/null 2>&1 || true
+RUN sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+WORKDIR /work
+ENTRYPOINT ["bash", "build.sh"]

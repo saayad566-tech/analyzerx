@@ -1,0 +1,103 @@
+# .gitlab-ci.yml — GitHub-free Android APK + Windows EXE pipeline for AnalyzerX.
+#
+# Works on gitlab.com (free minutes) or a self-hosted GitLab runner (unlimited).
+# NOTE: GitLab reads this file only when the repository lives on — or is mirrored to —
+# GitLab. On the GitHub remote it is inert. See BUILD-PIPELINE.md.
+#
+#   validate:*  -> pnpm check + release:verify (cheap, first)
+#   build:android -> release APK on a Linux runner
+#   build:windows -> .exe on a runner tagged `windows` (allow_failure until registered)
+#   verify:artifacts -> proves the artifacts are real (non-zero, correct magic bytes)
+
+stages:
+  - validate
+  - build
+  - verify
+
+variables:
+  # Raise, never shrink: heavy Gradle/JVM builds need real heap.
+  GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError"
+  NODE_OPTIONS: "--max-old-space-size=4096"
+  GIT_DEPTH: "20"
+  PNPM_VERSION: "9.12.0"
+
+default:
+  cache:
+    key: "$CI_COMMIT_REF_SLUG"
+    paths:
+      - .gradle/
+      - android/.gradle/
+      - node_modules/
+
+# --------------------------------------------------------------------------- #
+# validate — cheap checks first, so a broken tree never reaches the heavy build
+# --------------------------------------------------------------------------- #
+validate:project:
+  stage: validate
+  image: node:22
+  script:
+    - npm install -g pnpm@$PNPM_VERSION
+    - pnpm install --frozen-lockfile
+    - pnpm check            # tsc --noEmit
+    - pnpm release:verify
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+
+# --------------------------------------------------------------------------- #
+# build — Android release APK (Linux runner)
+# --------------------------------------------------------------------------- #
+build:android:
+  stage: build
+  image: reactnativecommunity/react-native-android:latest
+  script:
+    - npm install -g pnpm@$PNPM_VERSION
+    - pnpm install --frozen-lockfile
+    - cd android
+    - chmod +x gradlew
+    - ./gradlew assembleRelease --no-daemon
+  artifacts:
+    name: "apk-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - android/app/build/outputs/apk/release/*.apk
+    expire_in: 1 week
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+
+# --------------------------------------------------------------------------- #
+# build — Windows .exe (runner tagged `windows`)
+# --------------------------------------------------------------------------- #
+build:windows:
+  stage: build
+  tags:
+    - windows
+  script:
+    - npm install -g pnpm@$PNPM_VERSION
+    - pnpm install --frozen-lockfile
+    - pnpm web:bundle
+    - mkdir -p desktop/app && cp -r dist/web/. desktop/app/ && cp public/index.html desktop/app/index.html
+    - cd desktop
+    - npm install --no-audit --no-fund
+    - npx electron-builder --win --publish never
+  artifacts:
+    name: "exe-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - desktop/release/*.exe
+      - desktop/release/*.sha256
+    expire_in: 1 week
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+  allow_failure: true   # remove once a Windows runner is registered
+
+# --------------------------------------------------------------------------- #
+# verify — prove the artifacts are real before anyone trusts them
+# --------------------------------------------------------------------------- #
+verify:artifacts:
+  stage: verify
+  image: python:3.12-slim
+  script:
+    - python scripts/verify_artifacts.py --dir .
+  needs:
+    - job: build:android
+      artifacts: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
