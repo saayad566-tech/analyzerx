@@ -13,11 +13,9 @@ export default defineConfig([
     // rather than being reported as `no-undef`.
     files: [
       "scripts/**/*.{js,mjs,cjs}",
-      "*.config.js",
-      "babel.config.js",
-      "metro.config.js",
-      "tailwind.config.js",
-      "theme.config.js",
+      "desktop/**/*.{js,cjs,mjs}",
+      "**/*.config.js",
+      "**/*.config.*.js",
       "eslint.config.js",
     ],
     languageOptions: {
