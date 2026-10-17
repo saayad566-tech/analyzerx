@@ -954,3 +954,124 @@ verified against the real file (coordinate at 6882, block opens at 6847, balance
 ### Note
 The Gradle `rootProject.ext` fix from the previous session was necessary but not sufficient — CI never
 reached Gradle, because the test step failed first. Both layers had to be fixed.
+
+## 2026-10-17 — Session 26 (CI verified green; the lint gate closed)
+
+The migration's last open questions were about verification, not code. This session read the answer
+instead of assuming it.
+
+### CI is green — the record was stale
+`AnalyzerX Android APK` **and** `Bundle verification` both **succeeded** on the current HEAD
+(`1c7c6c8d`, run ids 38981718229 / 38981718254, 2026-10-16T23:29Z). The GitHub Actions read tools —
+unavailable to earlier sessions (K34) — are available again, so the runs were read directly. That
+closes K29 (bundle verification has not run), K34 (run status cannot be read) and K51 (the native
+project rewrite is unverified): the bare-RN `MainApplication`/`MainActivity`/Gradle configuration
+builds.
+
+### The lint gate: 6 errors → 0, none suppressed
+`eslint .` reported 6 errors. Each was fixed at its cause:
+1. `no-undef` on `Buffer` in `scripts/*.mjs` — the Node globals the build scripts legitimately use
+   are now declared for script and root-config files in `eslint.config.js`.
+2. `expo/no-dynamic-env-var` on `babel.config.js` — the public-env inliner read
+   `process.env[<dynamic>]`. It now snapshots the `EXPO_PUBLIC_*` set once at build time and reads
+   from that map, so no dynamic member access remains.
+3. `import/no-unresolved` on the two `@modelcontextprotocol/sdk` subpaths — the package publishes
+   them through a wildcard `exports` map (`"./*": { "import": "./dist/esm/*", "require": "./dist/cjs/*" }`)
+   that neither the node nor the TypeScript ESLint resolver follows, though `tsc` and Node both
+   resolve them (`require.resolve("@modelcontextprotocol/sdk/client/stdio.js")` →
+   `.../dist/cjs/client/stdio.js`). The rule is scoped off for that package only, with the evidence
+   recorded in the config. This is a resolver-gap remedy, not a code suppression.
+
+`eslint .` now exits 0 with **0 errors** (202 warnings remain, all recorded as non-defects —
+predominantly `import/no-duplicates` and `@typescript-eslint/array-type`).
+
+### A real defect: the entry point
+`package.json` still declared `"main": "expo-router/entry"`, a package no longer in `package.json`
+(it survives only transitively). The real entry is `index.js`, which registers `AnalyzerX` through
+`AppRegistry`. Corrected to `"index.js"` so the Metro dev server mounts the React Navigation tree
+rather than a removed router.
+
+### A truthfulness fix
+`app/(tabs)/sectors.tsx` still rendered a hardcoded `Updated 2m ago` on the Active-sectors row. It
+now shows the truthful, market-scoped `<marketId> seed dataset` label (or `Unavailable`).
+
+### Verified
+- `pnpm check` (`tsc --noEmit`): **0 errors**.
+- `eslint .`: **0 errors** (202 warnings).
+- `pnpm release:verify`: **passes**.
+- Full suite (sharded 1/3 + 2/3 + 3/3): **1,189 passed, 6 skipped, 0 failed**.
+- CI on HEAD: **green** (APK + bundle verification).
+
+### Still open, honestly
+K53 (the last three expo packages) is unchanged: `expo-notifications` registers push through
+`getExpoPushTokenAsync` and `expo-audio` records through a hook API, and each needs a real native
+replacement (a bare FCM client / a recording module) — a Stage-4 native change, not a rename. K52
+(splash-theme strings), K28 (`apps/analyzerx` rename) and the environment-gated K6/K7/K35/K43/K49
+remain as recorded.
+
+## 2026-10-17 — Session 27 (audit pass: credential logging and two migration regressions)
+
+A review of the tree after session 26, looking for real defects rather than restating the record.
+Three were found and fixed; two more are recorded honestly.
+
+### K66 — credential and personal material in console logs
+`app/oauth/callback.tsx` (32 `console.*` calls) and `hooks/use-auth.ts` (20) were both ungated and
+both logged sensitive values: the OAuth `code` and `state`, the session token, the whole `result`
+object, and the full user object (name, email, openId) — plus a **session-token prefix**
+(`sessionToken.substring(0, 20)`), which is the exact defect `lib/_core/auth.ts` already fixed in
+session 8. Both files now use the project's gated `debug` helper and log presence flags only. The
+error paths keep `console.error` for genuine failures, without the payloads.
+
+### K67 — `process.env.EXPO_OS` left behind by the migration
+`babel-preset-expo` used to inline `EXPO_OS`. With the preset removed the global is `undefined`, so
+`components/external-link.tsx` (`!== "web"` → always true) opened web links in an in-app browser and
+`components/haptic-tab.tsx` (`=== "ios"` → always false) never fired iOS tab haptics. Both now use
+React Native's `Platform.OS`.
+
+### Guardrails run before publishing
+`repo_guard.py`: `secrets` — 6 hits, all synthetic fixtures the redaction tests assert against
+(K70); `skipped-tests` — 0; `clean-tree` — 0.
+
+### Verified
+- `pnpm check`: **0 errors** · `eslint .`: **0 errors** (202 warnings).
+- Full suite (sharded 1/3 + 2/3 + 3/3): **1,189 passed, 6 skipped, 0 failed** — unchanged.
+
+### Recorded, not changed
+K68 (`ANALYZERX_SOURCE_REVISION` is never inlined, so the shipped app reports
+`unverified-build`) and K69 (`server/indian-open-api.ts` targets a plain-HTTP endpoint). Both are
+build-config or provider changes that need a CI-verified run or a provider check, so they are
+reported rather than forced.
+
+## 2026-10-17 — Session 28 (premium design system + a Windows desktop target)
+
+The engagement asked for a premium redesign and a real desktop (EXE) build alongside the APK. This
+session delivered the design system and wired the desktop target end to end.
+
+### The design system (K71)
+`lib/design/tokens.ts` is now the single source of truth — a semantic colour set (roles, not hues),
+a 4-pt spacing scale, a radius scale, a real type ramp with tabular figures, a tone-based elevation
+ladder and motion constants. `components/ui/premium.tsx` is the kit built from them. The tab shell
+and the Sectors screen are rebuilt on the tokens and kit and act as the reference implementation; the
+remaining screens keep working unchanged and migrate one at a time. `DESIGN_SYSTEM.md` documents the
+language.
+
+### The desktop target (K72)
+Worldwide practice for a React Native app that needs a Windows desktop build is either React Native
+Windows (native, first-party, and RNW 0.81 matches this project's RN 0.81.5) or an Electron shell
+over a `react-native-web` build. The Electron route was chosen because it reuses the existing
+component tree and packages to an `.exe` with a standard toolchain. Wired end to end:
+`metro.config.web.js` (web platform, `react-native` → `react-native-web`, native-only modules stubbed),
+`index.web.js`, `public/index.html`, `desktop/` (Electron main with strict security defaults, a
+minimal preload, electron-builder NSIS + portable) and `.github/workflows/desktop-exe.yml`
+(windows-latest, independent of the Android workflow).
+
+**Honest status.** The web bundle cannot be produced in this sandbox — Metro's transform exceeds the
+pod even with the address-space limit raised — so the desktop binary is verified by its first CI run,
+not locally. Native-only modules are stubbed on web and throw a labelled error; real `.web.ts`
+platform adapters are the next step (K73).
+
+### Verified locally
+- `pnpm check` (`tsc --noEmit`): **0 errors**.
+- `eslint .`: **0 errors** (202 warnings).
+- `pnpm release:verify`: **passes**.
+- Full suite (sharded 1/3 + 2/3 + 3/3): **1,189 passed, 6 skipped, 0 failed**.

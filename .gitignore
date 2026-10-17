@@ -73,3 +73,9 @@ android/.gradle
 
 # Resource-pack build output (published to saayad566-tech/analyzerx-assets)
 .assets-dist/
+
+# Desktop shell build output (web bundle copy + electron-builder artifacts)
+desktop/app/
+desktop/release/
+desktop/node_modules/
+dist/

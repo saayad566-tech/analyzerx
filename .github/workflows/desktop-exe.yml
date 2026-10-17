@@ -1,0 +1,84 @@
+name: AnalyzerX Windows EXE
+
+# Builds the Windows desktop installers (NSIS + portable) from the same React Native codebase,
+# bundled for web through `react-native-web` and packaged by Electron.
+#
+# This workflow is independent of `android-apk.yml`: a failure here never affects the Android build,
+# and the Android build never depends on this one.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "v3.2.0"
+
+jobs:
+  build-exe:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - run: pnpm install --frozen-lockfile
+
+      - name: Bundle the web build (react-native-web)
+        run: pnpm web:bundle
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Stage the web build for the Electron shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dist/web/index.bundle.js
+          mkdir -p desktop/app
+          cp -r dist/web/. desktop/app/
+          cp public/index.html desktop/app/index.html
+
+      - name: Install the desktop toolchain
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+
+      - name: Build the Windows installers
+        working-directory: desktop
+        run: npx electron-builder --win --publish never
+
+      - name: Checksum the installers
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd desktop/release
+          shopt -s nullglob
+          files=(*.exe)
+          test "${#files[@]}" -gt 0
+          for f in "${files[@]}"; do sha256sum "$f" > "$f.sha256"; done
+          ls -la
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: analyzerx-windows-exe
+          path: |
+            desktop/release/*.exe
+            desktop/release/*.sha256
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Publish the installers as a release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="exe-3.2.0-${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" desktop/release/*.exe desktop/release/*.sha256 \
+            --title "AnalyzerX 3.2.0 · Windows build ${GITHUB_RUN_NUMBER}" \
+            --notes "CI-built Windows installers (NSIS + portable) from ${GITHUB_SHA}."

@@ -1,0 +1,16 @@
+{
+  "name": "analyzerx-desktop",
+  "productName": "AnalyzerX",
+  "version": "3.2.0",
+  "private": true,
+  "description": "AnalyzerX desktop shell (Electron) — loads the React Native Web build produced from the same codebase.",
+  "author": "AnalyzerX",
+  "main": "main.cjs",
+  "scripts": {
+    "dist": "electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}

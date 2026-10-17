@@ -5,6 +5,14 @@
  */
 function inlinePublicEnv() {
   const PUBLIC_PREFIX = "EXPO_PUBLIC_";
+  // Snapshot the public environment once, at build time. Reading `process.env[<dynamic>]` is both
+  // what the Expo lint rule forbids and unnecessary: the set of public variables is fixed for the
+  // life of the build.
+  const publicEnv = new Map(
+    Object.entries(process.env).filter(
+      ([key, value]) => key.startsWith(PUBLIC_PREFIX) && typeof value === "string",
+    ),
+  );
   return {
     name: "inline-expo-public-env",
     visitor: {
@@ -15,8 +23,7 @@ function inlinePublicEnv() {
         if (object.object?.type !== "Identifier" || object.object.name !== "process") return;
         if (object.property?.type !== "Identifier" || object.property.name !== "env") return;
         if (property.type !== "Identifier" || !property.name.startsWith(PUBLIC_PREFIX)) return;
-        const value = process.env[property.name];
-        path.replaceWith({ type: "StringLiteral", value: typeof value === "string" ? value : "" });
+        path.replaceWith({ type: "StringLiteral", value: publicEnv.get(property.name) ?? "" });
       },
     },
   };
