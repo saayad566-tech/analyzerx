@@ -1,0 +1,33 @@
+# Packaging for the Windows desktop build.
+#
+# Two Windows targets: an NSIS installer (per-user, directory selectable) and a portable single-file
+# executable. x64 only for now; arm64 is a follow-up once the web bundle is verified.
+appId: com.analyzerx.desktop
+productName: AnalyzerX
+copyright: AnalyzerX
+
+directories:
+  output: release
+
+files:
+  - main.cjs
+  - preload.cjs
+  - app/**/*
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: AnalyzerX
+
+portable:
+  artifactName: AnalyzerX-${version}-portable.exe
