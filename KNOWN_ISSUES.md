@@ -6,7 +6,7 @@
 | K2 | high | `market.institutionalFlows` (NSE-only) had no marketId | **Fixed** — marketId input; non-IN returns an explicit empty result |
 | K3 | medium | `graph.projection` mixed markets | **Fixed** — `event_projections.marketId` + marketId input |
 | K4 | medium | Screener seed directory fell back to IN | **Fixed** — no fallback; market-scoped candidates |
-| K5 | low | The Sectors "MARKET-WIDE SIGNAL 82/100" hero is a static seed figure | Open (pre-existing, cosmetic); not market-contaminating |
+| K5 | resolved | The Sectors "MARKET-WIDE SIGNAL 82/100" hero was a static seed figure | Fixed — the hero is derived from the market's own sector scores (`app/(tabs)/sectors.tsx`). Session 26 also replaced the residual static "Updated 2m ago" hint on the Active-sectors row with the truthful, market-scoped "`<marketId>` seed dataset" label |
 | K6 | info | Physical Android APK build/device QA impossible in this sandbox (no Android SDK/NDK/adb/device; 2 GB RAM) | Environment-gated; CI workflow retained, unchanged |
 | K7 | info | Live provider credentials (Finnhub/Dhan/Angel One/…) absent here | Environment-gated; truthful unavailable states retained |
 | K8 | info | Non-IN markets remain catalog-validated for live data; only seed content is bundled | Documented in PROJECT_SPEC and the dataset notices |
@@ -39,14 +39,14 @@
 
 | K27 | resolved | Artificial test fixtures (collinear / constant / zero-noise) | Replaced with a seeded realistic market generator: GARCH-style volatility clustering, jumps, asymmetric wicks, noisy universes. This exposed a real bug — MKT was a constant series |
 | K28 | open | `apps/analyzerx` rename not performed | Pure risk, no behaviour change; the decoupling it stands for is already true. Reported per protocol item 4 |
-| K29 | open | CI bundle verification has not run | `bundle-verify.yml` triggers on push to main; commits are made through the API, so the workflow has not executed. Local verification is resolution-only (Metro's transform needs WASM the pod cannot allocate) |
+| K29 | resolved | CI bundle verification had not run | Verified — `Bundle verification` runs on push and **succeeded** on the current HEAD `1c7c6c8d` (run 38981718254), read via the GitHub Actions API in session 26 |
 
 | K30 | info | Signal history is capped at 2,000 records and refuses appends beyond it | Deliberate: trimming the oldest records would break the chain's genesis link and silently destroy history. At the cap the Lab says so and asks for a publish/archive |
 | K31 | info | `evaluateRecord` needs later prices supplied by the caller | The engine fetches nothing. A past suggestion cannot be scored without a price for the evaluation date, and inventing one would defeat the point of the record |
 
 | K32 | resolved | Screener showed the previous market's candidates after a market switch | `filteredCandidates` memoised without `researchCandidates` in its deps, and that value derives from `marketId`. Fixed; same family as the supply-chain leak (K23) |
 | K33 | open | Expo removal not performed | Removing 28 expo-family packages that back navigation, storage, auth, push and the build pipeline would leave a codebase that cannot build. EAS is not actually in use; the APK builds with Gradle. Migration scoped in DECISIONS.md D-015 |
-| K34 | open | Workflow run status cannot be read | The GitHub Actions read tools are unavailable to this agent (TOOL_NOT_FOUND). Commits can be pushed; pipeline results cannot be verified from here |
+| K34 | resolved | Workflow run status could not be read | Resolved — the GitHub Actions read tools are available again; runs, conclusions and logs are read from here (session 26) |
 | K35 | open | No .apk can be produced in this sandbox | No Android SDK/NDK, Java, Gradle or device, and a ~500MB heap ceiling. The CI workflow builds a signed APK on a runner |
 
 | K36 | resolved | `bundle-verify.yml` depended on `expo export` | Rewritten to verify the bundle with a pure Gradle `assembleDebug` build. `build:web` (the expo export script) is deleted |
@@ -71,7 +71,7 @@
 | K49 | open | Stage 3 navigation is type-checked, not device-verified | The navigator tree compiles and the suite passes, but tsc cannot prove that navigation, back behaviour or deep links actually work at runtime. Needs a device or CI run |
 | K50 | open | 10 expo-family packages remain | `expo` core, `expo-notifications`, `expo-image-picker`, `expo-document-picker`, `expo-audio`, `expo-font`, `expo-splash-screen`, `expo-system-ui`, `expo-video`, `expo-build-properties` — Stage 4 (native + config) of MIGRATION_PLAN.md |
 
-| K51 | open | The native project rewrite is unverified | `MainApplication`/`MainActivity`/Gradle were rewritten to the bare React Native template, but no Android build can run here. A CI run on `android-apk.yml` is required before this can be called working |
+| K51 | resolved | The native project rewrite is unverified | Verified — `AnalyzerX Android APK` **succeeded** on the post-rewrite HEAD `1c7c6c8d` (run 38981718229). The bare-RN `MainApplication`/`MainActivity`/Gradle configuration builds |
 | K52 | open | Splash-screen theme still carries Expo-named resources | `strings.xml` retains `expo_splash_screen_*` values consumed by the splash theme. Removing them means rewriting the theme, which is a native change that needs the same CI verification |
 
 | K53 | open | 3 expo packages remain | `expo` core (transitive), `expo-notifications` (push registration uses `getExpoPushTokenAsync`) and `expo-audio` (a recording hook API). These are the last three and each needs a real replacement, not a rename |
@@ -88,3 +88,5 @@
 | K61 | resolved | CI failed: `@/` alias undefined for vitest | No vitest config existed, so Vite never read the tsconfig `paths`. Five suites importing through `@/` failed to load. Added `vitest.config.ts` with the alias only |
 | K62 | resolved | A test asserted a file ended with `}` | `local-ai-native-wiring.test.ts` encoded an implementation detail; a legitimate `apply from:` line now follows the block. Replaced with a brace-balance check of the real intent |
 | K63 | info | The sandbox test harness resolves `@/` differently from vitest | esbuild honours tsconfig paths; Vite does not without a config. This is why the same suite passed locally and failed in CI |
+| K64 | resolved | `pnpm lint` failed with 6 errors | Fixed at the cause, none suppressed: Node globals declared for build scripts (`Buffer`), the Babel public-env inliner refactored off dynamic `process.env[...]`, and `import/no-unresolved` scoped to the MCP SDK's wildcard-`exports` package (which `tsc` and Node both resolve). `eslint .` now exits 0 — 0 errors, 202 warnings recorded |
+| K65 | resolved | `package.json` `main` still pointed at `expo-router/entry`, a package no longer declared | Fixed — `main` is `index.js`, the real bare-RN entry that registers `AnalyzerX` via `AppRegistry` |
