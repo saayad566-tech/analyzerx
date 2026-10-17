@@ -199,7 +199,12 @@ export class FailoverEngine {
           state.failures += 1;
           state.lastLatencyMs = this.now() - started;
           if (err instanceof RateLimited) {
-            const wait = err.retryAfterMs && err.retryAfterMs > 0 ? err.retryAfterMs : this.backoffMs(attemptNo, cap);
+            // Honour `Retry-After` when the provider sent one. Otherwise cool for at least the
+            // configured floor, growing with exponential backoff as attempts pile up.
+            const wait =
+              err.retryAfterMs && err.retryAfterMs > 0
+                ? err.retryAfterMs
+                : Math.max(this.defaultCooldownMs, this.backoffMs(attemptNo, cap));
             state.cooldownUntil = this.now() + Math.min(cap, wait);
             state.remaining = 0;
             attempts.push({ provider: config.name, key: maskKey(state.key), reason: `rate limited; cooling ${Math.round(Math.min(cap, wait))}ms` });
