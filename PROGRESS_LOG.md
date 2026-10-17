@@ -1008,3 +1008,36 @@ K53 (the last three expo packages) is unchanged: `expo-notifications` registers 
 replacement (a bare FCM client / a recording module) — a Stage-4 native change, not a rename. K52
 (splash-theme strings), K28 (`apps/analyzerx` rename) and the environment-gated K6/K7/K35/K43/K49
 remain as recorded.
+
+## 2026-10-17 — Session 27 (audit pass: credential logging and two migration regressions)
+
+A review of the tree after session 26, looking for real defects rather than restating the record.
+Three were found and fixed; two more are recorded honestly.
+
+### K66 — credential and personal material in console logs
+`app/oauth/callback.tsx` (32 `console.*` calls) and `hooks/use-auth.ts` (20) were both ungated and
+both logged sensitive values: the OAuth `code` and `state`, the session token, the whole `result`
+object, and the full user object (name, email, openId) — plus a **session-token prefix**
+(`sessionToken.substring(0, 20)`), which is the exact defect `lib/_core/auth.ts` already fixed in
+session 8. Both files now use the project's gated `debug` helper and log presence flags only. The
+error paths keep `console.error` for genuine failures, without the payloads.
+
+### K67 — `process.env.EXPO_OS` left behind by the migration
+`babel-preset-expo` used to inline `EXPO_OS`. With the preset removed the global is `undefined`, so
+`components/external-link.tsx` (`!== "web"` → always true) opened web links in an in-app browser and
+`components/haptic-tab.tsx` (`=== "ios"` → always false) never fired iOS tab haptics. Both now use
+React Native's `Platform.OS`.
+
+### Guardrails run before publishing
+`repo_guard.py`: `secrets` — 6 hits, all synthetic fixtures the redaction tests assert against
+(K70); `skipped-tests` — 0; `clean-tree` — 0.
+
+### Verified
+- `pnpm check`: **0 errors** · `eslint .`: **0 errors** (202 warnings).
+- Full suite (sharded 1/3 + 2/3 + 3/3): **1,189 passed, 6 skipped, 0 failed** — unchanged.
+
+### Recorded, not changed
+K68 (`ANALYZERX_SOURCE_REVISION` is never inlined, so the shipped app reports
+`unverified-build`) and K69 (`server/indian-open-api.ts` targets a plain-HTTP endpoint). Both are
+build-config or provider changes that need a CI-verified run or a provider check, so they are
+reported rather than forced.
