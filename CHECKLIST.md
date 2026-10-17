@@ -60,3 +60,11 @@
       `AI_RND_Activity_Log.txt`) wired into the ErrorBoundary
 - [x] Tests: `tests/activity-log.test.ts` (15) + full regression (100 total)
 - [x] `tsc --noEmit`: 0 errors
+
+## Phase 9 — CI verification + lint gate (session 26)
+- [x] Read CI runs directly (GitHub Actions API) — APK + bundle verification **green** on HEAD `1c7c6c8d`
+- [x] K29 / K34 / K51 resolved against that evidence
+- [x] `eslint .`: 6 errors → 0 (Node globals for scripts, Babel env-inliner refactor, MCP-SDK resolver scope)
+- [x] `package.json` `main` corrected from `expo-router/entry` to `index.js`
+- [x] Sectors "Updated 2m ago" replaced with the truthful market-scoped seed label
+- [x] `tsc --noEmit`: 0 errors · `release:verify`: passes · full suite: 1,189 passed, 6 skipped, 0 failed
