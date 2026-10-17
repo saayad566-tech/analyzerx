@@ -1089,3 +1089,39 @@ fix was to stop routing the web build through NativeWind's Metro transform entir
 generates `dist/web/styles.css` with the Tailwind CLI (verified locally — 14 KB of valid CSS),
 `index.html` links it, and every `.css` import resolves to an empty module (`desktop/web-css-stub.js`).
 `metro.base.js` now holds the shared resolver so the native and web configs cannot drift.
+
+## 2026-10-17 — Session 29 (the condition language, dual momentum, and the failover engine)
+
+Five briefs arrived (Momentum Movers, the universal failover engine, the free-resource method, the
+top-10 open-source research references, and the custom-condition screener). This session built the
+three engines that carry them and wired the screener through to a real screen.
+
+### What was added (all pure, all tested)
+- `quant-engine/conditions.ts` — a condition **language**: tokenizer, recursive-descent parser and
+evaluator. `RSI < 30 and Volume > 5x`, `Price > 200 EMA and changePct(3) > 10%`. `5x` is measured
+against the *prior* 20 bars; `10%` is the number 10. It is a grammar, not free text: anything it
+cannot parse is a precise error with a position, never a guess.
+- `quant-engine/momentum.ts` — the dual-momentum scanner: gainers and crashers at a configurable
+threshold inside a 1-7 day window, with the volume multiple that explains the move.
+- `quant-engine/failover.ts` — the runtime failover layer: key pool, immediate rotation on 429,
+provider failover to a free/local provider, per-key quota and health, throttling and backoff. Its
+clock, sleep and jitter are injected, so a rate-limit path is proved in a test rather than timed.
+- `lib/screener-conditions.ts` + `app/condition-screener.tsx` — validation, universe screening,
+named-condition persistence and the `# SYMBOL` block splitter, surfaced as Condition Lab
+(Account -> Condition Lab).
+- `ARCHITECTURE.md` — the whole design: dependency direction, the engines, the application and server
+layers, market isolation, the four honest data states, and where each brief lands.
+
+### Bugs my own tests caught, and fixed
+1. The canonical rendering dropped parentheses: `not (a or b)` rendered as `not a or b` — a different
+   rule. Rendering is now precedence-aware.
+2. The `5x` baseline included the bar being measured, diluting the very spike it looks for. It now
+   uses the prior 20 bars (same fix in the momentum volume multiple).
+3. The failover throttle used `lastCallAt > 0` as its "never called" sentinel, which breaks with a
+   clock that starts at 0. It is now `null`.
+
+### Verified locally
+- `pnpm check` (`tsc --noEmit`): **0 errors** (one barrel collision — `ParseResult` — found and fixed
+  by renaming the new type to `ConditionParseResult`).
+- `eslint .`: **0 errors** (202 warnings).
+- Full suite (sharded 1/3 + 2/3 + 3/3): **1,228 passed, 6 skipped, 0 failed** — 39 new tests.

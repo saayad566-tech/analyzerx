@@ -11,6 +11,7 @@ import type { ComponentType } from "react";
 import S_account from "@/app/account";
 import S_admin from "@/app/admin";
 import S_appearance from "@/app/appearance";
+import S_condition_screener from "@/app/condition-screener";
 import S_custom_domain from "@/app/custom-domain";
 import S_data_truth from "@/app/data-truth";
 import S_diagnostics from "@/app/diagnostics";
@@ -52,6 +53,7 @@ export const ROUTES: Record<string, ComponentType<Record<string, unknown>>> = {
   "/account": S_account,
   "/admin": S_admin,
   "/appearance": S_appearance,
+  "/condition-screener": S_condition_screener,
   "/custom-domain": S_custom_domain,
   "/data-truth": S_data_truth,
   "/diagnostics": S_diagnostics,
