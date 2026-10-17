@@ -1,8 +1,8 @@
 name: Bundle verification
 
 # Verifies the workspace resolves and the JavaScript bundle assembles, using standard native tooling.
-# The bundle is produced by Gradle through the committed `android/` project — the same path the release
-# workflow uses — so no web-export step is involved.
+# The bundle is produced by Gradle through the committed `android/` project - the same path the release
+# workflow uses - so no web-export step is involved.
 
 on:
   workflow_dispatch:
@@ -16,9 +16,17 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
+concurrency:
+  group: bundle-verify-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -58,9 +66,8 @@ jobs:
           if [ -z "$SDKMGR" ]; then echo "sdkmanager not found under $SDK"; exit 1; fi
           yes | "$SDKMGR" --sdk_root="$SDK" --licenses >/dev/null 2>&1 || true
           "$SDKMGR" --sdk_root="$SDK" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-
-      - name: Configure Android SDK path
-        run: echo "sdk.dir=${ANDROID_HOME}" > android/local.properties
+          # Point Gradle at the SDK. This used to be a separate step whose only command was an echo.
+          echo "sdk.dir=$SDK" > android/local.properties
 
       - name: Assemble the debug APK (this is the bundle verification)
         run: |

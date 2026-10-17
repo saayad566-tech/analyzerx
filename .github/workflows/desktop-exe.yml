@@ -3,11 +3,20 @@ name: AnalyzerX Windows EXE
 # Builds the Windows desktop installers (NSIS + portable) from the same React Native codebase,
 # bundled for web through `react-native-web` and packaged by Electron.
 #
-# This workflow is independent of `android-apk.yml`: a failure here never affects the Android build,
-# and the Android build never depends on this one.
+# Trigger it by hand from the Actions tab ("Run workflow"), on a push to main, or on a v3.2.0 tag.
+# It is independent of `android-apk.yml`: a failure here never affects the Android build, and the
+# Android build never depends on this one.
+#
+# The build is a single command -- `pnpm build:win` -- the same one you run locally, so CI and your
+# machine cannot drift apart.
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Attach the installers to a GitHub release"
+        type: boolean
+        default: true
   push:
     branches:
       - main
@@ -17,44 +26,42 @@ on:
     paths-ignore:
       - "**.md"
 
+# Least privilege by default; the job raises it only where it must publish a release.
+permissions:
+  contents: read
+
+# One EXE build at a time per ref; a newer push cancels an older run instead of queueing minutes.
+concurrency:
+  group: desktop-exe-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-exe:
     runs-on: windows-latest
+    timeout-minutes: 45
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
       - uses: pnpm/action-setup@v4
         with:
           version: 9.12.0
-      - run: pnpm install --frozen-lockfile
 
-      - name: Bundle the web build (react-native-web)
-        run: pnpm web:bundle
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The whole build: web CSS -> web bundle -> stage into the shell -> electron-builder.
+      - name: Build the Windows installers
+        run: pnpm build:win
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
-      - name: Stage the web build for the Electron shell
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f dist/web/index.bundle.js
-          mkdir -p desktop/app
-          cp -r dist/web/. desktop/app/
-          cp public/index.html desktop/app/index.html
-
-      - name: Install the desktop toolchain
-        working-directory: desktop
-        run: npm install --no-audit --no-fund
-
-      - name: Build the Windows installers
-        working-directory: desktop
-        run: npx electron-builder --win --publish never
-
-      - name: Checksum the installers
+      - name: Checksum the installers and summarise them on the run page
         shell: bash
         run: |
           set -euo pipefail
@@ -64,6 +71,17 @@ jobs:
           test "${#files[@]}" -gt 0
           for f in "${files[@]}"; do sha256sum "$f" > "$f.sha256"; done
           ls -la
+          {
+            echo "### AnalyzerX Windows installers"
+            echo
+            echo "| file | size (MB) |"
+            echo "|---|---|"
+            for f in "${files[@]}"; do
+              bytes=$(wc -c "$f" | awk '{print $1}')
+              size=$(awk -v b="$bytes" 'BEGIN{printf "%.1f", b/1048576}')
+              echo "| $f | $size |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -75,7 +93,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish the installers as a release asset
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.publish_release)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -83,5 +101,5 @@ jobs:
           set -euo pipefail
           tag="exe-3.2.0-${GITHUB_RUN_NUMBER}"
           gh release create "$tag" desktop/release/*.exe desktop/release/*.sha256 \
-            --title "AnalyzerX 3.2.0 · Windows build ${GITHUB_RUN_NUMBER}" \
+            --title "AnalyzerX 3.2.0 - Windows build ${GITHUB_RUN_NUMBER}" \
             --notes "CI-built Windows installers (NSIS + portable) from ${GITHUB_SHA}."

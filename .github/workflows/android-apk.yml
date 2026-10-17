@@ -11,9 +11,19 @@ on:
     paths-ignore:
       - "**.md"
 
+# Least privilege by default; the job raises it only where it must publish a release.
+permissions:
+  contents: read
+
+# Cancel a superseded run instead of queueing minutes behind it.
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: write
     steps:
@@ -41,8 +51,8 @@ jobs:
           echo "Using $SDKMGR"
           yes | "$SDKMGR" --sdk_root="$SDK" --licenses >/dev/null 2>&1 || true
           "$SDKMGR" --sdk_root="$SDK" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-      - name: Configure Android SDK path
-        run: echo "sdk.dir=${ANDROID_HOME}" > android/local.properties
+          # Point Gradle at the SDK. This used to be a separate step whose only command was an echo.
+          echo "sdk.dir=$SDK" > android/local.properties
       - run: pnpm release:verify
         env:
           ANALYZERX_SOURCE_REVISION: ${{ github.sha }}
@@ -98,7 +108,7 @@ jobs:
           gh release create "$tag" \
             "$dir/app-release.apk" \
             "$dir/app-release.apk.sha256" \
-            --title "AnalyzerX 3.2.0 · build ${GITHUB_RUN_NUMBER}" \
+            --title "AnalyzerX 3.2.0 - build ${GITHUB_RUN_NUMBER}" \
             --notes "CI-built, v2/v3-signed release APK from ${GITHUB_SHA}." \
             --latest
       - uses: actions/upload-artifact@v4
