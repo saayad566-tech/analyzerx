@@ -14,6 +14,7 @@ export default defineConfig([
     files: [
       "scripts/**/*.{js,mjs,cjs}",
       "desktop/**/*.{js,cjs,mjs}",
+      "metro.base.js",
       "**/*.config.js",
       "**/*.config.*.js",
       "eslint.config.js",
