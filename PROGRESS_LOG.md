@@ -1041,3 +1041,37 @@ K68 (`ANALYZERX_SOURCE_REVISION` is never inlined, so the shipped app reports
 `unverified-build`) and K69 (`server/indian-open-api.ts` targets a plain-HTTP endpoint). Both are
 build-config or provider changes that need a CI-verified run or a provider check, so they are
 reported rather than forced.
+
+## 2026-10-17 — Session 28 (premium design system + a Windows desktop target)
+
+The engagement asked for a premium redesign and a real desktop (EXE) build alongside the APK. This
+session delivered the design system and wired the desktop target end to end.
+
+### The design system (K71)
+`lib/design/tokens.ts` is now the single source of truth — a semantic colour set (roles, not hues),
+a 4-pt spacing scale, a radius scale, a real type ramp with tabular figures, a tone-based elevation
+ladder and motion constants. `components/ui/premium.tsx` is the kit built from them. The tab shell
+and the Sectors screen are rebuilt on the tokens and kit and act as the reference implementation; the
+remaining screens keep working unchanged and migrate one at a time. `DESIGN_SYSTEM.md` documents the
+language.
+
+### The desktop target (K72)
+Worldwide practice for a React Native app that needs a Windows desktop build is either React Native
+Windows (native, first-party, and RNW 0.81 matches this project's RN 0.81.5) or an Electron shell
+over a `react-native-web` build. The Electron route was chosen because it reuses the existing
+component tree and packages to an `.exe` with a standard toolchain. Wired end to end:
+`metro.config.web.js` (web platform, `react-native` → `react-native-web`, native-only modules stubbed),
+`index.web.js`, `public/index.html`, `desktop/` (Electron main with strict security defaults, a
+minimal preload, electron-builder NSIS + portable) and `.github/workflows/desktop-exe.yml`
+(windows-latest, independent of the Android workflow).
+
+**Honest status.** The web bundle cannot be produced in this sandbox — Metro's transform exceeds the
+pod even with the address-space limit raised — so the desktop binary is verified by its first CI run,
+not locally. Native-only modules are stubbed on web and throw a labelled error; real `.web.ts`
+platform adapters are the next step (K73).
+
+### Verified locally
+- `pnpm check` (`tsc --noEmit`): **0 errors**.
+- `eslint .`: **0 errors** (202 warnings).
+- `pnpm release:verify`: **passes**.
+- Full suite (sharded 1/3 + 2/3 + 3/3): **1,189 passed, 6 skipped, 0 failed**.
