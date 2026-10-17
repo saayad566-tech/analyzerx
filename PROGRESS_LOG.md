@@ -954,3 +954,57 @@ verified against the real file (coordinate at 6882, block opens at 6847, balance
 ### Note
 The Gradle `rootProject.ext` fix from the previous session was necessary but not sufficient — CI never
 reached Gradle, because the test step failed first. Both layers had to be fixed.
+
+## 2026-10-17 — Session 26 (CI verified green; the lint gate closed)
+
+The migration's last open questions were about verification, not code. This session read the answer
+instead of assuming it.
+
+### CI is green — the record was stale
+`AnalyzerX Android APK` **and** `Bundle verification` both **succeeded** on the current HEAD
+(`1c7c6c8d`, run ids 38981718229 / 38981718254, 2026-10-16T23:29Z). The GitHub Actions read tools —
+unavailable to earlier sessions (K34) — are available again, so the runs were read directly. That
+closes K29 (bundle verification has not run), K34 (run status cannot be read) and K51 (the native
+project rewrite is unverified): the bare-RN `MainApplication`/`MainActivity`/Gradle configuration
+builds.
+
+### The lint gate: 6 errors → 0, none suppressed
+`eslint .` reported 6 errors. Each was fixed at its cause:
+1. `no-undef` on `Buffer` in `scripts/*.mjs` — the Node globals the build scripts legitimately use
+   are now declared for script and root-config files in `eslint.config.js`.
+2. `expo/no-dynamic-env-var` on `babel.config.js` — the public-env inliner read
+   `process.env[<dynamic>]`. It now snapshots the `EXPO_PUBLIC_*` set once at build time and reads
+   from that map, so no dynamic member access remains.
+3. `import/no-unresolved` on the two `@modelcontextprotocol/sdk` subpaths — the package publishes
+   them through a wildcard `exports` map (`"./*": { "import": "./dist/esm/*", "require": "./dist/cjs/*" }`)
+   that neither the node nor the TypeScript ESLint resolver follows, though `tsc` and Node both
+   resolve them (`require.resolve("@modelcontextprotocol/sdk/client/stdio.js")` →
+   `.../dist/cjs/client/stdio.js`). The rule is scoped off for that package only, with the evidence
+   recorded in the config. This is a resolver-gap remedy, not a code suppression.
+
+`eslint .` now exits 0 with **0 errors** (202 warnings remain, all recorded as non-defects —
+predominantly `import/no-duplicates` and `@typescript-eslint/array-type`).
+
+### A real defect: the entry point
+`package.json` still declared `"main": "expo-router/entry"`, a package no longer in `package.json`
+(it survives only transitively). The real entry is `index.js`, which registers `AnalyzerX` through
+`AppRegistry`. Corrected to `"index.js"` so the Metro dev server mounts the React Navigation tree
+rather than a removed router.
+
+### A truthfulness fix
+`app/(tabs)/sectors.tsx` still rendered a hardcoded `Updated 2m ago` on the Active-sectors row. It
+now shows the truthful, market-scoped `<marketId> seed dataset` label (or `Unavailable`).
+
+### Verified
+- `pnpm check` (`tsc --noEmit`): **0 errors**.
+- `eslint .`: **0 errors** (202 warnings).
+- `pnpm release:verify`: **passes**.
+- Full suite (sharded 1/3 + 2/3 + 3/3): **1,189 passed, 6 skipped, 0 failed**.
+- CI on HEAD: **green** (APK + bundle verification).
+
+### Still open, honestly
+K53 (the last three expo packages) is unchanged: `expo-notifications` registers push through
+`getExpoPushTokenAsync` and `expo-audio` records through a hook API, and each needs a real native
+replacement (a bare FCM client / a recording module) — a Stage-4 native change, not a rename. K52
+(splash-theme strings), K28 (`apps/analyzerx` rename) and the environment-gated K6/K7/K35/K43/K49
+remain as recorded.
