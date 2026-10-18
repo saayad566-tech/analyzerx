@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Animated, Easing, FlatList, Image, KeyboardAv
 import { router, useFocusEffect } from "@/lib/navigation/router";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import * as ImagePicker from "@/lib/platform/image-picker";
-import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
+import { isRecording as isRecorderActive, requestRecordingPermission, startRecording, stopRecording } from "@/lib/platform/audio-recorder";
 import * as FileSystem from "@/lib/platform/file-system";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";
@@ -55,10 +55,9 @@ export default function MarketChatScreen() {
   const [activeLocalModel, setActiveLocalModel] = useState<string | null>(null);
   const [runtimeMode, setRuntimeMode] = useState<MarketChatRuntimeMode>("auto");
   const [localStreaming, setLocalStreaming] = useState(false);
+  const [recording, setRecording] = useState(false);
   const chat = trpc.chat.ask.useMutation();
   const ground = trpc.chat.ground.useMutation();
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const recorderState = useAudioRecorderState(recorder);
 
   useEffect(() => {
     fireAndForget(loadMarketChatHistory().then((saved) => { setMessages(saved.map((item, index) => ({ ...item, id: `saved-${index}` }))); setHydrated(true); }), "loadMarketChatHistory");
@@ -99,9 +98,9 @@ export default function MarketChatScreen() {
   }
 
   async function toggleRecording() {
-    if (recorderState.isRecording) {
-      await recorder.stop();
-      const uri = recorder.uri;
+    if (isRecorderActive()) {
+      const uri = await stopRecording();
+      setRecording(false);
       if (!uri) return;
       try {
         const dataUrl = await uriToDataUrl(uri, "audio/m4a");
@@ -109,11 +108,15 @@ export default function MarketChatScreen() {
       } catch (error) { Alert.alert("Could not attach audio", error instanceof Error ? error.message : "Please try again."); }
       return;
     }
-    const permission = await requestRecordingPermissionsAsync();
-    if (!permission.granted) { Alert.alert("Microphone permission needed", "Allow microphone access to ask AnalyzerX by voice."); return; }
-    await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
-    await recorder.prepareToRecordAsync();
-    recorder.record();
+    const permission = await requestRecordingPermission();
+    if (!permission.granted) { Alert.alert("Microphone permission needed", permission.reason ?? "Allow microphone access to ask AnalyzerX by voice."); return; }
+    try {
+      await startRecording();
+      setRecording(true);
+    } catch (error) {
+      setRecording(false);
+      Alert.alert("Could not start recording", error instanceof Error ? error.message : "Please try again.");
+    }
   }
 
   function executeAnalyzerXAction(action: AnalyzerXAction | null | undefined) {
@@ -148,7 +151,7 @@ export default function MarketChatScreen() {
   async function sendMessage(value = draft, attachmentOverride?: PendingAttachment[], retryFailureId?: string) {
     const question = value.trim();
     const attachmentSnapshot = attachmentOverride ?? attachments;
-    if ((!question && attachmentSnapshot.length === 0) || chat.isPending || ground.isPending || localStreaming || recorderState.isRecording) return;
+    if ((!question && attachmentSnapshot.length === 0) || chat.isPending || ground.isPending || localStreaming || recording) return;
     const selectedRuntime = getLocalAIRuntime();
     const selectedManifest = activeLocalModelId ? getLocalAIModel(activeLocalModelId) : null;
     const supportsAttachments = attachmentSnapshot.every((item) => Boolean(item.sourceUri) && (item.kind === "image" ? Boolean(selectedManifest?.capabilities.includes("vision")) : Boolean(selectedManifest?.capabilities.includes("audio"))));
@@ -237,7 +240,7 @@ export default function MarketChatScreen() {
         />
         {chat.isPending || ground.isPending || localStreaming ? <View style={styles.typing}><ActivityIndicator size="small" color={teal} /><Text style={styles.typingText}>{localStreaming ? `Streaming from ${activeLocalModel ?? "local model"} over grounded evidence…` : "Reading connected evidence and preparing a concise answer…"}</Text></View> : null}
         {attachments.length ? <View style={styles.attachmentTray}>{attachments.map((item) => <View key={item.id} style={styles.pendingAttachment}>{item.previewUri ? <Image source={{ uri: item.previewUri }} style={styles.preview} /> : <Ionicons name="mic-outline" size={18} color={teal} />}<Text style={styles.pendingText}>{item.label}</Text><Pressable onPress={() => setAttachments((current) => current.filter((entry) => entry.id !== item.id))} accessibilityLabel={`Remove ${item.label}`}><Ionicons name="close-circle" size={17} color={muted} /></Pressable></View>)}</View> : null}
-        <View style={styles.composer}><Pressable onPress={() => void pickImage()} disabled={chat.isPending || ground.isPending || localStreaming || attachments.length >= 2} style={({ pressed }) => [styles.toolButton, pressed && styles.pressed, attachments.length >= 2 && styles.disabled]} accessibilityLabel="Attach screenshot or chart"><Ionicons name="image-outline" size={19} color={teal} /></Pressable><Pressable onPress={() => void toggleRecording()} disabled={chat.isPending || ground.isPending || localStreaming} style={({ pressed }) => [styles.toolButton, recorderState.isRecording && styles.recording, pressed && styles.pressed]} accessibilityLabel={recorderState.isRecording ? "Stop voice recording" : "Record voice question"}><Ionicons name={recorderState.isRecording ? "stop" : "mic-outline"} size={19} color={recorderState.isRecording ? "#FFFFFF" : teal} /></Pressable><TextInput value={draft} onChangeText={setDraft} placeholder={recorderState.isRecording ? "Recording voice question…" : "Ask about a company, market, chart, or app feature…"} placeholderTextColor="#6E7D92" style={styles.input} multiline maxLength={2_000} returnKeyType="send" onSubmitEditing={() => void sendMessage()} /><Pressable onPress={() => void sendMessage()} disabled={(!draft.trim() && attachments.length === 0) || chat.isPending || recorderState.isRecording} style={({ pressed }) => [styles.sendButton, pressed && styles.pressed, ((!draft.trim() && attachments.length === 0) || chat.isPending || ground.isPending || localStreaming || recorderState.isRecording) && styles.disabled]} accessibilityRole="button" accessibilityLabel="Send assistant question"><Ionicons name="arrow-up" size={19} color="#09111F" /></Pressable></View>
+        <View style={styles.composer}><Pressable onPress={() => void pickImage()} disabled={chat.isPending || ground.isPending || localStreaming || attachments.length >= 2} style={({ pressed }) => [styles.toolButton, pressed && styles.pressed, attachments.length >= 2 && styles.disabled]} accessibilityLabel="Attach screenshot or chart"><Ionicons name="image-outline" size={19} color={teal} /></Pressable><Pressable onPress={() => void toggleRecording()} disabled={chat.isPending || ground.isPending || localStreaming} style={({ pressed }) => [styles.toolButton, recording && styles.recording, pressed && styles.pressed]} accessibilityLabel={recording ? "Stop voice recording" : "Record voice question"}><Ionicons name={recording ? "stop" : "mic-outline"} size={19} color={recording ? "#FFFFFF" : teal} /></Pressable><TextInput value={draft} onChangeText={setDraft} placeholder={recording ? "Recording voice question…" : "Ask about a company, market, chart, or app feature…"} placeholderTextColor="#6E7D92" style={styles.input} multiline maxLength={2_000} returnKeyType="send" onSubmitEditing={() => void sendMessage()} /><Pressable onPress={() => void sendMessage()} disabled={(!draft.trim() && attachments.length === 0) || chat.isPending || recording} style={({ pressed }) => [styles.sendButton, pressed && styles.pressed, ((!draft.trim() && attachments.length === 0) || chat.isPending || ground.isPending || localStreaming || recording) && styles.disabled]} accessibilityRole="button" accessibilityLabel="Send assistant question"><Ionicons name="arrow-up" size={19} color="#09111F" /></Pressable></View>
       </KeyboardAvoidingView>
     </ScreenContainer>
   );
