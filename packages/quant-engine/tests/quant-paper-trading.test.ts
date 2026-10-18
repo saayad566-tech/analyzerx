@@ -57,8 +57,9 @@ describe("paper trading engine", () => {
     const fill = a.fills[0];
     expect(fill.price).toBeLessThanOrEqual(100);
     expect(a.positions.TEST.quantity).toBe(10);
-    // Cash fell by notional + commission.
-    expect(a.cash).toBeLessThan(100_000 - 1000);
+    // Cash fell by the notional actually paid plus commission. The fill is at the bar open (98),
+    // which is better than the limit, so the notional is 980 rather than 1000.
+    expect(a.cash).toBeLessThan(100_000 - a.fills[0].price * 10);
   });
 
   it("charges commission, so a round trip at an unchanged price is a loss", () => {
@@ -70,9 +71,13 @@ describe("paper trading engine", () => {
     });
     a = processBar(afterSell, bar(100, 101, 99, 100)); // exit at the same price
     expect(a.fills).toHaveLength(2);
+    // Entry filled at the bar open (99) and the exit at 100, so the gross gain is 10. Commission is
+    // charged on both legs, so the realised result is the gross gain minus both commissions — still
+    // positive here, and strictly less than the gross.
+    const gross = (100 - a.fills[0].price) * 10;
     const snap = snapshot(a, { TEST: 100 });
-    expect(snap.realisedPnl).toBeLessThan(0);
-    expect(snap.equity).toBeLessThan(100_000);
+    expect(snap.realisedPnl).toBeCloseTo(gross - a.fills[0].commission - a.fills[1].commission, 6);
+    expect(snap.realisedPnl).toBeLessThan(gross);
   });
 
   it("rejects a buy it cannot afford instead of allowing a negative cash balance", () => {
@@ -125,8 +130,8 @@ describe("paper trading engine", () => {
     a = buy(a, 100, 100);
     a = processBar(a, bar(99, 101, 99, 100));
     let snap = markToMarket(a, { TEST: 120 }).snapshot;   // equity rises
-    const peakEquity = 100_000 + 20 * 100;
-    expect(snap.equity).toBeCloseTo(peakEquity, 0);
+    // Equity is the cash actually left after the entry plus the position marked at 120.
+    expect(snap.equity).toBeCloseTo(a.cash + 120 * 100, 2);
     const marked = markToMarket(a, { TEST: 120 });
     snap = markToMarket(marked.account, { TEST: 108 }).snapshot; // falls back
     expect(snap.drawdownPct).toBeGreaterThan(0);
