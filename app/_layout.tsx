@@ -8,8 +8,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import { BackHandler, Platform, ToastAndroid } from "react-native";
-import * as Notifications from "expo-notifications";
 import Constants from "@/lib/platform/constants";
+import { ensureMarketEventsChannel, getPermission, getPushToken, requestPermission } from "@/lib/platform/notifications";
 import "@/lib/_core/nativewind-pressable";
 import { ThemeProvider } from "@/lib/theme-provider";
 import {
@@ -36,9 +36,9 @@ installUnhandledRejectionGuard();
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: true }),
-});
+// Foreground presentation and the Android channel are handled by the notifications adapter
+// (backed by @notifee/react-native). Expo's hosted push service is no longer used.
+void ensureMarketEventsChannel();
 
 function BackNavigationController() {
   const pathname = usePathname();
@@ -77,14 +77,15 @@ function PushRegistration() {
     if (Platform.OS === "web" || !isAuthenticated) return;
     const register = async () => {
       try {
-        const permissions = await Notifications.getPermissionsAsync();
-        const finalStatus = permissions.status === "granted" ? permissions.status : (await Notifications.requestPermissionsAsync()).status;
+        const existing = await getPermission();
+        const finalStatus = existing === "granted" ? existing : await requestPermission();
         if (finalStatus !== "granted") return;
-        if (Platform.OS === "android") await Notifications.setNotificationChannelAsync("market-events", { name: "Market Events", importance: Notifications.AndroidImportance.MAX });
-        const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
-        if (!projectId) return;
-        const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-        await registerPushToken.mutateAsync({ token, platform: Platform.OS === "ios" ? "ios" : "android" });
+        await ensureMarketEventsChannel();
+        // A device token needs a Firebase project and google-services.json. Until that exists the
+        // adapter reports it plainly rather than registering a token that could never deliver.
+        const token = await getPushToken();
+        if (!token.available) return;
+        await registerPushToken.mutateAsync({ token: token.token, platform: token.platform });
       } catch (error) {
         console.warn("[Notifications] Push registration unavailable:", error);
       }
