@@ -10,7 +10,7 @@ import {
   submitOrder,
   type PaperAccount,
   type PaperBar,
-} from "./paper-trading";
+} from "../src/paper-trading";
 
 const bar = (o: number, h: number, l: number, c: number, time = 1_700_000_000_000): PaperBar => ({
   time, open: o, high: h, low: l, close: c, volume: 1_000_000,
@@ -81,7 +81,7 @@ describe("paper trading engine", () => {
     a = processBar(a, bar(500, 510, 490, 505));
     expect(a.fills).toHaveLength(0);
     expect(a.cash).toBeGreaterThanOrEqual(0);
-    const rejected = a.openOrders.find((o) => o.status === "rejected");
+    const rejected = a.openOrders.find((o: { status: string; reason?: string }) => o.status === "rejected");
     expect(rejected?.reason).toMatch(/insufficient cash/i);
   });
 
@@ -92,7 +92,7 @@ describe("paper trading engine", () => {
     });
     a = processBar(withSell, bar(100, 101, 99, 100));
     expect(a.fills).toHaveLength(0);
-    expect(a.openOrders.find((o) => o.status === "rejected")?.reason).toMatch(/short selling is disabled/i);
+    expect(a.openOrders.find((o: { status: string; reason?: string }) => o.status === "rejected")?.reason).toMatch(/short selling is disabled/i);
   });
 
   it("allows a short when the config permits it, and realises profit when it falls", () => {
