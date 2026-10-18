@@ -1,12 +1,12 @@
 // Flat ESLint configuration.
 //
-// `eslint-config-expo` supplies the React / React Native / TypeScript rule set and is a lint-only
+// `@react-native/eslint-config` supplies the React / React Native / TypeScript rule set and is a lint-only
 // devDependency — the app itself is a bare React Native project (see MIGRATION_PLAN.md).
 import { defineConfig } from "eslint/config";
-import expoConfig from "eslint-config-expo/flat.js";
+import reactNativeConfig from "@react-native/eslint-config/flat";
 
 export default defineConfig([
-  expoConfig,
+  reactNativeConfig,
   {
     // Node build scripts and the root config files run on Node, not on a device, so the Node
     // globals they legitimately use (`Buffer`, `process`, `__dirname`, ...) are declared here
@@ -36,7 +36,7 @@ export default defineConfig([
     // `@modelcontextprotocol/sdk` exposes its subpaths through a package `exports` map that uses a
     // wildcard (`"./*"`). The default `node` resolver does not follow wildcard exports, so those
     // two imports were reported as unresolved even though `tsc` and Node both resolve them. The
-    // TypeScript resolver (already present via `eslint-config-expo`) resolves them exactly as
+    // TypeScript resolver (already present via `@react-native/eslint-config`) resolves them exactly as
     // `tsc` does. This is a resolver configuration, not a suppression.
     settings: {
       "import/resolver": {

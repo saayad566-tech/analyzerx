@@ -31,8 +31,9 @@ const NATIVE_ONLY = new Set([
   "react-native-haptic-feedback",
   "react-native-share",
   "react-native-device-info",
-  "expo-notifications",
-  "expo-audio",
+  "@react-native-firebase/messaging",
+  "@notifee/react-native",
+  "react-native-audio-recorder-player",
 ]);
 
 const MODULE_STUB = path.join(__dirname, "desktop", "web-module-stub.js");

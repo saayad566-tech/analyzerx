@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Animated, Easing, FlatList, Image, KeyboardAv
 import { router, useFocusEffect } from "@/lib/navigation/router";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import * as ImagePicker from "@/lib/platform/image-picker";
-import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
+import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "@/lib/platform/audio";
 import * as FileSystem from "@/lib/platform/file-system";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";

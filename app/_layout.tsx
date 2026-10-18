@@ -8,8 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import { BackHandler, Platform, ToastAndroid } from "react-native";
-import * as Notifications from "expo-notifications";
-import Constants from "@/lib/platform/constants";
+import * as Notifications from "@/lib/platform/notifications";
 import "@/lib/_core/nativewind-pressable";
 import { ThemeProvider } from "@/lib/theme-provider";
 import {
@@ -81,10 +80,12 @@ function PushRegistration() {
         const finalStatus = permissions.status === "granted" ? permissions.status : (await Notifications.requestPermissionsAsync()).status;
         if (finalStatus !== "granted") return;
         if (Platform.OS === "android") await Notifications.setNotificationChannelAsync("market-events", { name: "Market Events", importance: Notifications.AndroidImportance.MAX });
-        const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
-        if (!projectId) return;
-        const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-        await registerPushToken.mutateAsync({ token, platform: Platform.OS === "ios" ? "ios" : "android" });
+        // Firebase is optional. When it is not configured this resolves to null,
+        // push registration is skipped, and the app keeps working with local
+        // notifications only (KNOWN_ISSUES K13). It must never throw a cold start.
+        const pushToken = await Notifications.getPushTokenAsync();
+        if (!pushToken) return;
+        await registerPushToken.mutateAsync({ token: pushToken.data, platform: Platform.OS === "ios" ? "ios" : "android" });
       } catch (error) {
         console.warn("[Notifications] Push registration unavailable:", error);
       }

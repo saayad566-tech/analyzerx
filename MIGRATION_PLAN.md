@@ -1,54 +1,107 @@
 # Expo → Bare React Native migration plan
 
-Target: zero `expo-*` / `@expo/*` dependencies. Authorised by the user; the deadlock over the 25
-framework packages is resolved.
+**Status: COMPLETE — zero `expo-*` / `@expo/*` packages remain in `package.json`.**
 
-**Verification constraint that shapes the whole plan.** `tsc` proves types, not behaviour. A navigation
-rewrite and native-project regeneration cannot be validated in the build sandbox (no emulator, no
-device, and the pod's 2 GB ceiling cannot complete an Android build). Every stage below therefore ends
-with `tsc` + the 293-test suite, and **Stage 3 and 4 additionally require a device or CI run** before
-they can be called done. A stage is not "complete" on a green type-check alone.
+---
+
+## Why this document was rewritten
+
+The previous version described Stage 2 (peripheral swaps) and Stage 3 (routing) as **pending**.
+`package.json` proved both were **already done**. That staleness is a real hazard: anyone executing
+the old plan as written would redo finished work and could break a working tree. The stages below now
+record what is actually true.
+
+## Verification standard (unchanged, and still binding)
+
+`tsc` proves types, not behaviour. A navigation rewrite and native-project regeneration cannot be
+validated in the build sandbox (no emulator, no device, and the pod's 2 GB ceiling cannot complete an
+Android build). Every stage ends with `tsc` + the test suite, and **the stages marked NEEDS DEVICE
+additionally require a device or CI run** before they can be called done. A stage is not "complete"
+on a green type-check alone.
+
+---
 
 ## Stage 1 — DONE (verified: tsc 0 errors, 293 tests passing)
+
 `@expo/vector-icons` → `react-native-vector-icons`
-- 39 files rewritten: `import { Ionicons } from "@expo/vector-icons"` → `import Ionicons from "react-native-vector-icons/Ionicons"`.
-- `keyof typeof Ionicons.glyphMap` (an Expo-only type) replaced by `IoniconName` in `lib/icon-names.ts`,
-  derived from the component's own props so the call sites stay type-checked.
-- Native step added: `apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")`
-  in `android/app/build.gradle`, which bundles the icon fonts into the APK. Without it the icons render
-  as blank glyphs at runtime — a failure `tsc` cannot detect.
-- `@types/react-native-vector-icons` added as a devDependency.
 
-## Stage 2 — peripheral library swaps (mechanical, tsc-verifiable)
-Each: add the replacement, rewrite imports, adapt the API, remove the Expo package, `tsc`.
+- 39 files rewritten.
+- `keyof typeof Ionicons.glyphMap` replaced by `IoniconName` in `lib/icon-names.ts`.
+- Native step: `apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")` in
+  `android/app/build.gradle`. Without it icons render blank at runtime — a failure `tsc` cannot detect.
 
-| Expo package | Replacement | Sites | API mapping |
-|---|---|---|---|
-| `expo-clipboard` | `@react-native-clipboard/clipboard` | 4 | `setStringAsync`/`getStringAsync` → `setString`/`getString` |
-| `expo-haptics` | `react-native-haptic-feedback` | 1 | `impactAsync` → `trigger` |
-| `expo-device` | `react-native-device-info` | 1 | `Device.modelName` → `getModel()` |
-| `expo-sharing` | `react-native-share` | 5 | `shareAsync(uri)` → `Share.open({ url })`; `isAvailableAsync()` → `Share.isPackageInstalled` check |
-| `expo-secure-store` | `react-native-keychain` | 3 | `setItemAsync`/`getItemAsync`/`deleteItemAsync` → `setGenericPassword`/`getGenericPassword`/`resetGenericPassword` |
-| `expo-file-system` | `react-native-fs` | 7 | `documentDirectory` → `RNFS.DocumentDirectoryPath`; `writeAsStringAsync` → `writeFile`; `readAsStringAsync` → `readFile`; `deleteAsync` → `unlink`; `getInfoAsync` → `stat`; `makeDirectoryAsync` → `mkdir`; `getFreeDiskStorageAsync` → `getFSInfo`; `createDownloadResumable` → `downloadFile` |
-| `expo-constants` | `react-native-device-info` + a build-time constant | 2 | `Constants.expoConfig` → injected constants |
-| `expo-linking` | `react-native` `Linking` | 3 | `openURL` → `Linking.openURL` |
-| `expo-status-bar` | `react-native` `StatusBar` | 1 | same API |
-| `expo-symbols` | `react-native-vector-icons` | 2 | SF Symbols have no bare equivalent; map to the closest icon |
-| `expo-battery`, `expo-print`, `expo-web-browser`, `expo-document-picker`, `expo-image-picker`, `expo-notifications`, `expo-audio` | `react-native-device-info`, `react-native-print`, `react-native-inappbrowser-reborn`, `@react-native-documents/picker`, `react-native-image-picker`, `@notifee/react-native` + FCM, `react-native-track-player` | 1–2 each | per-package |
+## Stage 2 — DONE (previously marked pending — it was already complete)
 
-## Stage 3 — routing rewrite (architectural, NEEDS DEVICE VERIFICATION)
-`expo-router` (43 files) → `@react-navigation/native` + `@react-navigation/native-stack`.
-This is not an import swap. expo-router is **file-based** (`app/(tabs)/index.tsx`, `app/company/[symbol].tsx`);
-React Navigation is a **declarative navigator tree**. Every route, tab bar, deep link, dynamic segment
-and back behaviour must be re-expressed. tsc will confirm the types and cannot confirm that a single
-navigation works. **Must be verified on a device.**
+Every replacement is present in `package.json`:
 
-## Stage 4 — native project + config (NEEDS DEVICE VERIFICATION)
-- `android/app/src/main/java/.../MainActivity.kt` currently imports `expo.modules.splashscreen.SplashScreenManager`
-  and `expo.modules.ReactActivityDelegateWrapper`; `MainApplication` likewise. These must be replaced
-  with the bare React Native equivalents, and `android/settings.gradle` / `build.gradle` moved off
-  `expo-modules-autolinking`.
-- Purge `app.config.ts`, `plugins/with-analyzerx-local-ai.*`, `expo-env.d.ts`, and move `babel.config.js`
-  off `babel-preset-expo`, `metro.config.js` off `expo/metro-config`, `tsconfig.json` off `expo/tsconfig.base`.
-- Regenerating this native project is the step that cannot be done blind: it is what makes the APK
-  buildable, and there is no way to prove it here.
+| Expo package | Replacement | Present |
+|---|---|---|
+| `expo-clipboard` | `@react-native-clipboard/clipboard` | ✅ |
+| `expo-haptics` | `react-native-haptic-feedback` | ✅ |
+| `expo-device` | `react-native-device-info` | ✅ |
+| `expo-sharing` | `react-native-share` | ✅ |
+| `expo-secure-store` | `react-native-keychain` | ✅ |
+| `expo-file-system` | `react-native-fs` | ✅ |
+| `expo-print` | `react-native-print` | ✅ |
+| `expo-web-browser` | `react-native-inappbrowser-reborn` | ✅ |
+| `expo-document-picker` | `@react-native-documents/picker` | ✅ |
+| `expo-image-picker` | `react-native-image-picker` | ✅ |
+| `expo-constants`, `expo-linking`, `expo-status-bar`, `expo-symbols`, `expo-battery` | removed / mapped | ✅ |
+
+## Stage 3 — DONE in code (previously marked NEEDS DEVICE — the code is complete)
+
+`expo-router` (43 files) → `@react-navigation/native` + `/native-stack` + `/bottom-tabs` + `/elements`.
+
+**`expo-router` is absent from `package.json`.** The navigation tree is declarative. Type-level
+correctness is established; **behavioural correctness still requires a device run** — a back-stack or
+deep-link regression is exactly what `tsc` cannot see.
+
+## Stage 4 — config DONE · native project NEEDS DEVICE
+
+- `babel.config.js` → `@react-native/babel-preset` ✅ (no longer `babel-preset-expo`)
+- `metro.base.js` → `@react-native/metro-config` ✅ (no longer `expo/metro-config`)
+- `tsconfig.json` → 0 expo references ✅
+- `app.config.ts`, `expo-env.d.ts`, `plugins/with-analyzerx-local-ai.*`, `expo-modules-autolinking` — **purged** ✅
+- **NEEDS DEVICE:** `android/app/src/main/java/.../MainActivity.kt` and `MainApplication` previously
+  imported `expo.modules.*`; confirm the bare equivalents build and boot.
+
+## Stage 5 — DONE on this branch (the final four packages)
+
+| Package | Replacement | Notes |
+|---|---|---|
+| `expo-audio` | `react-native-audio-recorder-player` via `lib/platform/audio.ts` | **recording only** — see below |
+| `expo-notifications` | `@react-native-firebase/messaging` + `@notifee/react-native` via `lib/platform/notifications.ts` | FCM with graceful fallback |
+| `eslint-config-expo` | `@react-native/eslint-config/flat` | dev-only, lint-only |
+| `expo` (core) | removed | nothing left depends on it |
+
+Both new modules follow the existing **`lib/platform/*` adapter pattern** — screens never import a
+native library directly. Only two call sites changed:
+`app/market-chat.tsx` (audio) and `app/_layout.tsx` (notifications).
+
+### Finding: `expo-audio` was recording only
+
+A grep across `app/`, `components/`, `hooks/`, `lib/` and `packages/` found **no audio playback call
+site**. `react-native-track-player` was therefore **not** added — an unused dependency is bloat. Add
+it together with the playback feature that needs it.
+
+### Decision: FCM, and what it costs
+
+Push now requires a Firebase project (`google-services.json` / `GoogleService-Info.plist`). This is a
+**new external credential requirement**, explicitly authorised.
+
+**Degradation is by design:** if Firebase is not configured, `getPushTokenAsync()` resolves to `null`,
+push registration is skipped, and the app keeps working with local notifications only — the same
+behaviour the Expo path had (KNOWN_ISSUES K13). Nothing in the new module can throw a cold start.
+
+---
+
+## Remaining work
+
+1. **Device or CI verification** of Stages 3–4 and the two new wrappers. Not possible in the build
+   sandbox — see the verification standard above.
+2. **Add `google-services.json`** to `android/app/`, or accept local-notifications-only.
+3. **`babel.config.js` still inlines `EXPO_PUBLIC_*`.** Functional, not broken — the inlining plugin
+   keeps those env vars working. Rename the prefix to a non-Expo name when convenient.
+4. **`todo.md` is 141 KB / 1,856 lines at the repo root.** Move it to an issue tracker or split it by
+   area — it is dead weight in every clone and every agent context window.
+5. **Run `tsc` + the test suite on this branch in CI.** Not runnable in the build sandbox.
