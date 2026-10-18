@@ -250,7 +250,7 @@ export function processBar(
 /** Validate an order against the account before it is queued. */
 export function submitOrder(
   account: PaperAccount,
-  order: Omit<PaperOrder, "status" | "createdAt">,
+  order: Omit<PaperOrder, "status">,
   config: PaperConfig = DEFAULT_PAPER_CONFIG,
 ): { account: PaperAccount; order: PaperOrder } {
   if (!Number.isFinite(order.quantity) || order.quantity <= 0) {
